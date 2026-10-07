@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoCaption</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <button class="brand" id="home" type="button" aria-label="All videos">
+    <span class="brand-mark" aria-hidden="true"><span class="bm-th">ก</span><span class="bm-zh">字</span></span>
+    AutoCaption
+  </button>
+  <div class="top-title" id="topTitle"></div>
+  <button class="ghost" id="openMemory" type="button">What it has learned <span class="count" id="memCount"></span></button>
+</header>
+
+<!-- ============================================================ start -->
+<main id="startView" class="start">
+  <section class="new">
+    <h1>Thai video in, Chinese captions out.</h1>
+    <p class="lede">Drop a video or paste a link. It listens for the Thai, writes Traditional Chinese, checks its own work, and learns from what you correct.</p>
+
+    <form id="newForm" autocomplete="off">
+      <label class="drop" id="drop">
+        <input type="file" id="videoFile" accept="video/*,.mkv,.mov,.mts" hidden>
+        <span class="drop-big" id="dropText">Drop a video here</span>
+        <span class="drop-small" id="dropHint">or click to choose a file</span>
+      </label>
+
+      <div class="or"><span>or</span></div>
+      <input type="url" id="link" class="field" placeholder="Paste a video link (YouTube, Bilibili, X, TikTok…)">
+
+      <details class="help" id="helpBox">
+        <summary>Give it something to help (optional)</summary>
+        <div class="help-body">
+          <div class="help-col">
+            <h3>Thai captions you already have</h3>
+            <p class="muted">Screenshots of CapCut's caption list, an .srt, or pasted text.</p>
+            <label class="pick"><input type="file" multiple accept="image/*,.srt,.txt,.vtt" data-kind="original" hidden>Add screenshots or files</label>
+            <div class="chips" data-list="original"></div>
+            <textarea class="field small" data-text="original" rows="3" placeholder="…or paste the Thai here"></textarea>
+          </div>
+          <div class="help-col">
+            <h3>Someone else's translation</h3>
+            <p class="muted">Chinese (or English) subs from a fan account, as pictures or text.</p>
+            <label class="pick"><input type="file" multiple accept="image/*,.srt,.txt,.vtt" data-kind="translation" hidden>Add screenshots or files</label>
+            <div class="chips" data-list="translation"></div>
+            <textarea class="field small" data-text="translation" rows="3" placeholder="…or paste the translation here"></textarea>
+          </div>
+        </div>
+        <label class="row-label" for="about">Who's in it, what's happening</label>
+        <input id="about" class="field" placeholder="e.g. MilkLove, Girl Rules EP3 behind the scenes">
+      </details>
+
+      <label class="check"><input type="checkbox" id="cleanVoice"> Music or crowd noise under the talking (takes a few minutes longer)</label>
+      <label class="check"><input type="checkbox" id="fast"> Quicker listening (about 6× faster, gets more Thai words wrong)</label>
+
+      <button class="primary big" id="go" type="submit" disabled>Make captions</button>
+      <p class="form-error" id="formError" role="alert"></p>
+    </form>
+  </section>
+
+  <section class="past">
+    <h2>Your videos</h2>
+    <ul id="jobList" class="job-list"></ul>
+    <p class="muted" id="noJobs">Videos you caption show up here.</p>
+  </section>
+</main>
+
+<!-- ============================================================ job -->
+<main id="jobView" class="job" hidden>
+  <section class="stage">
+    <div class="player" id="player">
+      <video id="video" controls playsinline preload="metadata"></video>
+      <div class="overlay" id="overlay" aria-hidden="true"><div class="ov-th" id="ovTh"></div><div class="ov-zh" id="ovZh"></div></div>
+    </div>
+    <div class="view-opts">
+      <span class="muted">On the video:</span>
+      <label><input type="radio" name="show" value="both" checked> 中文 + Thai</label>
+      <label><input type="radio" name="show" value="zh"> 中文</label>
+      <label><input type="radio" name="show" value="th"> Thai</label>
+    </div>
+
+    <div class="status" id="status">
+      <div class="status-line"><span class="spinner" id="spinner"></span><span id="statusText"></span></div>
+      <div class="bar" id="bar"><i id="barFill"></i></div>
+      <p class="error" id="jobError" role="alert"></p>
+      <button class="secondary" id="retry" type="button" hidden>Try again</button>
+    </div>
+
+    <details class="panel" id="exportPanel" open>
+      <summary>Save captions</summary>
+      <div class="panel-body">
+        <div class="opt-row">
+          <span>Burn into the video</span>
+          <label><input type="radio" name="burn" value="zh" checked> 中文</label>
+          <label><input type="radio" name="burn" value="both"> 中文 + Thai</label>
+          <label><input type="radio" name="burn" value="none"> Don't</label>
+        </div>
+        <div class="opt-row">
+          <span>Where</span>
+          <label><input type="radio" name="pos" value="bottom" checked> Bottom</label>
+          <label><input type="radio" name="pos" value="top"> Top (the video already has subtitles at the bottom)</label>
+        </div>
+        <div class="opt-row">
+          <span>Size</span>
+          <input type="range" id="size" min="0.7" max="1.5" step="0.05" value="1">
+          <span class="muted" id="sizeVal">100%</span>
+        </div>
+        <p class="muted">SRT files (Thai, Chinese, both) are always saved too. They go to <span id="outDir">~/Movies/AutoCaption</span>.</p>
+        <button class="primary" id="export" type="button">Save</button>
+        <ul class="exports" id="exports"></ul>
+      </div>
+    </details>
+
+    <details class="panel" id="helpersPanel">
+      <summary>Help you gave it <span class="count" id="helperCount"></span></summary>
+      <div class="panel-body">
+        <ul class="helpers" id="helperList"></ul>
+        <div class="add-helper">
+          <select id="helperKind" class="field">
+            <option value="original">Thai captions (CapCut, .srt, text)</option>
+            <option value="translation">Someone else's translation</option>
+          </select>
+          <label class="pick"><input type="file" id="helperFiles" multiple accept="image/*,.srt,.txt,.vtt" hidden>Add screenshots or files</label>
+          <textarea id="helperText" class="field small" rows="2" placeholder="…or paste text"></textarea>
+          <button class="secondary" id="addHelper" type="button">Add</button>
+        </div>
+        <button class="secondary" id="redoAll" type="button" hidden>Redo the captions with this help</button>
+      </div>
+    </details>
+
+    <details class="panel" id="logPanel">
+      <summary>What it did</summary>
+      <ul class="log" id="log"></ul>
+    </details>
+  </section>
+
+  <section class="script" aria-label="Captions">
+    <div class="script-head">
+      <div class="legend">
+        <span><i class="dot unsure"></i>it wasn't sure</span>
+        <span><i class="dot fixed"></i>it fixed this</span>
+        <span><i class="dot edited"></i>you typed this</span>
+      </div>
+      <label class="follow"><input type="checkbox" id="follow" checked> Follow the video</label>
+    </div>
+    <ol class="lines" id="lines"></ol>
+    <div class="empty-lines" id="emptyLines">Captions appear here as soon as it has heard the video.</div>
+
+    <div class="fixbar" id="fixbar" hidden>
+      <span id="flagCount"></span>
+      <button class="primary" id="fixNow" type="button">Fix flagged lines</button>
+    </div>
+  </section>
+</main>
+
+<!-- ============================================================ memory -->
+<dialog id="memory" class="memory">
+  <form method="dialog" class="mem-head">
+    <h2>What it has learned</h2>
+    <button class="ghost" value="close" aria-label="Close">Close</button>
+  </form>
+  <p class="muted">Used for every video. It adds to this when you fix lines with a note. You can also add or remove things yourself.</p>
+
+  <h3>Names</h3>
+  <ul class="mem-list" data-mem="names"></ul>
+  <form class="mem-add" data-kind="names"><input class="field" name="th" placeholder="Thai, e.g. มิลค์"><input class="field" name="zh" placeholder="Chinese, e.g. Milk"><button class="secondary">Add</button></form>
+
+  <h3>Words and phrases</h3>
+  <ul class="mem-list" data-mem="words"></ul>
+  <form class="mem-add" data-kind="words"><input class="field" name="th" placeholder="Thai"><input class="field" name="zh" placeholder="Chinese you want"><button class="secondary">Add</button></form>
+
+  <h3>Rules</h3>
+  <ul class="mem-list" data-mem="rules"></ul>
+  <form class="mem-add" data-kind="rules"><input class="field wide" name="text" placeholder="e.g. Use 妳 when talking to a woman"><button class="secondary">Add</button></form>
+
+  <div class="mem-foot">
+    <button class="secondary" id="redoTranslation" type="button" hidden>Translate this video again with all of this</button>
+  </div>
+</dialog>
+
+<template id="lineTpl">
+  <li class="line">
+    <button class="time" type="button"></button>
+    <div class="texts">
+      <div class="th" contenteditable="plaintext-only" spellcheck="false" lang="th"></div>
+      <div class="zh" contenteditable="plaintext-only" spellcheck="false" lang="zh-Hant"></div>
+      <div class="why"></div>
+    </div>
+    <div class="marks">
+      <i class="dot"></i>
+      <button class="flag" type="button" aria-label="Flag this line">⚑</button>
+    </div>
+    <div class="flagbox" hidden>
+      <div class="flag-types" role="radiogroup" aria-label="What's wrong">
+        <button type="button" data-flag="heard">Wrong words</button>
+        <button type="button" data-flag="translation">Translation</button>
+        <button type="button" data-flag="timing">Timing</button>
+        <button type="button" data-flag="other">Other</button>
+      </div>
+      <input class="field note" placeholder="What's wrong? e.g. she says “พี่มิลค์”, or: too formal">
+      <div class="timing" hidden>
+        <button type="button" data-t="start-">Start −0.2s</button>
+        <button type="button" data-t="start+">Start +0.2s</button>
+        <button type="button" data-t="start=">Start here</button>
+        <button type="button" data-t="end=">End here</button>
+        <button type="button" data-t="end-">End −0.2s</button>
+        <button type="button" data-t="end+">End +0.2s</button>
+      </div>
+      <div class="flag-actions">
+        <button type="button" class="unflag">Not wrong</button>
+      </div>
+    </div>
+  </li>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>

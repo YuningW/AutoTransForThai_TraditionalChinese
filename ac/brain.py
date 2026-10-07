@@ -1,0 +1,310 @@
+"""Everything Claude does: read helper screenshots, tidy the Thai, translate, check its own
+work, fix what you flagged, and turn your feedback into lessons it keeps.
+
+Claude can't hear. Whisper (listen.py) does the hearing; Claude only ever sees text and
+pictures, so it is told which words Whisper was unsure of and never asked to guess sound.
+
+Calls go through the Claude Code CLI (`claude -p`), which uses your Claude subscription;
+no API key needed.
+"""
+import json
+import os
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
+
+from . import memory, paths
+
+CHUNK = 90          # lines per request; long videos run several requests side by side
+
+
+class BrainError(RuntimeError):
+    pass
+
+
+def ask(system, prompt, schema, cwd, images=(), effort=None, timeout=900):
+    """One structured answer from Claude. A failed call is tried once more before giving up."""
+    try:
+        return _ask(system, prompt, schema, cwd, images, effort, timeout)
+    except BrainError as e:
+        if "signed in" in str(e) or "isn't installed" in str(e):
+            raise
+        return _ask(system, prompt, schema, cwd, images, effort, timeout)
+
+
+def _ask(system, prompt, schema, cwd, images, effort, timeout):
+    exe = paths.claude()
+    if not exe:
+        raise BrainError("The Claude command-line tool isn't installed. Install Claude Code, then sign in once in Terminal with: claude")
+    args = [exe, "-p", "--model", paths.CLAUDE_MODEL, "--output-format", "json",
+            "--system-prompt", system, "--json-schema", json.dumps(schema),
+            "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence",
+            "--disable-slash-commands"]
+    if images:
+        args += ["--tools", "Read", "--allowedTools", "Read"]
+        prompt += "\n\nPictures to read (open each with the Read tool):\n" + "\n".join(str(p) for p in images)
+    else:
+        args += ["--tools", ""]
+    if effort:
+        args += ["--effort", effort]
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("ELECTRON_RUN_AS_NODE", "CLAUDECODE", "ANTHROPIC_API_KEY") and not k.startswith("VSCODE_")}
+    try:
+        p = subprocess.run(args, input=prompt, capture_output=True, text=True, cwd=str(cwd), env=env, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise BrainError("Claude took too long to answer. Try again.") from None
+    try:
+        out = json.loads(p.stdout)
+    except ValueError:
+        msg = (p.stderr or p.stdout).strip()[-300:]
+        if "login" in msg.lower() or "auth" in msg.lower():
+            msg = "Claude isn't signed in. Open Terminal and run: claude  (then sign in)"
+        raise BrainError(msg or "Claude didn't answer.") from None
+    if out.get("is_error") or out.get("structured_output") is None:
+        raise BrainError(str(out.get("result") or out.get("api_error_status") or "Claude couldn't finish.")[:300])
+    return out["structured_output"]
+
+
+def _lines_text(lines, fields=("th",)):
+    rows = []
+    for l in lines:
+        row = {"id": l["id"], "time": f"{l['start']:.1f}-{l['end']:.1f}"}
+        for f in fields:
+            row[f] = l.get(f, "")
+        if "conf" in fields or l.get("conf", 1) < 0.6:
+            row["unsure"] = l.get("conf", 1) < 0.6
+        rows.append(row)
+    return "\n".join(json.dumps(r, ensure_ascii=False) for r in rows)
+
+
+def _chunks(lines, n=CHUNK):
+    """Even batches of at most n lines (91 lines -> 46 + 45, not 90 + 1)."""
+    if not lines:
+        return [[]]
+    parts = -(-len(lines) // n)
+    size = -(-len(lines) // parts)
+    return [lines[i:i + size] for i in range(0, len(lines), size)]
+
+
+def _parallel(fn, items):
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        return list(ex.map(fn, items))
+
+
+def _context(job):
+    info = job.get("info") or {}
+    bits = []
+    if info.get("title"):
+        bits.append(f"Video title: {info['title']}")
+    if info.get("uploader"):
+        bits.append(f"Channel: {info['uploader']}")
+    if info.get("description"):
+        bits.append(f"Video description (may name the people in it):\n{info['description'][:1200]}")
+    if job.get("about"):
+        bits.append(f"What you were told about this video: {job['about']}")
+    return "\n".join(bits)
+
+
+def _helpers_text(helpers, kind, start=None, end=None):
+    """Reference text the user gave, cut to the time range when it has timestamps."""
+    out = []
+    for h in helpers:
+        if h["kind"] != kind or not h.get("text"):
+            continue
+        items = h.get("items")
+        if items and start is not None:
+            near = [i for i in items if i["end"] >= start - 5 and i["start"] <= end + 5]
+            if near:
+                out.append(f"[{h['label']}]\n" + "\n".join(f"{i['start']:.1f}-{i['end']:.1f} {i['text']}" for i in near))
+            continue
+        out.append(f"[{h['label']}]\n{h['text'][:20000]}")
+    return "\n\n".join(out)
+
+
+# ---------------------------------------------------------------- helpers (pictures)
+
+READ_SYSTEM = """You copy caption text out of screenshots exactly as written. The screenshots are usually \
+CapCut's caption list, a video frame with burned-in captions, or a page of someone's transcript or \
+translation. Keep the original language and spelling; don't translate, fix or summarise. Keep the order. \
+If a timestamp is shown next to a line, copy it into start/end as seconds."""
+
+READ_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["language", "lines"], "properties": {
+    "language": {"type": "string", "description": "th, zh, en or other"},
+    "lines": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["text"], "properties": {
+        "text": {"type": "string"}, "start": {"type": "number"}, "end": {"type": "number"}}}}}}
+
+
+def read_pictures(job_dir, pictures):
+    """Screenshots -> text lines (one request for all of a helper's pictures, in order)."""
+    r = ask(READ_SYSTEM, "Copy out every caption line from these pictures, in order. If two pictures "
+            "overlap (the same lines appear twice), list each line once.", READ_SCHEMA, job_dir, images=pictures)
+    return r["language"], r["lines"]
+
+
+# ---------------------------------------------------------------- tidy the Thai
+
+POLISH_SYSTEM = """You tidy Thai captions that a speech recogniser (Whisper) produced from a video. You cannot \
+hear the audio: change words only when you have a real reason. Good reasons:
+- a reference transcript from the user (for example CapCut's captions) shows what was said;
+- the user's saved names and words (memory) show the right spelling;
+- the line is clearly a recognition error: the same phrase looping, a stock phrase hallucinated over \
+silence or music (for example "ขอบคุณที่รับชม", "ซับไตเติ้ลโดย..."), English words written in Thai letters \
+where the speaker said English, or a word that makes no sense where a similar-sounding word does.
+Keep the speaker's own style: slang, particles (นะ, ค่ะ, ครับ, อ่ะ, ปะ), English mixed in. Don't make it formal.
+Keep every line id and return every line. Don't merge or split lines: timing comes from the audio. You may move a word or two across the boundary between neighbouring lines when a line clearly ends with the start of the next sentence (for example a question's ending stuck to the start of the answer).
+kind: "speech" for talking; "song" when the line is lyrics being sung; "sound" when there are no real \
+words (laughing, music, noise). For "sound" lines put a short Thai-free description in th like "(笑)" or "♪".
+suspect: true when you still think the words may be wrong after your changes (you'll be asked again later \
+with a fresh listen), and say why in reason. Lines marked unsure=true had low recogniser confidence."""
+
+POLISH_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["lines"], "properties": {
+    "lines": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+              "required": ["id", "th", "kind", "suspect"], "properties": {
+                  "id": {"type": "integer"}, "th": {"type": "string"},
+                  "kind": {"type": "string", "enum": ["speech", "song", "sound"]},
+                  "suspect": {"type": "boolean"}, "reason": {"type": "string"}}}}}}
+
+
+def polish(job, lines, helpers):
+    mem = memory.prompt_text("th")
+
+    def run(chunk):
+        if not chunk:
+            return []
+        ref = _helpers_text(helpers, "original", chunk[0]["start"], chunk[-1]["end"])
+        prompt = "\n\n".join(x for x in (
+            _context(job),
+            f"Memory (names, words and rules learned from the user's earlier feedback):\n{mem}" if mem else "",
+            f"Reference transcript(s) from the user:\n{ref}" if ref else "",
+            "Captions to tidy (one JSON object per line):\n" + _lines_text(chunk, ("th",)),
+            "Return every line.") if x)
+        return ask(POLISH_SYSTEM, prompt, POLISH_SCHEMA, job["dir"])["lines"]
+
+    return [x for part in _parallel(run, _chunks(lines)) for x in part]
+
+
+# ---------------------------------------------------------------- translate
+
+TRANSLATE_SYSTEM = """You write Traditional Chinese subtitles (Taiwan usage: 繁體中文, 台灣用語) for Thai videos. \
+Write what a Taiwanese subtitler would: natural spoken Chinese that fits on screen, not word-for-word. \
+Keep each line's meaning in that line so it matches the timing; you may move a word between neighbouring \
+lines when Thai and Chinese word order differ. Keep the tone (teasing, polite, shy, angry). Subtitle punctuation: no 。 at the end of a line; ？ and ！ are fine. \
+Names: keep people's nicknames as the user's memory spells them; otherwise use the common fandom \
+spelling, or keep the Thai nickname in Latin letters (e.g. Milk, Love) when unsure. \
+Lines with kind "song" are sung lyrics: don't translate them, write "♪" (the user can type their own). \
+Lines with kind "sound": a short bracketed note like "（笑）" or "（音樂）", or "" if nothing is worth showing. \
+Follow the user's memory rules; they win over these defaults. \
+If a reference translation from the user is given, use it as the main guide: keep its wording where it \
+fits the line, and fix it only where it is clearly wrong or doesn't match the Thai.
+unsure: true when the Thai line itself looks garbled and you had to guess."""
+
+TRANSLATE_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["lines"], "properties": {
+    "lines": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+              "required": ["id", "zh", "unsure"], "properties": {
+                  "id": {"type": "integer"}, "zh": {"type": "string"}, "unsure": {"type": "boolean"}}}}}}
+
+
+def translate(job, lines, helpers):
+    mem = memory.prompt_text("zh")
+    by_id = {l["id"]: l for l in lines}
+
+    def run(chunk):
+        if not chunk:
+            return []
+        i0 = lines.index(chunk[0])
+        before = lines[max(0, i0 - 6):i0]
+        ref = _helpers_text(helpers, "translation", chunk[0]["start"], chunk[-1]["end"])
+        prompt = "\n\n".join(x for x in (
+            _context(job),
+            f"Memory (learned from the user's feedback; follow it):\n{mem}" if mem else "",
+            f"Reference translation(s) from the user:\n{ref}" if ref else "",
+            "The lines just before these, for context (don't return them):\n" + _lines_text(before, ("th", "zh")) if before else "",
+            "Translate these lines:\n" + _lines_text(chunk, ("th", "kind"))) if x)
+        return ask(TRANSLATE_SYSTEM, prompt, TRANSLATE_SCHEMA, job["dir"], effort="high")["lines"]
+
+    out = [x for part in _parallel(run, _chunks(lines)) for x in part]
+    return [x for x in out if x["id"] in by_id]
+
+
+# ---------------------------------------------------------------- self-check
+
+REVIEW_SYSTEM = """You check finished bilingual captions (Thai heard by a speech recogniser, Traditional Chinese \
+translation) before the user sees them. Find real problems only:
+- "heard": the Thai looks misheard (nonsense, wrong word for the context, a name spelled differently from \
+elsewhere, words that don't fit the conversation). Lines with unsure=true deserve a closer look.
+- "translation": the Chinese is wrong, unnatural, inconsistent with other lines (names, terms, how people \
+address each other), Simplified characters, or mainland wording where Taiwan says it differently.
+- "timing": a line is far too long to read in its time (more than about 7 Chinese characters per second).
+For "translation" problems give the corrected Chinese in fix. For "heard" problems the line will be listened \
+to again; say what you suspect in why. Don't report lines that are fine. Don't rewrite style for taste."""
+
+REVIEW_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["problems"], "properties": {
+    "problems": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                 "required": ["id", "type", "why"], "properties": {
+                     "id": {"type": "integer"},
+                     "type": {"type": "string", "enum": ["heard", "translation", "timing"]},
+                     "why": {"type": "string"}, "fix": {"type": "string"}}}}}}
+
+
+def review(job, lines):
+    mem = memory.prompt_text("both")
+
+    def run(chunk):
+        if not chunk:
+            return []
+        prompt = "\n\n".join(x for x in (
+            _context(job),
+            f"Memory (the user's rules):\n{mem}" if mem else "",
+            "Captions:\n" + _lines_text(chunk, ("th", "zh", "kind"))) if x)
+        return ask(REVIEW_SYSTEM, prompt, REVIEW_SCHEMA, job["dir"])["problems"]
+
+    return [x for part in _parallel(run, _chunks(lines, 150)) for x in part]
+
+
+# ---------------------------------------------------------------- fix what was flagged
+
+FIX_SYSTEM = """You fix bilingual captions (Thai + Traditional Chinese, Taiwan usage) that the user or an \
+automatic check flagged. You cannot hear the audio. For lines flagged "heard" you get fresh attempts from \
+the speech recogniser (listening again, some with the music removed); the window each attempt covers is a \
+little wider than the line, so pick out the part that belongs to this line. Choose the reading that best \
+fits the attempts, the conversation, the user's note and the memory; when the attempts agree with the old \
+text, keep it. Then make the Chinese match the Thai.
+Lines with a user note: the note is the user's own feedback and is the most important input. If the user \
+typed the correct text, use it.
+You may also return a context line (by its id) when this fix makes it wrong too: a word split across the two lines, or a neighbour whose translation no longer fits. Return only lines you looked at.
+explain is shown to the user: one short plain sentence about what changed and why. Call the earlier text "the old line" (it came from the automatic first pass); never say "you" or "your" for it.
+lessons: what the user's feedback teaches that should apply to FUTURE videos too, written as short \
+instructions. Only from user notes, not from your own guesses. Types: "name" (a person's name and how to \
+write it in Thai and Chinese), "word" (a Thai word/phrase and the Chinese the user wants), "style" (a general \
+translation or captioning rule). Skip lessons that only fit this one line."""
+
+FIX_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["lines", "lessons"], "properties": {
+    "lines": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+              "required": ["id", "th", "zh", "explain"], "properties": {
+                  "id": {"type": "integer"}, "th": {"type": "string"}, "zh": {"type": "string"},
+                  "explain": {"type": "string", "description": "one short sentence for the user: what changed and why"}}}},
+    "lessons": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                "required": ["type", "rule"], "properties": {
+                    "type": {"type": "string", "enum": ["name", "word", "style"]},
+                    "th": {"type": "string"}, "zh": {"type": "string"}, "rule": {"type": "string"}}}}}}
+
+
+def fix(job, lines, targets, relistened):
+    """targets: lines to fix (with flag/note). relistened: {id: [attempt texts]}."""
+    by_id = {l["id"]: l for l in lines}
+    mem = memory.prompt_text("both")
+    blocks = []
+    for t in targets:
+        i = lines.index(by_id[t["id"]])
+        ctx = lines[max(0, i - 3):i + 4]
+        b = {"id": t["id"], "flag": t.get("flag"), "user_note": t.get("note") or "",
+             "found_by": "user" if t.get("by") == "user" else "automatic check",
+             "current": {"th": t["th"], "zh": t.get("zh", "")},
+             "context": [{"id": c["id"], "th": c["th"], "zh": c.get("zh", "")} for c in ctx if c["id"] != t["id"]]}
+        if t["id"] in relistened:
+            b["listened_again"] = relistened[t["id"]]
+        blocks.append(json.dumps(b, ensure_ascii=False))
+    prompt = "\n\n".join(x for x in (
+        _context(job),
+        f"Memory (learned from earlier feedback):\n{mem}" if mem else "",
+        "Lines to fix (one JSON object each):\n" + "\n".join(blocks)) if x)
+    return ask(FIX_SYSTEM, prompt, FIX_SCHEMA, job["dir"], effort="high")

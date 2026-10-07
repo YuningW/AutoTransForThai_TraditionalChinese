@@ -1,0 +1,11 @@
+# Python 3.12 (PyTorch has no wheels for 3.13+ on every platform yet)
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+yt-dlp>=2026.8.19
+mlx-whisper>=0.4
+audio-separator[cpu]==0.47.0
+silero-vad>=6.2
+pythainlp>=5.0
+audioread>=3.0
+soundfile>=0.12
