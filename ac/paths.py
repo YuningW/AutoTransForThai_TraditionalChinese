@@ -1,6 +1,8 @@
 """Where things live on disk."""
+import json
 import os
 import shutil
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -10,6 +12,8 @@ WORK = Path(os.environ.get("AC_WORK", ROOT / "work"))
 JOBS = WORK / "jobs"
 # What the tool has learned from your feedback: names, words, style rules.
 MEMORY = WORK / "memory.json"
+# Your choices: models, default caption style.
+SETTINGS = WORK / "settings.json"
 # Finished SRT files and captioned videos.
 OUT = Path(os.environ.get("AC_OUT", Path.home() / "Movies" / "AutoCaption"))
 # Voice-isolation models: shared with VidToAudio so htdemucs isn't downloaded twice.
@@ -42,3 +46,24 @@ def claude():
 def ensure_dirs():
     for d in (JOBS, OUT, SEP_MODELS):
         d.mkdir(parents=True, exist_ok=True)
+
+
+_lock = threading.Lock()
+
+
+def load_settings():
+    try:
+        return json.loads(SETTINGS.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(changes):
+    with _lock:
+        s = load_settings()
+        s.update(changes)
+        SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+        tmp = SETTINGS.with_suffix(".tmp")
+        tmp.write_text(json.dumps(s, ensure_ascii=False, indent=1))
+        tmp.replace(SETTINGS)
+        return s

@@ -22,10 +22,17 @@ def probe(path):
     a = next((s for s in d.get("streams", []) if s.get("codec_type") == "audio"), None)
     if not a:
         raise MediaError("That video has no sound to caption.")
+    w, h = (int(v["width"]), int(v["height"])) if v else (0, 0)
+    rot = 0
+    for sd in (v or {}).get("side_data_list") or []:
+        rot = int(sd.get("rotation") or rot)
+    rot = rot or int(((v or {}).get("tags") or {}).get("rotate") or 0)
+    if abs(rot) % 180 == 90:                 # phone videos filmed upright: ffmpeg turns them, so do we
+        w, h = h, w
     return {
         "duration": float(d.get("format", {}).get("duration") or 0),
-        "width": int(v["width"]) if v else 0,
-        "height": int(v["height"]) if v else 0,
+        "width": w,
+        "height": h,
         "vcodec": v.get("codec_name") if v else None,
         "acodec": a.get("codec_name"),
         "container": d.get("format", {}).get("format_name", ""),
@@ -69,14 +76,12 @@ def browser_copy(src, info, dst):
           "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst)], "Making a playable copy")
 
 
-def burn(src, ass_file, dst, duration, on_progress):
-    """Draw the captions into the picture (needs ffmpeg with libass: brew install ffmpeg-full)."""
-    if "subtitles" not in subprocess.run([paths.ffmpeg(), "-hide_banner", "-filters"],
-                                         capture_output=True, text=True).stdout:
-        raise MediaError("Burning captions in needs the full ffmpeg. In Terminal run: brew install ffmpeg-full")
-    ass = str(ass_file).replace("\\", "/").replace(":", r"\:").replace("'", r"\'")
+def burn(src, frames_list, dst, duration, on_progress):
+    """Lay the rendered caption frames (style.frames) over the video."""
     args = [paths.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-progress", "pipe:1", "-nostats",
-            "-i", str(src), "-vf", f"subtitles='{ass}'",
+            "-i", str(src), "-f", "concat", "-safe", "0", "-i", str(frames_list),
+            "-filter_complex", "[1:v]format=rgba[c];[0:v][c]overlay=eof_action=pass:format=auto,format=yuv420p[v]",
+            "-map", "[v]", "-map", "0:a?",
             "-c:v", "h264_videotoolbox", "-q:v", "65", "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", str(dst)]
     p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -87,3 +92,13 @@ def burn(src, ass_file, dst, duration, on_progress):
     err = p.stderr.read()
     if p.wait() != 0:
         raise MediaError("Burning the captions failed: " + err.strip()[-300:])
+
+
+def contact_sheets(src, folder, every):
+    """Small frames every `every` seconds, 4×4 to a sheet, each labelled with its time, so Claude can see the video."""
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+    _run(["-i", str(src), "-vf", f"fps=1/{every},scale=320:-2,drawtext=text='%{{pts\\:hms}}':x=4:y=4:fontsize=16:"
+          f"fontcolor=yellow:box=1:boxcolor=black@0.7,tile=4x4", "-fps_mode", "vfr", str(folder / "sheet_%03d.jpg")],
+         "Making contact sheets")
+    return sorted(folder.glob("sheet_*.jpg"))

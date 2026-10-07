@@ -6,7 +6,7 @@ from pathlib import Path
 
 os.environ["AC_WORK"] = tempfile.mkdtemp(prefix="ac-test-")
 
-from ac import captions, listen, memory  # noqa: E402
+from ac import captions, listen, memory, style  # noqa: E402
 
 
 def words(*items):
@@ -43,17 +43,31 @@ class Captions(unittest.TestCase):
         self.assertEqual([(b["start"], b["end"], b["text"]) for b in back],
                          [(1.5, 3.25, "สวัสดี"), (61.0, 62.0, "ครับ")])
 
-    def test_ass_keeps_thai_and_chinese_apart(self):
-        ls = [{"id": 1, "start": 0, "end": 2, "th": "สวัสดี {x}", "zh": "你好", "kind": "speech"}]
-        a = captions.ass(ls, "both", 1920, 1080)
-        events = [l for l in a.splitlines() if l.startswith("Dialogue")]
-        self.assertEqual(len(events), 2)
-        self.assertIn("ZH", events[0])
-        th_margin = int(events[1].split(",")[7])
-        self.assertGreater(th_margin, 1080 * 0.06)                  # above the Chinese line
-        self.assertNotIn("{x}", a)                                    # braces can't inject ASS tags
-        top = captions.ass(ls, "zh", 1080, 1920, {"position": "top"})
-        self.assertIn(",8,", top.split("Style: ZH", 1)[1].splitlines()[0])
+
+
+class Style(unittest.TestCase):
+    def test_theme_then_your_changes(self):
+        st = style.merged({"theme": "pink", "size": 1.4})
+        self.assertEqual(st["zh_font"], "Yuanti TC")            # from the theme
+        self.assertEqual(st["size"], 1.4)                       # your change wins
+        self.assertEqual(style.merged({"theme": "nope"})["zh_font"], style.DEFAULT["zh_font"])
+
+    def test_caption_block_order_and_position(self):
+        line = {"th": "สวัสดี", "zh": "你好", "kind": "speech"}
+        b = style.caption_block(line, "both", 1920, 1080, style.merged({}))
+        self.assertEqual([r["text"] for r in b["rows"]], ["สวัสดี", "你好"])
+        self.assertEqual((b["anchor"], b["y"]), ("bottom", 0.94))
+        self.assertAlmostEqual(b["rows"][1]["size"], 1080 * 0.058, places=0)
+        top = style.caption_block(line, "zh", 1080, 1920, style.merged({"position": "top", "order": "zh_above"}))
+        self.assertEqual(([r["text"] for r in top["rows"]], top["anchor"]), (["你好"], "top"))
+        self.assertIsNone(style.caption_block({"th": "", "zh": ""}, "both", 1920, 1080, style.merged({})))
+
+    def test_timeline_merges_touches_and_lines(self):
+        lines = [{"start": 1, "end": 3, "th": "ก", "zh": "甲"}, {"start": 5, "end": 6, "th": "ข", "zh": ""}]
+        touches = [{"start": 2, "end": 5.5, "text": "💗"}]
+        spans = style.timeline(lines, touches, "zh")                 # line 2 has no Chinese: not shown
+        shown = [(a, b, sorted(k for k, _ in on)) for a, b, on in spans]
+        self.assertEqual(shown, [(0.0, 1, []), (1, 2, ["line"]), (2, 3, ["line", "touch"]), (3, 5.5, ["touch"])])
 
 
 class Junk(unittest.TestCase):

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import brain, fetch, jobs, media, memory, paths
+from . import brain, fetch, jobs, media, memory, models, paths, style
 
 PORT = int(os.environ.get("AC_PORT", 8771))
 HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
@@ -156,13 +156,127 @@ def helper_picture(jid: str, name: str):
 class ExportIn(BaseModel):
     srt: bool = True
     burn: str = "zh"          # zh | both | th | none
-    size: float = 1.0
-    position: str = "bottom"
 
 
 @app.post("/api/jobs/{jid}/export")
 def export(jid: str, body: ExportIn):
-    return jobs.export(jid, body.srt, body.burn, {"size": max(0.6, min(1.6, body.size)), "position": body.position})
+    return jobs.export(jid, body.srt, body.burn)
+
+
+class StyleIn(BaseModel):
+    style: dict
+    as_default: bool = False
+
+
+@app.post("/api/jobs/{jid}/style")
+def set_style(jid: str, body: StyleIn):
+    return jobs.set_style(jid, body.style, body.as_default)
+
+
+class NewLineIn(BaseModel):
+    start: float
+    end: float | None = None
+    th: str = ""
+    zh: str = ""
+
+
+@app.post("/api/jobs/{jid}/lines")
+def add_line(jid: str, body: NewLineIn):
+    return jobs.add_line(jid, body.start, body.end, body.th, body.zh)
+
+
+@app.delete("/api/jobs/{jid}/lines/{lid}")
+def delete_line(jid: str, lid: int):
+    jobs.delete_line(jid, lid)
+    return {"ok": True}
+
+
+class RangeIn(BaseModel):
+    start: float
+    end: float
+    note: str = ""
+
+
+@app.post("/api/jobs/{jid}/review")
+def review(jid: str, body: RangeIn):
+    jobs.review_range(jid, body.start, body.end, body.note)
+    return jobs.load(jid)
+
+
+@app.get("/api/jobs/{jid}/touches")
+def get_touches(jid: str):
+    return jobs.touches(jid)
+
+
+@app.post("/api/jobs/{jid}/touches")
+def add_touch(jid: str, body: dict):
+    return jobs.add_touch(jid, body)
+
+
+@app.post("/api/jobs/{jid}/touches/suggest")
+def suggest_touches(jid: str):
+    jobs.suggest_touches(jid)
+    return jobs.load(jid)
+
+
+@app.patch("/api/jobs/{jid}/touches/{tid}")
+def edit_touch(jid: str, tid: str, body: dict):
+    return jobs.edit_touch(jid, tid, body)
+
+
+@app.delete("/api/jobs/{jid}/touches/{tid}")
+def remove_touch(jid: str, tid: str):
+    jobs.remove_touch(jid, tid)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- settings: models and default style
+
+@app.get("/api/settings")
+def get_settings():
+    s = paths.load_settings()
+    return {
+        "listen_model": models.listen_key(), "claude_model": models.claude_model(),
+        "listen_models": [{"key": k, **{x: v[x] for x in ("label", "about")}, "ready": models.is_ready(k)}
+                          for k, v in models.LISTEN.items()],
+        "claude_models": [{"key": k, **v} for k, v in models.CLAUDE.items()],
+        "style": style.merged(s.get("style")), "style_default": style.DEFAULT,
+        "themes": [{"key": k, "label": v["label"], "style": style.merged({"theme": k})} for k, v in style.THEMES.items()],
+        "fonts": _fonts(),
+    }
+
+
+_font_cache = {}
+
+
+def _fonts():
+    if "f" not in _font_cache:
+        try:
+            _font_cache["f"] = style.available_fonts()
+        except Exception:
+            _font_cache["f"] = {"zh": [{"family": f, "label": l} for f, l in style.ZH_FONTS[:3]],
+                                "th": [{"family": f, "label": l} for f, l in style.TH_FONTS[:2]]}
+    return _font_cache["f"]
+
+
+class SettingsIn(BaseModel):
+    listen_model: str | None = None
+    claude_model: str | None = None
+
+
+@app.post("/api/settings")
+def set_settings(body: SettingsIn):
+    ch = {}
+    if body.listen_model:
+        if body.listen_model not in models.LISTEN:
+            raise ValueError("Unknown listening model.")
+        ch["listen_model"] = body.listen_model
+    if body.claude_model:
+        if body.claude_model not in models.CLAUDE:
+            raise ValueError("Unknown Claude model.")
+        ch["claude_model"] = body.claude_model
+    paths.save_settings(ch)
+    return get_settings()
 
 
 # ---------------------------------------------------------------- memory

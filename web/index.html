@@ -14,6 +14,7 @@
   </button>
   <div class="top-title" id="topTitle"></div>
   <button class="ghost" id="openMemory" type="button">What it has learned <span class="count" id="memCount"></span></button>
+  <button class="ghost" id="openSettings" type="button">Models</button>
 </header>
 
 <!-- ============================================================ start -->
@@ -74,13 +75,35 @@
   <section class="stage">
     <div class="player" id="player">
       <video id="video" controls playsinline preload="metadata"></video>
-      <div class="overlay" id="overlay" aria-hidden="true"><div class="ov-th" id="ovTh"></div><div class="ov-zh" id="ovZh"></div></div>
+      <div class="overlay" id="overlay"><div class="ov-box" id="ovBox"><div class="ov-row" id="ovA"></div><div class="ov-row" id="ovB"></div></div></div>
+      <div class="touch-layer" id="touchLayer"></div>
     </div>
     <div class="view-opts">
       <span class="muted">On the video:</span>
       <label><input type="radio" name="show" value="both" checked> 中文 + Thai</label>
       <label><input type="radio" name="show" value="zh"> 中文</label>
       <label><input type="radio" name="show" value="th"> Thai</label>
+      <span class="muted drag-hint" id="dragHint">Pause to drag emoji around, or the captions when “Where” is “Drag it”.</span>
+    </div>
+
+    <div class="tools" id="tools">
+      <button class="secondary" type="button" id="addLineHere">+ Caption at <span class="now-t">0:00.0</span></button>
+      <button class="secondary" type="button" id="addTouchHere">+ Emoji or note at <span class="now-t">0:00.0</span></button>
+      <button class="secondary" type="button" id="markRange">Fix a stretch…</button>
+    </div>
+    <div class="range-box" id="rangeBox" hidden>
+      <p class="range-help">Mark a part it got wrong or skipped (English talking, two people at once…). It listens to just that part again, several ways, and rewrites those lines using your note.</p>
+      <div class="range-ends">
+        <button class="secondary" type="button" id="rangeFrom">From here</button>
+        <span class="range-t" id="rangeT">–</span>
+        <button class="secondary" type="button" id="rangeTo">To here</button>
+        <button class="ghost" type="button" id="rangePlay">Play it</button>
+      </div>
+      <input class="field" id="rangeNote" placeholder="What's wrong here? e.g. they speak English and nothing showed up">
+      <div class="range-actions">
+        <button class="primary" type="button" id="rangeGo" disabled>Listen again and fix</button>
+        <button class="ghost" type="button" id="rangeCancel">Cancel</button>
+      </div>
     </div>
 
     <div class="status" id="status">
@@ -89,6 +112,73 @@
       <p class="error" id="jobError" role="alert"></p>
       <button class="secondary" id="retry" type="button" hidden>Try again</button>
     </div>
+
+    <details class="panel" id="stylePanel">
+      <summary>Caption style</summary>
+      <div class="panel-body style-body">
+        <div class="themes" id="themes" role="radiogroup" aria-label="Themes"></div>
+        <div class="grid2">
+          <label>中文 font<select class="field" data-st="zh_font" id="zhFont"></select></label>
+          <label>Thai font<select class="field" data-st="th_font" id="thFont"></select></label>
+          <label>Size <output data-out="size"></output><input type="range" data-st="size" min="0.6" max="1.8" step="0.05"></label>
+          <label>Thai size <output data-out="th_scale"></output><input type="range" data-st="th_scale" min="0.5" max="1" step="0.02"></label>
+          <label>Outline <output data-out="outline"></output><input type="range" data-st="outline" min="0" max="0.2" step="0.01"></label>
+          <label>Shadow <output data-out="shadow"></output><input type="range" data-st="shadow" min="0" max="0.3" step="0.01"></label>
+        </div>
+        <div class="colors">
+          <label><input type="color" data-st="color"> 中文</label>
+          <label><input type="color" data-st="th_color"> Thai</label>
+          <label><input type="color" data-st="outline_color"> Outline</label>
+          <label><input type="checkbox" data-st="bold"> Bold</label>
+          <label><input type="checkbox" data-st="box"> Dark box behind</label>
+        </div>
+        <div class="opt-row">
+          <span>Where</span>
+          <label><input type="radio" name="st-position" value="bottom"> Bottom</label>
+          <label><input type="radio" name="st-position" value="top"> Top</label>
+          <label><input type="radio" name="st-position" value="custom"> Drag it</label>
+        </div>
+        <div class="opt-row">
+          <span>Order</span>
+          <label><input type="radio" name="st-order" value="th_above"> Thai above 中文</label>
+          <label><input type="radio" name="st-order" value="zh_above"> 中文 above Thai</label>
+        </div>
+        <p class="muted small">Videos that already have subtitles at the bottom: choose Top.</p>
+        <div class="style-actions">
+          <button class="secondary" type="button" id="styleDefault">Use for all new videos</button>
+          <button class="ghost" type="button" id="styleReset">Back to default</button>
+          <span class="muted small" id="styleSaved"></span>
+        </div>
+      </div>
+    </details>
+
+    <details class="panel" id="touchPanel">
+      <summary>Emoji and notes on the video <span class="count" id="touchCount"></span></summary>
+      <div class="panel-body">
+        <p class="muted small">For moments the captions can't carry: (臉紅)💗, (偷笑)🤭, a name tag… Pause and drag them where you want.</p>
+        <button class="secondary" type="button" id="suggestTouches">Let Claude suggest some</button>
+        <div class="touch-edit" id="touchEdit" hidden>
+          <input class="field" id="teText" placeholder="Emoji or a few words">
+          <div class="emoji-pick" id="emojiPick"></div>
+          <div class="grid2">
+            <label>Size <output id="teSizeOut"></output><input type="range" id="teSize" min="0.5" max="3.5" step="0.1"></label>
+            <label>Shows for <output id="teDurOut"></output><input type="range" id="teDur" min="0.5" max="10" step="0.5"></label>
+          </div>
+          <div class="colors">
+            <label><input type="radio" name="te-kind" value="plain"> Outlined</label>
+            <label><input type="radio" name="te-kind" value="bubble"> White bubble</label>
+            <label><input type="color" id="teColor"> Text</label>
+            <label><input type="color" id="teOutline"> Outline</label>
+          </div>
+          <div class="style-actions">
+            <button class="ghost" type="button" id="teStartHere">Start here</button>
+            <button class="ghost" type="button" id="teDelete">Delete</button>
+            <button class="secondary" type="button" id="teDone">Done</button>
+          </div>
+        </div>
+        <ul class="touch-list" id="touchList"></ul>
+      </div>
+    </details>
 
     <details class="panel" id="exportPanel" open>
       <summary>Save captions</summary>
@@ -99,17 +189,7 @@
           <label><input type="radio" name="burn" value="both"> 中文 + Thai</label>
           <label><input type="radio" name="burn" value="none"> Don't</label>
         </div>
-        <div class="opt-row">
-          <span>Where</span>
-          <label><input type="radio" name="pos" value="bottom" checked> Bottom</label>
-          <label><input type="radio" name="pos" value="top"> Top (the video already has subtitles at the bottom)</label>
-        </div>
-        <div class="opt-row">
-          <span>Size</span>
-          <input type="range" id="size" min="0.7" max="1.5" step="0.05" value="1">
-          <span class="muted" id="sizeVal">100%</span>
-        </div>
-        <p class="muted">SRT files (Thai, Chinese, both) are always saved too. They go to <span id="outDir">~/Movies/AutoCaption</span>.</p>
+        <p class="muted">Uses the caption style above and the emoji and notes you kept. SRT files (Thai, Chinese, both) are always saved too. They go to <span id="outDir">~/Movies/AutoCaption</span>.</p>
         <button class="primary" id="export" type="button">Save</button>
         <ul class="exports" id="exports"></ul>
       </div>
@@ -182,6 +262,18 @@
   </div>
 </dialog>
 
+<dialog id="settings" class="memory">
+  <form method="dialog" class="mem-head">
+    <h2>Models</h2>
+    <button class="ghost" value="close" aria-label="Close">Close</button>
+  </form>
+  <h3>Listening (speech to text, on your Mac)</h3>
+  <div class="model-list" id="listenModels" role="radiogroup" aria-label="Listening model"></div>
+  <h3>Tidying, translating, checking and fixing (Claude)</h3>
+  <div class="model-list" id="claudeModels" role="radiogroup" aria-label="Claude model"></div>
+  <p class="muted small" id="modelNote">New choices apply to the next video you start, and to fixes and redos from now on.</p>
+</dialog>
+
 <template id="lineTpl">
   <li class="line">
     <button class="time" type="button"></button>
@@ -211,6 +303,7 @@
         <button type="button" data-t="end+">End +0.2s</button>
       </div>
       <div class="flag-actions">
+        <button type="button" class="delline">Delete this line</button>
         <button type="button" class="unflag">Not wrong</button>
       </div>
     </div>

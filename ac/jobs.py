@@ -22,7 +22,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import brain, captions, fetch, media, memory, paths
+from . import brain, captions, fetch, media, memory, models, paths, style
 
 _locks = {}
 _gpu = threading.Semaphore(1)        # one Whisper / Demucs run at a time
@@ -161,7 +161,9 @@ def _new_job(title, about="", clean_voice=False, fast=False, **fields):
     (paths.JOBS / jid / "helpers").mkdir(parents=True)
     job = {"id": jid, "title": title, "about": (about or "").strip(), "created": time.time(), "updated": time.time(),
            "state": "fetching", "busy": True, "label": "Starting", "progress": None, "error": None,
-           "options": {"clean_voice": bool(clean_voice), "fast": bool(fast)}, "info": {}, "media": {}, "helpers": [],
+           "options": {"clean_voice": bool(clean_voice), "fast": bool(fast), "listen_model": models.listen_key(),
+                       "claude_model": models.claude_model()},
+           "style": paths.load_settings().get("style") or {}, "info": {}, "media": {}, "helpers": [],
            "activity": [], "exports": [], "learned": [], "lines_rev": 0, **fields}
     save(job)
     return load(jid)
@@ -249,9 +251,7 @@ def _mmss(s):
 def _sub(jid, args, label, weight=(0, 1)):
     """Run a python -m step, pass its progress to the page, return its last message."""
     a, b = weight
-    env = dict(os.environ)
-    if (load(jid).get("options") or {}).get("fast"):
-        env["AC_WHISPER"] = paths.WHISPER_FAST
+    env = {**os.environ, "AC_WHISPER": _whisper(jid)}
     p = subprocess.Popen([sys.executable, "-m", *args], cwd=str(paths.ROOT), stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL, text=True, env=env)
     last = {}
@@ -267,6 +267,15 @@ def _sub(jid, args, label, weight=(0, 1)):
     if last.get("error") or p.returncode != 0:
         raise JobError(last.get("error") or f"{label} stopped unexpectedly.")
     return last
+
+
+def _whisper(jid):
+    """The listening model for this video, made ready (Thai-tuned ones are converted once)."""
+    opts = load(jid).get("options") or {}
+    key = "whisper-turbo" if opts.get("fast") else (opts.get("listen_model") or models.listen_key())
+    if not models.is_ready(key) and "hf" in models.LISTEN.get(key, {}):
+        update(jid, label=f"Getting {models.LISTEN[key]['label']} ready (one time, a few minutes)", progress=None)
+    return models.mlx_path(key)
 
 
 def _listen(jid, wav, hint, out_name="segments.json"):
@@ -663,7 +672,7 @@ def _safe(name):
     return name.strip(" .-|,") or "captions"
 
 
-def export(jid, srt=True, burn="zh", style=None):
+def export(jid, srt=True, burn="zh"):
     job = load(jid)
     if job.get("busy"):
         raise JobError("Wait for the current step to finish first.")
@@ -681,20 +690,221 @@ def export(jid, srt=True, burn="zh", style=None):
             files.append({"kind": f"srt-{which}", "path": str(p)})
     update(jid, exports=files, export_folder=str(folder))
     if burn in ("zh", "both", "th"):
-        _begin(jid, "burning", "Burning captions into the video", )
-        _run(jid, _burn_job, burn, style or {}, folder, base, files)
+        _begin(jid, "burning", "Drawing the captions")
+        _run(jid, _burn_job, burn, folder, base, files)
     return load(jid)
 
 
-def _burn_job(jid, which, style, folder, base, files):
+def _burn_job(jid, which, folder, base, files):
     job = load(jid)
     d = job_dir(jid)
     m = job["media"]
-    ass_file = d / "burn.ass"
-    ass_file.write_text(captions.ass(lines(jid), which, m.get("width"), m.get("height"), style), encoding="utf-8")
+    frames_dir = d / "frames"
+    shutil.rmtree(frames_dir, ignore_errors=True)
+    kept = [t for t in touches(jid) if not t.get("pending")]
+    lst = style.frames(lines(jid), kept, which, m.get("width") or 1920, m.get("height") or 1080, job.get("style"),
+                       frames_dir, lambda p: update(jid, progress=round(p, 3)))
+    update(jid, label="Burning captions into the video", progress=0)
     label = {"zh": "中文字幕", "both": "中泰字幕", "th": "Thai captions"}[which]
     out = folder / f"{base} ({label}).mp4"
-    media.burn(d / job["source"], ass_file, out, m.get("duration"), lambda p: update(jid, progress=round(p, 3)))
+    media.burn(d / job["source"], lst, out, m.get("duration"), lambda p: update(jid, progress=round(p, 3)))
+    shutil.rmtree(frames_dir, ignore_errors=True)
     files = files + [{"kind": f"video-{which}", "path": str(out)}]
     update(jid, busy=False, state="ready", label="", progress=None, exports=files)
     log(jid, f"Saved the captioned video to {str(out).replace(str(Path.home()), '~')}.", "done")
+
+
+# ---------------------------------------------------------------- style and touches
+
+def set_style(jid, st, as_default=False):
+    st = {k: v for k, v in (st or {}).items() if k in style.DEFAULT}
+    update(jid, style=st)
+    if as_default:
+        paths.save_settings({"style": st})
+    return load(jid)
+
+
+def touches(jid):
+    f = job_dir(jid) / "touches.json"
+    return json.loads(f.read_text()) if f.exists() else []
+
+
+def _save_touches(jid, ts):
+    d = job_dir(jid)
+    with _lock(jid):
+        ts.sort(key=lambda t: t["start"])
+        tmp = d / "touches.json.tmp"
+        tmp.write_text(json.dumps(ts, ensure_ascii=False, indent=0))
+        tmp.replace(d / "touches.json")
+        job = load(jid)
+        job["touches_rev"] = job.get("touches_rev", 0) + 1
+        save(job)
+    return ts
+
+
+TOUCH_FIELDS = {"start", "end", "text", "x", "y", "size", "kind", "color", "outline_color", "font", "pending"}
+
+
+def _clean_touch(t):
+    t = {k: v for k, v in t.items() if k in TOUCH_FIELDS}
+    for k, lo, hi in (("x", 0.02, 0.98), ("y", 0.02, 0.98), ("size", 0.4, 4.0)):
+        if k in t:
+            t[k] = max(lo, min(hi, float(t[k])))
+    if "start" in t:
+        t["start"] = round(max(0.0, float(t["start"])), 3)
+    if "end" in t:
+        t["end"] = round(float(t["end"]), 3)
+    return t
+
+
+def add_touch(jid, t):
+    t = {**style.TOUCH_DEFAULT, "x": 0.8, "y": 0.2, **_clean_touch(t), "id": uuid.uuid4().hex[:8]}
+    if not (t.get("text") or "").strip():
+        raise JobError("Type an emoji or a few words first.")
+    t["end"] = max(t.get("end") or 0, t["start"] + 0.3)
+    ts = touches(jid)
+    ts.append(t)
+    _save_touches(jid, ts)
+    return t
+
+
+def edit_touch(jid, tid, changes):
+    ts = touches(jid)
+    t = next((x for x in ts if x["id"] == tid), None)
+    if not t:
+        raise JobError("That touch is gone.")
+    t.update(_clean_touch(changes))
+    if t["end"] <= t["start"]:
+        t["end"] = round(t["start"] + 0.5, 3)
+    _save_touches(jid, ts)
+    return t
+
+
+def remove_touch(jid, tid):
+    _save_touches(jid, [t for t in touches(jid) if t["id"] != tid])
+
+
+# ---------------------------------------------------------------- lines you add yourself
+
+def add_line(jid, start, end=None, th="", zh=""):
+    with _lock(jid):
+        ls = lines(jid)
+        start = round(max(0.0, float(start)), 3)
+        end = round(float(end) if end else start + 2.0, 3)
+        nxt = min((l["start"] for l in ls if l["start"] > start), default=None)
+        if end is None or (nxt is not None and end > nxt and nxt - start > 0.5):
+            end = round(nxt - 0.04, 3)
+        new = {"id": max((l["id"] for l in ls), default=0) + 1, "start": start, "end": max(end, start + 0.5),
+               "th": (th or "").strip(), "zh": (zh or "").strip(), "conf": 1.0, "kind": "speech", "flag": None,
+               "note": "", "status": "edited"}
+        ls.append(new)
+        ls.sort(key=lambda l: l["start"])
+        save_lines(jid, ls)
+        return new
+
+
+def delete_line(jid, lid):
+    with _lock(jid):
+        ls = lines(jid)
+        if not any(l["id"] == lid for l in ls):
+            raise JobError("That line is gone.")
+        save_lines(jid, [l for l in ls if l["id"] != lid])
+
+
+# ---------------------------------------------------------------- a stretch of the video, with your note
+
+def review_range(jid, start, end, note):
+    start, end = max(0.0, float(start)), float(end)
+    if end - start < 0.5:
+        raise JobError("Mark a stretch of at least half a second (From here / To here).")
+    if end - start > 180:
+        raise JobError("Mark at most 3 minutes at a time.")
+    _begin(jid, "reviewing", f"Listening again to {_mmss(start)}–{_mmss(end)}")
+    _run(jid, _review_job, start, end, (note or "").strip())
+
+
+def _review_job(jid, start, end, note):
+    d = job_dir(jid)
+    rd = d / "relisten"
+    shutil.rmtree(rd, ignore_errors=True)
+    rd.mkdir()
+    a, b = max(0.0, start - 0.4), end + 0.4
+    clip = rd / "range_orig.wav"           # _voice_windows looks for <id>_orig.wav
+    media.cut_wav(d / "audio.wav", clip, a, b)
+    main = _whisper(jid)
+    other = "mlx-community/whisper-large-v3-mlx" if "large-v3-mlx" not in main else "mlx-community/whisper-large-v3-turbo"
+    hint = memory.whisper_hint()
+    plan = [{"how": "listened again (Thai)", "wav": str(clip), "model": main, "language": "th"},
+            {"how": "listened again, any language", "wav": str(clip), "model": main, "language": None},
+            {"how": "another model, any language", "wav": str(clip), "model": other, "language": None}]
+    try:
+        _step(jid, "reviewing", "Taking the music away from that stretch")
+        voice = _voice_windows(jid, [("range", a, b)])[0]
+        plan.append({"how": "the voice with the music removed (Thai)", "wav": str(voice), "model": main, "language": "th"})
+    except Exception as e:
+        log(jid, f"Couldn't remove the music for this stretch ({e}).", "warn")
+    for p in plan:
+        p.update(hint=hint, temperature=0.0, timed=True, offset=a)
+    (rd / "plan.json").write_text(json.dumps(plan, ensure_ascii=False))
+    _step(jid, "reviewing", f"Listening again to {_mmss(start)}–{_mmss(end)}", 0)
+    with _gpu:
+        _sub(jid, ["ac.relisten", str(rd / "plan.json"), str(rd / "out.json")], "Listening again")
+    results = json.loads((rd / "out.json").read_text())
+    attempts = [{"how": p["how"], "segments": r} for p, r in zip(plan, results) if r]
+
+    _step(jid, "reviewing", "Claude is rebuilding that stretch")
+    ls = lines(jid)
+    inside = [l for l in ls if l["end"] > start and l["start"] < end]
+    keep = [l for l in inside if locked(l)]
+    r = brain.rebuild(load(jid), ls, start, end, inside, keep, attempts, note)
+    next_id = max((l["id"] for l in ls), default=0) + 1
+    new = []
+    for x in r["lines"]:
+        s0, e0 = round(max(start - 0.4, float(x["start"])), 3), round(min(end + 0.4, float(x["end"])), 3)
+        if e0 <= s0 or not (x.get("th") or x.get("zh")):
+            continue
+        guess = bool(x.get("unsure"))
+        new.append({"id": next_id, "start": s0, "end": e0, "th": x.get("th", "").strip(), "zh": x.get("zh", "").strip(),
+                    "conf": 0.3 if guess else 1.0, "kind": x.get("kind") or "speech", "flag": None, "note": "",
+                    "status": "auto" if guess else "fixed", "explain": r.get("explain", ""), "reviewed": True,
+                    # your note made these; a guessed line stays open to the self-check and redo
+                    **({} if guess else {"feedback": note or ""})})
+        next_id += 1
+    gone = {l["id"] for l in inside if not locked(l)}
+    ls = [l for l in ls if l["id"] not in gone] + new
+    save_lines(jid, captions.fix_timing(ls))
+    if note:
+        added = memory.learn(r.get("lessons"), source=load(jid).get("title", ""))
+        if added:
+            log(jid, "Learned for next time: " + "; ".join(x.get("rule") or f"{x.get('th')} → {x.get('zh')}" for x in added), "learn")
+    update(jid, busy=False, state="ready", label="", progress=None)
+    log(jid, f"Rebuilt {_mmss(start)}–{_mmss(end)}: {len(gone)} old lines → {len(new)} new. " + (r.get("explain") or ""), "done")
+
+
+# ---------------------------------------------------------------- cute touches, suggested by Claude
+
+def suggest_touches(jid):
+    _begin(jid, "touches", "Looking at the video for moments worth a touch")
+    _run(jid, _suggest_job)
+
+
+def _suggest_job(jid):
+    job = load(jid)
+    d = job_dir(jid)
+    sheets_dir = d / "sheets"
+    shutil.rmtree(sheets_dir, ignore_errors=True)
+    dur = job["media"].get("duration") or 0
+    every = max(2, min(10, round(dur / 120)))
+    sheets = media.contact_sheets(d / job["source"], sheets_dir, every)
+    _step(jid, "touches", "Claude is picking moments for emoji and notes")
+    r = brain.suggest_touches(job, lines(jid), sheets, every)
+    ts = touches(jid)
+    ts = [t for t in ts if not t.get("pending")]          # a new round replaces the old suggestions
+    for x in r["touches"]:
+        t = _clean_touch({**x, "pending": True})
+        t["end"] = max(t.get("end", 0), t["start"] + 1.0)
+        ts.append({**style.TOUCH_DEFAULT, **t, "why": x.get("why", ""), "id": uuid.uuid4().hex[:8]})
+    _save_touches(jid, ts)
+    shutil.rmtree(sheets_dir, ignore_errors=True)
+    update(jid, busy=False, state="ready", label="", progress=None)
+    log(jid, f"Suggested {len(r['touches'])} touches. Keep the ones you like.", "done")

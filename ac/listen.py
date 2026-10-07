@@ -67,9 +67,9 @@ def _junk(seg, text):
     return False
 
 
-def _decode(piece, offset, end, model, hint, temps):
+def _decode(piece, offset, end, model, hint, temps, language="th"):
     import mlx_whisper
-    r = mlx_whisper.transcribe(piece, path_or_hf_repo=model, language="th", task="transcribe",
+    r = mlx_whisper.transcribe(piece, path_or_hf_repo=model, language=language, task="transcribe",
                                word_timestamps=True, verbose=None, temperature=temps,
                                condition_on_previous_text=False, initial_prompt=hint or None)
     out = []
@@ -100,7 +100,7 @@ def transcribe(wav, hint="", temperature=None, vad=True):
     total = len(audio) / SR
     parts = speech_parts(audio) if vad else [[0.0, total]]
     temps = (0.0, 0.4) if temperature is None else (temperature, min(1.0, temperature + 0.3))
-    other = OTHER_MODEL.get(paths.WHISPER)
+    other = OTHER_MODEL.get(paths.WHISPER, "mlx-community/whisper-large-v3-mlx")
     out, done = [], 0.0
     work = sum(e - s for s, e in parts) or 1
     for s, e in parts:
@@ -109,12 +109,14 @@ def transcribe(wav, hint="", temperature=None, vad=True):
             continue
         segs = _decode(piece, s, e, paths.WHISPER, hint, temps)
         # The voice detector heard talking but almost nothing came back: Whisper sometimes
-        # drops a whole stretch. Listen again more loosely, then with the other model.
+        # drops a whole stretch, and told "this is Thai" it often drops English entirely.
+        # Listen again: letting it pick the language, more loosely, then with the other model.
         if e - s > 2.5 and _coverage(segs, e - s) < 0.3:
-            for model, t in ((paths.WHISPER, (0.3, 0.6)), (other, (0.0, 0.4))):
+            for model, t, lang in ((paths.WHISPER, (0.0, 0.4), None), (paths.WHISPER, (0.3, 0.6), "th"),
+                                   (other, (0.0, 0.4), None)):
                 if not model:
                     continue
-                again = _decode(piece, s, e, model, hint, t)
+                again = _decode(piece, s, e, model, hint, t, lang)
                 if _coverage(again, e - s) > _coverage(segs, e - s) + 0.15:
                     segs = again
                 if _coverage(segs, e - s) >= 0.3:

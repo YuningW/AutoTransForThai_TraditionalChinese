@@ -12,7 +12,7 @@ import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
-from . import memory, paths
+from . import memory, models, paths
 
 CHUNK = 90          # lines per request; long videos run several requests side by side
 
@@ -35,7 +35,7 @@ def _ask(system, prompt, schema, cwd, images, effort, timeout):
     exe = paths.claude()
     if not exe:
         raise BrainError("The Claude command-line tool isn't installed. Install Claude Code, then sign in once in Terminal with: claude")
-    args = [exe, "-p", "--model", paths.CLAUDE_MODEL, "--output-format", "json",
+    args = [exe, "-p", "--model", models.claude_model(), "--output-format", "json",
             "--system-prompt", system, "--json-schema", json.dumps(schema),
             "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence",
             "--disable-slash-commands"]
@@ -150,6 +150,7 @@ hear the audio: change words only when you have a real reason. Good reasons:
 silence or music (for example "ขอบคุณที่รับชม", "ซับไตเติ้ลโดย..."), English words written in Thai letters \
 where the speaker said English, or a word that makes no sense where a similar-sounding word does.
 Keep the speaker's own style: slang, particles (นะ, ค่ะ, ครับ, อ่ะ, ปะ), English mixed in. Don't make it formal.
+When someone speaks English, keep it in English letters as said; don't turn it into Thai.
 Keep every line id and return every line. Don't merge or split lines: timing comes from the audio. You may move a word or two across the boundary between neighbouring lines when a line clearly ends with the start of the next sentence (for example a question's ending stuck to the start of the answer).
 kind: "speech" for talking; "song" when the line is lyrics being sung; "sound" when there are no real \
 words (laughing, music, noise). For "sound" lines put a short Thai-free description in th like "(笑)" or "♪".
@@ -190,7 +191,7 @@ Keep each line's meaning in that line so it matches the timing; you may move a w
 lines when Thai and Chinese word order differ. Keep the tone (teasing, polite, shy, angry). Subtitle punctuation: no 。 at the end of a line; ？ and ！ are fine. \
 Names: keep people's nicknames as the user's memory spells them; otherwise use the common fandom \
 spelling, or keep the Thai nickname in Latin letters (e.g. Milk, Love) when unsure. \
-Lines with kind "song" are sung lyrics: don't translate them, write "♪" (the user can type their own). \
+Lines in English (or mixed) get translated into Chinese too. Lines with kind "song" are sung lyrics: don't translate them, write "♪" (the user can type their own). \
 Lines with kind "sound": a short bracketed note like "（笑）" or "（音樂）", or "" if nothing is worth showing. \
 Follow the user's memory rules; they win over these defaults. \
 If a reference translation from the user is given, use it as the main guide: keep its wording where it \
@@ -273,7 +274,7 @@ typed the correct text, use it.
 You may also return a context line (by its id) when this fix makes it wrong too: a word split across the two lines, or a neighbour whose translation no longer fits. Return only lines you looked at.
 explain is shown to the user: one short plain sentence about what changed and why. Call the earlier text "the old line" (it came from the automatic first pass); never say "you" or "your" for it.
 lessons: what the user's feedback teaches that should apply to FUTURE videos too, written as short \
-instructions. Only from user notes, not from your own guesses. Types: "name" (a person's name and how to \
+instructions. Only from what the user's notes say, never from your own guesses (not a title or spelling you inferred). Types: "name" (a person's name and how to \
 write it in Thai and Chinese), "word" (a Thai word/phrase and the Chinese the user wants), "style" (a general \
 translation or captioning rule). Skip lessons that only fit this one line."""
 
@@ -308,3 +309,82 @@ def fix(job, lines, targets, relistened):
         f"Memory (learned from earlier feedback):\n{mem}" if mem else "",
         "Lines to fix (one JSON object each):\n" + "\n".join(blocks)) if x)
     return ask(FIX_SYSTEM, prompt, FIX_SCHEMA, job["dir"], effort="high")
+
+
+# ---------------------------------------------------------------- rebuild a stretch you marked
+
+REBUILD_SYSTEM = """You rebuild the captions for one stretch of a Thai video that the user marked, usually \
+because lines were skipped, misheard, or badly split. You cannot hear the audio. You get several fresh \
+transcripts of the stretch from speech recognisers, each with timed segments (some in Thai, some letting the \
+recogniser pick the language, which catches English that a Thai-only pass drops), the old captions, the \
+conversation around it, and the user's note, which matters most.
+Write the captions for the whole stretch from scratch: original-language text (Thai, or English as spoken) and \
+Traditional Chinese (Taiwan usage, no 。 at line ends). Take start/end times from the transcript segments (you may \
+split a segment's time in proportion to its text); keep each line short enough to read (about 34 Thai letters, \
+under 6 seconds). Lines marked "keep" were written by the user: don't repeat or change them, write around them.
+unsure: true on any line where you had to guess (a name, a title, words none of the transcripts agree on), \
+so the user checks it. explain: one plain sentence for the user about what changed.
+lessons: only what the user's note itself says that applies to future videos (types name / word / style), else \
+empty. Never turn your own guesses into lessons (not a title you think it was, not a spelling you inferred)."""
+
+REBUILD_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["lines", "explain", "lessons"], "properties": {
+    "lines": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+              "required": ["start", "end", "th", "zh"], "properties": {
+                  "start": {"type": "number"}, "end": {"type": "number"}, "th": {"type": "string"},
+                  "zh": {"type": "string"}, "kind": {"type": "string", "enum": ["speech", "song", "sound"]},
+                  "unsure": {"type": "boolean"}}}},
+    "explain": {"type": "string"},
+    "lessons": FIX_SCHEMA["properties"]["lessons"]}}
+
+
+def rebuild(job, lines, start, end, inside, keep, attempts, note):
+    idx = [i for i, l in enumerate(lines) if l in inside]
+    i0 = idx[0] if idx else next((i for i, l in enumerate(lines) if l["start"] >= start), len(lines))
+    i1 = (idx[-1] + 1) if idx else i0
+    before, after = lines[max(0, i0 - 5):i0], lines[i1:i1 + 3]
+    mem = memory.prompt_text("both")
+    parts = [
+        _context(job),
+        f"Memory (learned from earlier feedback):\n{mem}" if mem else "",
+        f"The user marked {start:.1f}s to {end:.1f}s." + (f" Their note: \"{note}\"" if note else " No note."),
+        "Lines just before (context only):\n" + _lines_text(before, ("th", "zh")) if before else "",
+        "Old captions in the stretch:\n" + (_lines_text(inside, ("th", "zh")) or "(none: this part had no captions)"),
+        "Lines to keep exactly (the user's own):\n" + _lines_text(keep, ("th", "zh")) if keep else "",
+        "Fresh transcripts:\n" + "\n".join(json.dumps(a, ensure_ascii=False) for a in attempts) if attempts else
+        "Fresh transcripts: none came back (maybe music or silence).",
+        "Lines just after (context only):\n" + _lines_text(after, ("th", "zh")) if after else "",
+    ]
+    return ask(REBUILD_SYSTEM, "\n\n".join(x for x in parts if x), REBUILD_SCHEMA, job["dir"], effort="high")
+
+
+# ---------------------------------------------------------------- touches: emoji and little notes
+
+TOUCH_SYSTEM = """You add playful touches to a fan-made captioned video, the way Taiwanese and Thai fan editors \
+do: an emoji or a short Chinese note that shows what words can't, such as (臉紅)💗 when someone gets shy, \
+(偷笑)🤭, (尷尬)😅, 心動💓, 噗哧😂, ✨ on a cute moment, 👀 when someone sneaks a look, (無奈) for a sigh, \
+or a tiny name tag. You see contact sheets (frames labelled with their time) and the captions.
+Pick only moments that really earn one: about one every 20 to 40 seconds, fewer when nothing is happening. \
+Never repeat what the caption already says. Keep text very short (1–6 characters plus emoji).
+Place each touch where it fits on the frame without covering faces or the captions at the bottom: x and y \
+are fractions of the frame width and height (0,0 top-left), usually beside a person's head. \
+kind "bubble" puts it on a small white rounded label (good for name tags or short notes); "plain" is outlined text.
+start/end in seconds: show it for 1.5 to 4 seconds around the moment."""
+
+TOUCH_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["touches"], "properties": {
+    "touches": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+                "required": ["start", "end", "text", "x", "y", "kind", "why"], "properties": {
+                    "start": {"type": "number"}, "end": {"type": "number"}, "text": {"type": "string"},
+                    "x": {"type": "number"}, "y": {"type": "number"},
+                    "kind": {"type": "string", "enum": ["plain", "bubble"]},
+                    "why": {"type": "string", "description": "a few words: what happens at that moment"}}}}}}
+
+
+def suggest_touches(job, lines, sheets, every):
+    mem = memory.prompt_text("both")
+    prompt = "\n\n".join(x for x in (
+        _context(job),
+        f"Memory (the user's names and rules):\n{mem}" if mem else "",
+        f"Contact sheets: frames every {every} seconds, 16 per sheet, left to right then top to bottom; the yellow "
+        "label on each frame is its time.",
+        "Captions:\n" + _lines_text(lines, ("th", "zh"))) if x)
+    return ask(TOUCH_SYSTEM, prompt, TOUCH_SCHEMA, job["dir"], images=sheets, effort="high")

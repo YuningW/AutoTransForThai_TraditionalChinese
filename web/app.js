@@ -31,6 +31,7 @@ const STATE_WORDS = {
   fetching: "Downloading", preparing: "Reading the video", cleaning: "Removing music", listening: "Listening",
   reading: "Reading your screenshots", tidying: "Tidying the Thai", translating: "Translating", checking: "Checking itself",
   fixing: "Fixing your flags", redoing: "Redoing", burning: "Burning captions in", ready: "Ready to check",
+  reviewing: "Listening again to a stretch", touches: "Picking moments for emoji",
 };
 
 /* ============================================================ start view */
@@ -181,8 +182,10 @@ const video = $("#video");
 
 async function openJob(jid) {
   $("#startView").hidden = true; $("#jobView").hidden = false;
-  job = null; lines = []; linesRev = -1;
-  $("#lines").replaceChildren();
+  job = null; lines = []; linesRev = -1; touches = []; touchesRev = -1; selTouch = null;
+  $("#lines").replaceChildren(); $("#touchEdit").hidden = true; $("#rangeBox").hidden = true;
+  range.from = range.to = null;
+  if (!settings) await loadSettings().catch(() => {});
   video.removeAttribute("src"); video.load();
   await refresh(jid);
 }
@@ -193,12 +196,16 @@ async function refresh(jid) {
   try {
     const j = await api("GET", `/api/jobs/${jid}`);
     const firstVideo = !job || (!job.media?.duration && j.media?.duration);
+    const first = !job;
+    if (job && job.id === j.id) j.style = job.style;      // the page owns the style while you edit it
     job = j;
     renderJob();
+    if (first) { renderStylePanel(); placeOverlay(); }
+    if ((j.touches_rev || 0) !== touchesRev) await loadTouches();
     if (firstVideo && j.media?.duration) { video.src = `/api/jobs/${jid}/video`; }
     if (j.lines_rev !== linesRev) {
       if (editing()) dirtyWhileEditing = true;
-      else { lines = await api("GET", `/api/jobs/${jid}/lines`); linesRev = j.lines_rev; renderLines(); }
+      else { lines = await api("GET", `/api/jobs/${jid}/lines`); linesRev = j.lines_rev; renderLines(); renderRange(); }
     }
   } catch (ex) {
     $("#jobError").textContent = ex.message;
@@ -226,6 +233,10 @@ function renderJob() {
   $("#barFill").style.width = known ? `${Math.round(job.progress * 100)}%` : "0";
 
   $("#export").disabled = !!job.busy || !(job.counts && job.counts.lines);
+  const noVideo = !job.media?.duration;
+  ["#addLineHere", "#addTouchHere", "#markRange"].forEach(s => { $(s).disabled = noVideo; });
+  $("#suggestTouches").disabled = !!job.busy || !(job.counts && job.counts.lines);
+  if (!$("#rangeBox").hidden) renderRange();
   $("#fixNow").disabled = !!job.busy;
 
   // exports
@@ -306,6 +317,7 @@ function lineEl(l, flagOpen) {
   const why = $(".why", li);
   const bits = [];
   if (l.status === "fixed" && l.explain) bits.push(`<b>Fixed:</b> ${esc(l.explain)}`);
+  else if (l.reviewed && l.explain) bits.push(`<b class="guess">It guessed here, please check:</b> ${esc(l.explain)}`);
   if (l.feedback) bits.push(`Your note: “${esc(l.feedback)}”`);
   if (l.th_before && l.th_before !== l.th) bits.push(`Before: <span class="heard">${esc(l.th_before)}</span>${l.zh_before ? " / " + esc(l.zh_before) : ""}`);
   else if (l.zh_before && l.zh_before !== l.zh && l.status !== "edited") bits.push(`Before: ${esc(l.zh_before)}`);
@@ -353,6 +365,13 @@ ol.addEventListener("click", e => {
   const ft = e.target.closest(".flag-types button");
   if (ft) { patch(l, { flag: ft.dataset.flag === l.flag ? "" : ft.dataset.flag }); return; }
   if (e.target.closest(".unflag")) { patch(l, { flag: "", note: "" }); return; }
+  if (e.target.closest(".delline")) {
+    if (!confirm("Delete this line?")) return;
+    api("DELETE", `/api/jobs/${job.id}/lines/${l.id}`).then(() => {
+      lines = lines.filter(x => x.id !== l.id); e.target.closest(".line").remove(); updateFixbar(); current = undefined; tick();
+    }).catch(ex => alert(ex.message));
+    return;
+  }
   const tb = e.target.closest(".timing button");
   if (tb) {
     const [k, op] = [tb.dataset.t.slice(0, -1), tb.dataset.t.slice(-1)];
@@ -418,34 +437,147 @@ $("#helperFiles").addEventListener("change", () => {
 
 /* ---------------------------------------------------------- export */
 
-$("#size").addEventListener("input", () => { $("#sizeVal").textContent = Math.round($("#size").value * 100) + "%"; placeOverlay(); });
 $("#export").onclick = async () => {
   const burn = $("input[name=burn]:checked").value;
   try {
-    await api("POST", `/api/jobs/${job.id}/export`, { srt: true, burn, size: +$("#size").value, position: $("input[name=pos]:checked").value });
+    await saveStyleNow();
+    await api("POST", `/api/jobs/${job.id}/export`, { srt: true, burn });
     refresh(job.id);
   } catch (ex) { alert(ex.message); }
 };
 
+/* ---------------------------------------------------------- settings: models, themes, fonts */
+
+let settings = null;
+async function loadSettings() {
+  settings = await api("GET", "/api/settings");
+  const fill = (sel, list) => sel.replaceChildren(...list.map(f => {
+    const o = document.createElement("option"); o.value = f.family; o.textContent = f.label;
+    o.style.fontFamily = `"${f.family}"`; return o;
+  }));
+  fill($("#zhFont"), settings.fonts.zh);
+  fill($("#thFont"), settings.fonts.th);
+  $("#themes").replaceChildren(...settings.themes.map(t => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "theme"; b.dataset.theme = t.key; b.setAttribute("role", "radio");
+    const sample = document.createElement("span"); sample.className = "theme-sample"; sample.textContent = "字幕 ซับ";
+    Object.assign(sample.style, rowCss(t.style, 20, false));
+    if (t.style.box) Object.assign(sample.style, { background: t.style.box_color, padding: "1px 6px", borderRadius: "5px" });
+    const name = document.createElement("span"); name.className = "theme-name"; name.textContent = t.label;
+    b.append(sample, name);
+    b.onclick = () => { job.style = { theme: t.key }; styleChanged(true); };
+    return b;
+  }));
+  renderModels();
+}
+
+function renderModels() {
+  const card = (list, current, name, onPick) => list.map(m => {
+    const l = document.createElement("label"); l.className = "model";
+    const r = document.createElement("input"); r.type = "radio"; r.name = name; r.value = m.key; r.checked = m.key === current;
+    r.onchange = () => onPick(m.key);
+    const t = document.createElement("span");
+    t.innerHTML = `<b></b><small></small>`;
+    t.querySelector("b").textContent = m.label + (m.key === current ? " (in use)" : "");
+    t.querySelector("small").textContent = m.about + ("ready" in m && !m.ready ? " The first time, it downloads (2–6 GB) and gets ready in a few minutes." : "");
+    l.append(r, t); return l;
+  });
+  $("#listenModels").replaceChildren(...card(settings.listen_models, settings.listen_model, "lm", k => pickModel({ listen_model: k })));
+  $("#claudeModels").replaceChildren(...card(settings.claude_models, settings.claude_model, "cm", k => pickModel({ claude_model: k })));
+  $("#openSettings").textContent = "Models";
+  $("#openSettings").title = `Listening: ${label(settings.listen_models, settings.listen_model)}. Claude: ${label(settings.claude_models, settings.claude_model)}.`;
+}
+const label = (list, key) => (list.find(m => m.key === key) || {}).label || key;
+async function pickModel(ch) {
+  try { settings = { ...settings, ...(await api("POST", "/api/settings", ch)) }; renderModels(); }
+  catch (ex) { alert(ex.message); }
+}
+$("#openSettings").onclick = () => { renderModels(); $("#settings").showModal(); };
+
+/* ---------------------------------------------------------- caption style */
+
+// The job keeps a theme plus your changes to it; this is the full style the page and the burn use.
+function fullStyle() {
+  if (!settings) return null;
+  const s = job && job.style || {};
+  const theme = settings.themes.find(t => t.key === (s.theme || "classic"));
+  return { ...settings.style_default, ...(theme ? theme.style : {}), ...s };
+}
+const hex6 = c => (c || "#000000").slice(0, 7);
+
+function rowCss(st, px, isTh) {
+  const stroke = px * st.outline, blur = px * st.shadow;
+  return {
+    fontFamily: `"${isTh ? st.th_font : st.zh_font}", "PingFang TC", "Sukhumvit Set", sans-serif`,
+    fontSize: `${px}px`, fontWeight: st.bold ? "700" : "500",
+    color: isTh ? st.th_color : st.color,
+    webkitTextStroke: stroke ? `${2 * stroke}px ${st.outline_color}` : "0",
+    paintOrder: "stroke fill",
+    textShadow: blur ? `0 ${blur * 0.35}px ${blur}px rgba(0,0,0,.75)` : "none",
+  };
+}
+
+function renderStylePanel() {
+  const st = fullStyle();
+  if (!st) return;
+  $$(".theme").forEach(b => b.setAttribute("aria-checked", String(b.dataset.theme === (job.style?.theme || "classic"))));
+  $$("[data-st]").forEach(el => {
+    const k = el.dataset.st, v = st[k];
+    if (el.type === "checkbox") el.checked = !!v;
+    else if (el.type === "color") el.value = hex6(v);
+    else el.value = v;
+  });
+  $$("[data-out]").forEach(o => { o.textContent = Math.round(st[o.dataset.out] * 100) + "%"; });
+  $$("input[name=st-position]").forEach(r => { r.checked = r.value === st.position; });
+  $$("input[name=st-order]").forEach(r => { r.checked = r.value === st.order; });
+  $("#zhFont").style.fontFamily = `"${st.zh_font}"`;
+  $("#thFont").style.fontFamily = `"${st.th_font}"`;
+}
+
+let styleTimer = null;
+function styleChanged(now) {
+  renderStylePanel(); current = undefined; tick(); placeOverlay();
+  clearTimeout(styleTimer);
+  styleTimer = setTimeout(saveStyleNow, now ? 0 : 600);
+}
+async function saveStyleNow(asDefault = false) {
+  clearTimeout(styleTimer);
+  if (!job) return;
+  await api("POST", `/api/jobs/${job.id}/style`, { style: job.style || {}, as_default: asDefault });
+  $("#styleSaved").textContent = asDefault ? "Saved as your default." : "";
+}
+function setStyle(k, v) { job.style = { ...(job.style || {}), [k]: v }; styleChanged(); }
+$$("[data-st]").forEach(el => el.addEventListener("input", () => {
+  const k = el.dataset.st;
+  setStyle(k, el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value
+    : el.type === "color" && k === "box_color" ? el.value + "A0" : el.value);
+}));
+$$("input[name=st-position]").forEach(r => r.addEventListener("change", () => setStyle("position", r.value)));
+$$("input[name=st-order]").forEach(r => r.addEventListener("change", () => setStyle("order", r.value)));
+$("#styleDefault").onclick = () => saveStyleNow(true).then(() => loadSettings()).catch(ex => alert(ex.message));
+$("#styleReset").onclick = () => { job.style = {}; styleChanged(true); };
+
 /* ---------------------------------------------------------- video + overlay */
 
-let current = null;
+let current = null, touches = [], touchesRev = -1, selTouch = null;
 function lineAt(t) {
   let lo = 0, hi = lines.length - 1, best = null;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
     if (lines[mid].start <= t) { best = mid; lo = mid + 1; } else hi = mid - 1;
   }
-  return best !== null && t <= lines[best].end ? lines[best] : null;
+  // a line you add may overlap the one before it: show the latest one that covers t
+  for (let i = best; i !== null && i >= 0 && i > best - 3; i--) if (t <= lines[i].end) return lines[i];
+  return null;
 }
 function tick() {
-  const l = lines.length ? lineAt(video.currentTime) : null;
+  const t = video.currentTime;
+  $$(".now-t").forEach(x => { x.textContent = fmtTime(t); });
+  const l = lines.length ? lineAt(t) : null;
   if (l !== current) {
     current = l;
     $$(".line.now").forEach(x => x.classList.remove("now"));
-    const show = $("input[name=show]:checked").value;
-    $("#ovTh").textContent = l && show !== "zh" && l.kind !== "sound" ? l.th : "";
-    $("#ovZh").textContent = l && show !== "th" ? (l.zh || "") : "";
+    drawCaption(l);
     if (l) {
       const li = $(`.line[data-id="${l.id}"]`);
       if (li) {
@@ -457,40 +589,262 @@ function tick() {
       }
     }
   }
+  drawTouches(t);
 }
 function loop() { tick(); if (!video.paused) requestAnimationFrame(loop); }
 video.addEventListener("play", loop);
 video.addEventListener("seeked", tick);
 video.addEventListener("timeupdate", tick);
 $$("input[name=show]").forEach(r => r.addEventListener("change", () => { current = undefined; tick(); }));
-$$("input[name=pos]").forEach(r => r.addEventListener("change", placeOverlay));
 // What's shown on the video follows what will be burned in.
 $$("input[name=burn]").forEach(r => r.addEventListener("change", () => {
   const v = r.value === "none" ? "both" : r.value;
   $(`input[name=show][value="${v}"]`).checked = true; current = undefined; tick();
 }));
 
-// Size the overlay like the burned-in captions: by the picture's short side (see captions.ass).
+// The picture inside the player (letterboxing aside), in px.
+let frame = { left: 0, top: 0, w: 0, h: 0, scale: 1, vw: 1920, vh: 1080 };
 function placeOverlay() {
-  const vw = video.videoWidth, vh = video.videoHeight;
+  const vw = video.videoWidth || job?.media?.width, vh = video.videoHeight || job?.media?.height;
   const box = $("#player").getBoundingClientRect();
   if (!vw || !vh || !box.width) return;
-  const scale = Math.min(box.width / vw, video.clientHeight / vh);
-  const pw = vw * scale, ph = vh * scale;
-  const left = (box.width - pw) / 2, top = (video.clientHeight - ph) / 2;
-  const short = Math.min(vw, vh) * scale, size = +$("#size").value;
+  const vh_px = video.clientHeight || box.height;
+  const scale = Math.min(box.width / vw, vh_px / vh);
+  frame = { left: (box.width - vw * scale) / 2, top: (vh_px - vh * scale) / 2, w: vw * scale, h: vh * scale, scale, vw, vh };
   const ov = $("#overlay");
-  ov.style.left = `${left + pw * 0.06}px`;
-  ov.style.width = `${pw * 0.88}px`;
-  const atTop = $("input[name=pos]:checked").value === "top";
-  ov.style.top = atTop ? `${top + ph * 0.06}px` : "auto";
-  ov.style.bottom = atTop ? "auto" : `${box.height - (top + ph) + ph * 0.06}px`;
-  ov.classList.toggle("at-top", atTop);
-  $("#ovZh").style.fontSize = `${short * 0.058 * size}px`;
-  $("#ovTh").style.fontSize = `${short * 0.044 * size}px`;
+  ov.style.left = `${frame.left + frame.w * 0.06}px`;
+  ov.style.width = `${frame.w * 0.88}px`;
+  const st = fullStyle();
+  if (!st) return;
+  if (st.position === "top") {
+    ov.style.top = `${frame.top + frame.h * 0.05}px`; ov.style.bottom = "auto";
+  } else {
+    const y = st.position === "custom" ? st.y : 0.94;
+    ov.style.top = "auto"; ov.style.bottom = `${box.height - (frame.top + frame.h * y)}px`;
+  }
+  ov.classList.toggle("draggable", st.position === "custom");
+  current = undefined; tick();
 }
 video.addEventListener("loadedmetadata", placeOverlay);
 new ResizeObserver(placeOverlay).observe($("#player"));
+
+function drawCaption(l) {
+  const st = fullStyle(), boxEl = $("#ovBox"), A = $("#ovA"), B = $("#ovB");
+  A.textContent = ""; B.textContent = ""; boxEl.style.background = "none"; boxEl.style.padding = "0";
+  if (!l || !st) return;
+  const show = $("input[name=show]:checked").value;
+  const zhPx = Math.min(frame.vw, frame.vh) * frame.scale * 0.058 * st.size;
+  const thPx = show === "both" ? zhPx * st.th_scale : zhPx;
+  const th = l.kind === "sound" ? "" : (l.th || ""), zh = l.zh || "";
+  const rows = [];
+  if (show !== "zh" && th) rows.push([th, thPx, true]);
+  if (show !== "th" && zh) rows.push([zh, zhPx, false]);
+  if (st.order === "zh_above") rows.reverse();
+  [A, B].forEach((el, i) => {
+    const r = rows[i];
+    el.textContent = r ? r[0] : "";
+    if (r) Object.assign(el.style, rowCss(st, r[1], r[2] && show === "both"), { marginTop: i ? `${zhPx * 0.12}px` : "0" });
+  });
+  if (st.box && rows.length) Object.assign(boxEl.style, { background: st.box_color, padding: `${zhPx * 0.19}px ${zhPx * 0.32}px`, borderRadius: `${zhPx * 0.25}px` });
+}
+
+// drag the captions (Where: Drag it)
+$("#ovBox").addEventListener("pointerdown", e => {
+  const st = fullStyle();
+  if (!st || st.position !== "custom") return;
+  e.preventDefault(); video.pause();
+  const box = $("#player").getBoundingClientRect(), el = $("#ovBox");
+  el.setPointerCapture(e.pointerId);
+  const move = ev => {
+    const y = (ev.clientY - box.top - frame.top + el.offsetHeight / 2) / frame.h;
+    job.style = { ...(job.style || {}), y: Math.max(0.1, Math.min(0.99, Math.round(y * 1000) / 1000)) };
+    placeOverlay();
+  };
+  el.onpointermove = move;
+  el.onpointerup = () => { el.onpointermove = null; styleChanged(); };
+});
+
+/* ---------------------------------------------------------- emoji and notes (touches) */
+
+const EMOJI = ["💗", "💕", "🥰", "😍", "😳", "🤭", "😂", "🤣", "😅", "😭", "🥺", "😤", "🙈", "👀", "✨", "🔥", "💦", "💢", "🎉", "🫶", "💋", "🌸", "⭐", "🐱",
+  "(臉紅)", "(偷笑)", "(害羞)", "(尷尬)", "(無奈)", "(心動)", "(噗)", "(竊喜)", "(撒嬌)", "(吃醋)"];
+$("#emojiPick").replaceChildren(...EMOJI.map(e => {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = e;
+  b.onclick = () => { const i = $("#teText"); i.value += e; i.dispatchEvent(new Event("input")); };
+  return b;
+}));
+
+async function loadTouches() {
+  touches = await api("GET", `/api/jobs/${job.id}/touches`);
+  touchesRev = job.touches_rev || 0;
+  renderTouchList(); drawTouches(video.currentTime, true);
+}
+function touchPx(t) {
+  const st = fullStyle();
+  return Math.min(frame.vw, frame.vh) * frame.scale * 0.058 * (st ? st.size : 1) * (t.size || 1.3);
+}
+let shownTouches = "";
+function drawTouches(time, force) {
+  const on = touches.filter(t => (t.start <= time && time < t.end) || t.id === selTouch);
+  const key = on.map(t => t.id + JSON.stringify(t)).join("|") + frame.w + JSON.stringify(fullStyle());
+  if (key === shownTouches && !force) return;
+  shownTouches = key;
+  const st = fullStyle() || {};
+  $("#touchLayer").replaceChildren(...on.map(t => {
+    const el = document.createElement("div");
+    const px = touchPx(t);
+    el.className = "touch" + (t.kind === "bubble" ? " bubble" : "") + (t.pending ? " pending" : "") + (t.id === selTouch ? " sel" : "");
+    el.textContent = t.text;
+    el.dataset.id = t.id;
+    Object.assign(el.style, {
+      left: `${frame.left + t.x * frame.w}px`, top: `${frame.top + t.y * frame.h}px`, fontSize: `${px}px`,
+      fontFamily: `"${t.font || st.zh_font}", "PingFang TC", sans-serif`,
+    });
+    if (t.kind === "bubble") Object.assign(el.style, { padding: `${px * 0.2}px ${px * 0.35}px`, borderRadius: `${px * 0.6}px` });
+    else Object.assign(el.style, { color: t.color || "#fff", webkitTextStroke: `${px * 0.2}px ${t.outline_color || "#F06A9F"}`, paintOrder: "stroke fill" });
+    el.onpointerdown = e => dragTouch(e, t, el);
+    return el;
+  }));
+}
+function dragTouch(e, t, el) {
+  e.preventDefault(); video.pause(); selectTouch(t.id);
+  const box = $("#player").getBoundingClientRect();
+  el.setPointerCapture(e.pointerId);
+  let moved = false;
+  el.onpointermove = ev => {
+    moved = true;
+    t.x = Math.max(0.02, Math.min(0.98, (ev.clientX - box.left - frame.left) / frame.w));
+    t.y = Math.max(0.02, Math.min(0.98, (ev.clientY - box.top - frame.top) / frame.h));
+    el.style.left = `${frame.left + t.x * frame.w}px`; el.style.top = `${frame.top + t.y * frame.h}px`;
+  };
+  el.onpointerup = () => { el.onpointermove = null; if (moved) patchTouch(t, { x: t.x, y: t.y }); };
+}
+let touchTimer = null;
+function patchTouch(t, ch, later) {
+  Object.assign(t, ch);
+  drawTouches(video.currentTime, true); renderTouchList();
+  clearTimeout(touchTimer);
+  const send = () => api("PATCH", `/api/jobs/${job.id}/touches/${t.id}`, ch).catch(ex => alert(ex.message));
+  if (later) touchTimer = setTimeout(send, 500); else send();
+}
+function renderTouchList() {
+  $("#touchCount").textContent = touches.length || "";
+  const pend = touches.filter(t => t.pending).length;
+  $("#touchList").replaceChildren(...touches.map(t => {
+    const li = document.createElement("li");
+    li.className = (t.pending ? "pending" : "") + (t.id === selTouch ? " sel" : "");
+    const tm = document.createElement("button"); tm.type = "button"; tm.className = "tt"; tm.textContent = fmtTime(t.start);
+    tm.onclick = () => { video.currentTime = t.start + 0.01; video.pause(); selectTouch(t.id); };
+    const tx = document.createElement("span"); tx.className = "tx"; tx.textContent = t.text;
+    if (t.why) tx.title = t.why;
+    li.append(tm, tx);
+    if (t.pending) {
+      const keep = document.createElement("button"); keep.type = "button"; keep.textContent = "Keep";
+      keep.onclick = () => patchTouch(t, { pending: false });
+      li.append(keep);
+    }
+    const ed = document.createElement("button"); ed.type = "button"; ed.textContent = "Edit";
+    ed.onclick = () => { video.currentTime = t.start + 0.01; video.pause(); selectTouch(t.id); };
+    const del = document.createElement("button"); del.type = "button"; del.textContent = "Remove";
+    del.onclick = () => removeTouch(t);
+    li.append(ed, del);
+    if (t.why && t.pending) { const w = document.createElement("small"); w.textContent = t.why; li.append(w); }
+    return li;
+  }));
+  if (pend) {
+    const li = document.createElement("li"); li.className = "all";
+    const k = document.createElement("button"); k.type = "button"; k.textContent = `Keep all ${pend} suggestions`;
+    k.onclick = () => touches.filter(t => t.pending).forEach(t => patchTouch(t, { pending: false }));
+    li.append(k); $("#touchList").prepend(li);
+  }
+}
+async function removeTouch(t) {
+  await api("DELETE", `/api/jobs/${job.id}/touches/${t.id}`).catch(ex => alert(ex.message));
+  touches = touches.filter(x => x.id !== t.id);
+  if (selTouch === t.id) selectTouch(null);
+  renderTouchList(); drawTouches(video.currentTime, true);
+}
+function selectTouch(id) {
+  selTouch = id;
+  const t = touches.find(x => x.id === id);
+  $("#touchEdit").hidden = !t;
+  if (t) {
+    $("#touchPanel").open = true;
+    $("#teText").value = t.text;
+    $("#teSize").value = t.size || 1.3; $("#teSizeOut").textContent = Math.round((t.size || 1.3) * 100) + "%";
+    const d = Math.round((t.end - t.start) * 2) / 2; $("#teDur").value = d; $("#teDurOut").textContent = d + "s";
+    $$("input[name=te-kind]").forEach(r => { r.checked = r.value === (t.kind || "plain"); });
+    $("#teColor").value = hex6(t.color || "#FFFFFF"); $("#teOutline").value = hex6(t.outline_color || "#F06A9F");
+  }
+  renderTouchList(); drawTouches(video.currentTime, true);
+}
+const selT = () => touches.find(x => x.id === selTouch);
+$("#teText").addEventListener("input", () => { const t = selT(); if (t && $("#teText").value.trim()) patchTouch(t, { text: $("#teText").value }, true); });
+$("#teSize").addEventListener("input", () => { const t = selT(); $("#teSizeOut").textContent = Math.round($("#teSize").value * 100) + "%"; if (t) patchTouch(t, { size: +$("#teSize").value }, true); });
+$("#teDur").addEventListener("input", () => { const t = selT(); $("#teDurOut").textContent = $("#teDur").value + "s"; if (t) patchTouch(t, { end: t.start + +$("#teDur").value }, true); });
+$$("input[name=te-kind]").forEach(r => r.addEventListener("change", () => { const t = selT(); if (t) patchTouch(t, { kind: r.value }); }));
+$("#teColor").addEventListener("input", () => { const t = selT(); if (t) patchTouch(t, { color: $("#teColor").value }, true); });
+$("#teOutline").addEventListener("input", () => { const t = selT(); if (t) patchTouch(t, { outline_color: $("#teOutline").value }, true); });
+$("#teStartHere").onclick = () => { const t = selT(); if (t) { const d = t.end - t.start; patchTouch(t, { start: video.currentTime, end: video.currentTime + d }); } };
+$("#teDelete").onclick = () => { const t = selT(); if (t) removeTouch(t); };
+$("#teDone").onclick = () => selectTouch(null);
+
+$("#addTouchHere").onclick = async () => {
+  video.pause();
+  const t0 = video.currentTime;
+  try {
+    const t = await api("POST", `/api/jobs/${job.id}/touches`, { start: t0, end: t0 + 2.5, text: "💗", x: 0.8, y: 0.22 });
+    touches.push(t); touches.sort((a, b) => a.start - b.start);
+    selectTouch(t.id); $("#teText").select(); $("#teText").focus();
+  } catch (ex) { alert(ex.message); }
+};
+$("#suggestTouches").onclick = async () => {
+  try { await api("POST", `/api/jobs/${job.id}/touches/suggest`); refresh(job.id); } catch (ex) { alert(ex.message); }
+};
+
+/* ---------------------------------------------------------- captions you add, stretches you mark */
+
+$("#addLineHere").onclick = async () => {
+  video.pause();
+  try {
+    const l = await api("POST", `/api/jobs/${job.id}/lines`, { start: video.currentTime });
+    lines = await api("GET", `/api/jobs/${job.id}/lines`); linesRev = -1; renderLines();
+    const el = $(`.line[data-id="${l.id}"] .zh`);
+    if (el) { el.scrollIntoView({ block: "center" }); el.focus(); }
+  } catch (ex) { alert(ex.message); }
+};
+
+const range = { from: null, to: null };
+function renderRange() {
+  const f = range.from, t = range.to;
+  $("#rangeT").textContent = `${f === null ? "–" : fmtTime(f)}  to  ${t === null ? "–" : fmtTime(t)}`;
+  $("#rangeGo").disabled = f === null || t === null || t - f < 0.5 || !!job?.busy;
+  $$(".line").forEach(li => {
+    const l = lines.find(x => x.id === +li.dataset.id);
+    li.classList.toggle("in-range", !$("#rangeBox").hidden && f !== null && t !== null && l && l.end > f && l.start < t);
+  });
+}
+$("#markRange").onclick = () => {
+  const box = $("#rangeBox"); box.hidden = !box.hidden;
+  if (!box.hidden) { range.from = range.from ?? video.currentTime; $("#rangeNote").focus(); }
+  renderRange();
+};
+$("#rangeFrom").onclick = () => { range.from = video.currentTime; if (range.to !== null && range.to < range.from) range.to = null; renderRange(); };
+$("#rangeTo").onclick = () => { range.to = video.currentTime; if (range.from !== null && range.to < range.from) [range.from, range.to] = [range.to, range.from]; renderRange(); };
+$("#rangeCancel").onclick = () => { $("#rangeBox").hidden = true; range.from = range.to = null; renderRange(); };
+$("#rangePlay").onclick = () => {
+  if (range.from === null) return;
+  video.currentTime = range.from; video.play();
+  const stop = () => { if (range.to !== null && video.currentTime >= range.to) { video.pause(); video.removeEventListener("timeupdate", stop); } };
+  video.addEventListener("timeupdate", stop);
+};
+$("#rangeGo").onclick = async () => {
+  try {
+    await api("POST", `/api/jobs/${job.id}/review`, { start: range.from, end: range.to, note: $("#rangeNote").value.trim() });
+    $("#rangeBox").hidden = true; $("#rangeNote").value = ""; range.from = range.to = null; renderRange();
+    refresh(job.id);
+  } catch (ex) { alert(ex.message); }
+};
 
 /* ============================================================ memory */
 
@@ -560,5 +914,6 @@ api("GET", "/api/status").then(s => {
   if (!s.claude) $("#formError").textContent = "The Claude command-line tool isn't installed, so it can only listen, not translate. Install Claude Code and sign in once.";
 }).catch(() => {});
 loadMemoryCount();
+loadSettings().catch(() => {});
 route();
 setInterval(() => { if (!$("#startView").hidden) loadJobList(); }, 5000);

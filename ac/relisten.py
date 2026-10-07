@@ -1,7 +1,8 @@
 """Listen again to short clips (unsure or flagged lines), the model loaded once for all of them.
 
     python -m ac.relisten <plan.json> <out.json>
-plan: [{"wav", "hint", "temperature"}]  ->  out: [text or ""] in the same order.
+plan: [{"wav", "hint", "temperature", "model"?, "language"?, "timed"?, "offset"?}]
+->  out: [text, or timed segments when "timed"] in the same order.
 """
 import json
 import sys
@@ -19,12 +20,17 @@ def main():
         for i, p in enumerate(plan):
             audio = listen.load_wav(p["wav"])
             t = float(p.get("temperature") or 0)
-            r = mlx_whisper.transcribe(audio, path_or_hf_repo=paths.WHISPER, language="th", task="transcribe",
+            r = mlx_whisper.transcribe(audio, path_or_hf_repo=p.get("model") or paths.WHISPER,
+                                       language=p.get("language", "th"), task="transcribe", word_timestamps=bool(p.get("timed")),
                                        verbose=None, temperature=(t, min(1.0, t + 0.3)),
                                        condition_on_previous_text=False, initial_prompt=p.get("hint") or None)
-            text = " ".join(s["text"].strip() for s in r.get("segments", [])
-                            if s.get("text", "").strip() and not listen._junk(s, s["text"].strip()))
-            out.append(text.strip())
+            segs = [s for s in r.get("segments", []) if s.get("text", "").strip() and not listen._junk(s, s["text"].strip())]
+            if p.get("timed"):                  # whole stretches: keep the timing, shifted to the video's clock
+                off = float(p.get("offset") or 0)
+                out.append([{"start": round(s["start"] + off, 2), "end": round(s["end"] + off, 2), "text": s["text"].strip()}
+                            for s in segs])
+            else:
+                out.append(" ".join(s["text"].strip() for s in segs).strip())
             listen.say(progress=round((i + 1) / len(plan), 3))
         with open(sys.argv[2], "w") as f:
             json.dump(out, f, ensure_ascii=False)
