@@ -23,7 +23,8 @@ def main():
             r = mlx_whisper.transcribe(audio, path_or_hf_repo=p.get("model") or paths.WHISPER,
                                        language=p.get("language", "th"), task="transcribe", word_timestamps=bool(p.get("timed")),
                                        verbose=None, temperature=(t, min(1.0, t + 0.3)),
-                                       condition_on_previous_text=False, initial_prompt=p.get("hint") or None)
+                                       condition_on_previous_text=False, initial_prompt=p.get("hint") or None,
+                                       sample_len=min(224, int(len(audio) / listen.SR * listen.TOKENS_PER_SECOND) + 24))
             segs = [s for s in r.get("segments", []) if s.get("text", "").strip() and not listen._junk(s, s["text"].strip())]
             if p.get("timed"):                  # whole stretches: keep the timing, shifted to the video's clock
                 off = float(p.get("offset") or 0)

@@ -59,7 +59,7 @@ def from_segments(segments, first_id=1):
     for seg in segments:
         words = [w for w in seg.get("words") or [] if w["word"]]
         if not any(w["word"].strip() for w in words):
-            lines.append(_line(seg["start"], seg["end"], seg["text"], _segment_conf(seg)))
+            lines += _split_by_length(seg["start"], seg["end"], seg["text"], _segment_conf(seg), seg.get("gaps"))
             continue
         starts = _word_starts(words)
         cur = []
@@ -91,6 +91,48 @@ def from_segments(segments, first_id=1):
     for i, l in enumerate(merged):
         l["id"] = first_id + i
     return fix_timing(merged)
+
+
+def snap(t, gaps, lo, hi, reach=1.2):
+    """A cut at time t moved to the nearest pause (within reach seconds and between lo and hi)."""
+    near = [g for g in gaps or [] if lo + 0.3 < g < hi - 0.3 and abs(g - t) <= reach]
+    return min(near, key=lambda g: abs(g - t)) if near else t
+
+
+def cut_times(start, end, pieces, gaps=None):
+    """Start/end for each text piece: shared by length, each cut moved to the nearest pause."""
+    total = sum(visible_len(x) for x in pieces) or 1
+    bounds, t = [start], start
+    for x in pieces[:-1]:
+        t += (end - start) * visible_len(x) / total
+        bounds.append(snap(t, gaps, bounds[-1], end))
+    bounds.append(end)
+    return list(zip(bounds, bounds[1:]))
+
+
+def _split_by_length(start, end, text, conf, gaps=None):
+    """A piece with no word timings: cut it into readable lines at Thai word boundaries (spaces first),
+    sharing the time out by length."""
+    text = text.strip()
+    if visible_len(text) <= MAX_CHARS and end - start <= MAX_SECONDS:
+        return [{**_line(start, end, text, conf), "gaps": list(gaps or [])}]
+    try:
+        from pythainlp.tokenize import word_tokenize
+        toks = word_tokenize(text, engine="newmm", keep_whitespace=True)
+    except ImportError:
+        toks = list(text)
+    pieces, cur = [], ""
+    for t in toks:
+        if cur and (visible_len(cur + t) > MAX_CHARS or (t.isspace() and visible_len(cur) > MAX_CHARS * 0.55)):
+            pieces.append(cur.strip())
+            cur = ""
+        cur += t
+    if cur.strip():
+        pieces.append(cur.strip())
+    out = []
+    for x, (a, b) in zip(pieces, cut_times(start, end, pieces, gaps)):
+        out.append({**_line(a, b, x, conf), "gaps": [g for g in gaps or [] if a < g < b]})
+    return out
 
 
 def _from_words(words):

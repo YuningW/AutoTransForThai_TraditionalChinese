@@ -45,9 +45,32 @@ def mlx_path(key):
         return m["mlx"]
     out = CACHE / key
     if (out / "config.json").exists() and (out / "weights.safetensors").exists():
+        if "quantization" not in json.loads((out / "config.json").read_text()):
+            quantize(out)                      # converted before 8-bit was the default
         return str(out)
     convert(m["hf"], out)
+    quantize(out)
     return str(out)
+
+
+def quantize(folder, bits=8):
+    """8-bit weights: same score on the Thai test as 16-bit, faster, half the size. 4-bit lost accuracy."""
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx.utils import tree_flatten
+    from mlx_whisper.load_models import load_model
+    folder = Path(folder)
+    m = load_model(str(folder), dtype=mx.float16)
+    nn.quantize(m, group_size=64, bits=bits)
+    tmp = folder.with_name(folder.name + ".q")
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    mx.save_safetensors(str(tmp / "weights.safetensors"), dict(tree_flatten(m.parameters())))
+    cfg = json.loads((folder / "config.json").read_text())
+    cfg["quantization"] = {"group_size": 64, "bits": bits}
+    (tmp / "config.json").write_text(json.dumps(cfg, indent=1))
+    shutil.rmtree(folder)
+    tmp.rename(folder)
 
 
 def split_at_pauses(key):
@@ -62,7 +85,8 @@ def is_ready(key):
     if "mlx" in m:
         from huggingface_hub import try_to_load_from_cache
         return isinstance(try_to_load_from_cache(m["mlx"], "config.json"), str)
-    return (CACHE / key / "weights.safetensors").exists()
+    f = CACHE / key / "config.json"
+    return f.exists() and "quantization" in f.read_text() and (CACHE / key / "weights.safetensors").exists()
 
 
 def _rename(k):

@@ -26,6 +26,15 @@ class Captions(unittest.TestCase):
         self.assertIn("หน่อย", "".join(joined))
         self.assertEqual([l["id"] for l in ls], list(range(1, len(ls) + 1)))
 
+    def test_long_piece_without_word_timings_is_cut_at_pauses(self):
+        text = "ช่วงนี้ชอบฟังเพลงของเจนนี่ เจนนี่แบล็คพิงค์ ช่วงนี้ชอบฟังเพลงของคนที่ชื่อ นึกชื่อไม่ออก"
+        seg = {"start": 40.0, "end": 52.0, "text": text, "avg_logprob": -0.2, "words": [], "gaps": [44.9, 47.5]}
+        ls = captions.from_segments([seg])
+        self.assertGreater(len(ls), 1)
+        self.assertTrue(all(captions.visible_len(l["th"]) <= captions.MAX_CHARS for l in ls))
+        self.assertTrue(any(abs(l["end"] - g) < 0.01 for l in ls[:-1] for g in seg["gaps"]), [l["end"] for l in ls])
+        self.assertEqual("".join(l["th"] for l in ls).replace(" ", ""), text.replace(" ", ""))
+
     def test_short_lines_stay_up_long_enough(self):
         seg = {"start": 0, "end": 0.2, "text": "", "words": words(("อ่ะ", 0.0, 0.2, .9))}
         seg2 = {"start": 5, "end": 6, "text": "", "words": words(("ครับ", 5.0, 6.0, .9))}

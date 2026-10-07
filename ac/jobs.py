@@ -300,7 +300,10 @@ def _mmss(s):
 def _sub(jid, args, label, weight=(0, 1)):
     """Run a python -m step, pass its progress to the page, return its last message."""
     a, b = weight
-    env = {**os.environ, "AC_WHISPER": _whisper(jid), "AC_SPLIT_AT_PAUSES": "1" if models.split_at_pauses(_listen_key(jid)) else "0"}
+    split = models.split_at_pauses(_listen_key(jid))
+    env = {**os.environ, "AC_WHISPER": _whisper(jid), "AC_SPLIT_AT_PAUSES": "1" if split else "0",
+           # Thai-tuned models' word timings are all zero gaps (useless) and cost a third of the time
+           "AC_WORD_TIMES": "0" if split else "1"}
     procs.check(jid)
     p = subprocess.Popen([sys.executable, "-m", *args], cwd=str(paths.ROOT), stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL, text=True, env=env)
@@ -462,7 +465,7 @@ def _polish_and_translate(jid, keep_edited=True):
 
 
 def _split_parts(ls):
-    """Lines Claude cut into parts (one speaker or sentence each): share the time out by length."""
+    """Lines Claude cut into parts (one speaker or sentence each): each cut lands on the nearest pause."""
     out, n, next_id = [], 0, max((l["id"] for l in ls), default=0) + 1
     for l in ls:
         parts = l.pop("_parts", None)
@@ -470,16 +473,13 @@ def _split_parts(ls):
             out.append(l)
             continue
         n += 1
-        total = sum(captions.visible_len(p) for p in parts) or 1
-        t = l["start"]
-        for i, p in enumerate(parts):
-            dur = (l["end"] - l["start"]) * captions.visible_len(p) / total
-            piece = {**l, "th": p, "start": round(t, 3), "end": round(t + dur, 3)}
+        for i, (p, (a, b)) in enumerate(zip(parts, captions.cut_times(l["start"], l["end"], parts, l.get("gaps")))):
+            piece = {**l, "th": p, "start": round(a, 3), "end": round(b, 3),
+                     "gaps": [g for g in l.get("gaps") or [] if a < g < b]}
             if i:
                 piece["id"] = next_id
                 next_id += 1
             out.append(piece)
-            t += dur
     return out, n
 
 
@@ -543,7 +543,6 @@ def _relisten(jid, targets):
         media.cut_wav(d / "audio.wav", orig, a, b)
         windows.append((t["id"], a, b))
         plan.append({"id": t["id"], "how": "listened again", "wav": str(orig), "hint": hint, "temperature": 0.0})
-        plan.append({"id": t["id"], "how": "listened again, less literal", "wav": str(orig), "hint": hint, "temperature": 0.5})
 
     # Voice only: the windows go through the music remover as one file (much faster than one by one)
     try:

@@ -50,20 +50,20 @@ def main():
     wav, ref = sys.argv[1], json.loads(Path(sys.argv[2]).read_text())
     out_dir = Path(sys.argv[2]).parent
     for key in sys.argv[3:]:
-        path = models.mlx_path(key)
-        out = out_dir / f"bench_{key}.json"
+        path = key if Path(key).is_dir() else models.mlx_path(key)     # a model folder works too
+        out = out_dir / f"bench_{Path(key).name}.json"
         t = time.time()
-        split = "1" if models.split_at_pauses(key) else "0"
+        split = "1" if Path(key).is_dir() or models.split_at_pauses(key) else "0"
         p = subprocess.run([sys.executable, "-m", "ac.listen", wav, str(out)], cwd=ROOT,
                            env={**os.environ, "AC_WHISPER": path, "AC_SPLIT_AT_PAUSES": split}, capture_output=True, text=True)
         secs = time.time() - t
         if p.returncode != 0:
-            print(f"{key:22} failed: {p.stdout[-300:]}")
+            print(f"{Path(key).name:22} failed: {p.stdout[-300:]}")
             continue
         segs = json.loads(out.read_text())
         found, missed = score(segs, ref)
         avg = sum(s["end"] - s["start"] for s in segs) / max(1, len(segs))
-        print(f"{key:22} found {found:5.1f}%   missed {len(missed):3d}/{len(ref)}   {len(segs)} segments ({avg:.1f} s avg)   {secs:5.0f} s", flush=True)
+        print(f"{Path(key).name:22} found {found:5.1f}%   missed {len(missed):3d}/{len(ref)}   {len(segs)} segments ({avg:.1f} s avg)   {secs:5.0f} s", flush=True)
         for m in missed[:6]:
             print(f"{'':24}missed {m['start']:>4}s  {m['th']}")
 

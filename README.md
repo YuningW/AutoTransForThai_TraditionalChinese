@@ -46,7 +46,7 @@ One video is a small test, so treat the differences as a hint, not a ranking. To
 
 With the background music removed first, the scores stayed the same on this interview (its music is quiet), so that option is for clips where music or a crowd is loud.
 
-Thai-tuned models write each burst of speech as one run of text with no timing inside it, so AutoCaption listens to them pause by pause, and Claude cuts any line that still holds two speakers or two sentences.
+Thai-tuned models write each piece of speech as one run of text with no usable timing inside it. AutoCaption listens to pieces of up to 12 seconds (joined across pauses under 0.8 s), keeps the models in 8-bit, and skips their word timings; then lines are cut at Thai word boundaries, Claude splits lines that hold two speakers or several short answers, and every cut lands on a real pause in the audio. On the 4-minute interview this listens in about 80 seconds instead of 8–10 minutes, with the same accuracy (89%, 3 of 96 lines missed). A 16-minute video takes roughly 15–20 minutes from start to finished captions.
 
 **Recognising voices** uses SpeechBrain's ECAPA speaker model. On *THE INTERVIEW EP.1* (Girl Rules, six people, 21 minutes), whose English captions name each speaker: after 4 lines per person it coloured 56% of the remaining lines by itself, 96% of them right (Milk vs Love: 90 of 91), and left the short or unclear ones blank. With only remembered voices (nothing assigned) it did the same: 58% coloured, 97% right.
 

@@ -20,6 +20,7 @@ import numpy as np
 from . import paths
 
 SR = 16000
+TOKENS_PER_SECOND = 15
 MAX_CHUNK = 28.0     # Whisper hears 30 s at a time
 JOIN_GAP = 1.2       # speech parts closer than this are listened to together
 # when one model drops a stretch of talking, the other gets a try
@@ -38,9 +39,10 @@ def load_wav(path):
         return np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
 
 
-def speech_parts(audio, join_gap=JOIN_GAP, min_silence=350, max_chunk=MAX_CHUNK):
+def speech_parts(audio, join_gap=JOIN_GAP, min_silence=350, max_chunk=MAX_CHUNK, gaps=None):
     """[(start, end)] in seconds where someone seems to be talking, grouped into chunks.
-    join_gap 0 keeps every pause as a boundary (see SPLIT_AT_PAUSES)."""
+    join_gap 0 keeps every pause as a boundary (see SPLIT_AT_PAUSES). gaps (a list), if given,
+    collects the middle of every pause that was joined over: good places to cut a line later."""
     import torch
     from silero_vad import get_speech_timestamps, load_silero_vad
     ts = get_speech_timestamps(torch.from_numpy(audio), load_silero_vad(), sampling_rate=SR,
@@ -52,6 +54,8 @@ def speech_parts(audio, join_gap=JOIN_GAP, min_silence=350, max_chunk=MAX_CHUNK)
             chunks.append([s, s + MAX_CHUNK])
             s += MAX_CHUNK
         if chunks and s - chunks[-1][1] < join_gap and e - chunks[-1][0] <= max_chunk:
+            if gaps is not None:
+                gaps.append(round((chunks[-1][1] + s) / 2, 2))
             chunks[-1][1] = e
         else:
             chunks.append([s, e])
@@ -71,9 +75,13 @@ def _junk(seg, text):
 
 def _decode(piece, offset, end, model, hint, temps, language="th"):
     import mlx_whisper
+    # A stuck model repeats itself until the token limit (224), then retries: on a 3-second piece that is
+    # minutes of wasted work. Nobody says more than ~15 tokens a second, so cap it by the piece's length.
+    sample_len = min(224, int(len(piece) / SR * TOKENS_PER_SECOND) + 24)
     r = mlx_whisper.transcribe(piece, path_or_hf_repo=model, language=language, task="transcribe",
-                               word_timestamps=True, verbose=None, temperature=temps,
-                               condition_on_previous_text=False, initial_prompt=hint or None)
+                               word_timestamps=os.environ.get("AC_WORD_TIMES", "1") == "1", verbose=None, temperature=temps,
+                               condition_on_previous_text=False, initial_prompt=hint or None,
+                               sample_len=sample_len)
     out = []
     for seg in r.get("segments", []):
         text = (seg.get("text") or "").strip()
@@ -104,9 +112,13 @@ def transcribe(wav, hint="", temperature=None, vad=True):
     # lines could only be cut by length (mid-sentence, two speakers in one line). For them each
     # stretch between pauses is listened to on its own: a change of speaker nearly always has a pause.
     split = os.environ.get("AC_SPLIT_AT_PAUSES") == "1"
-    gap, longest = (float(os.environ.get("AC_SPLIT_JOIN", "0")), float(os.environ.get("AC_SPLIT_MAX", MAX_CHUNK))) \
+    # Pieces of up to 12 s, joined across pauses under 0.8 s: on a Thai interview this was twice as fast
+    # as one piece per pause with the same accuracy (each piece costs a full pass however short it is).
+    # Claude still cuts lines where the speaker changes.
+    gap, longest = (float(os.environ.get("AC_SPLIT_JOIN", "0.8")), float(os.environ.get("AC_SPLIT_MAX", "12"))) \
         if split else (JOIN_GAP, MAX_CHUNK)
-    parts = speech_parts(audio, gap, max_chunk=longest) if vad else [[0.0, total]]
+    pauses = []
+    parts = speech_parts(audio, gap, max_chunk=longest, gaps=pauses) if vad else [[0.0, total]]
     temps = (0.0, 0.4) if temperature is None else (temperature, min(1.0, temperature + 0.3))
     other = OTHER_MODEL.get(paths.WHISPER, "mlx-community/whisper-large-v3-mlx")
     pieces = [(s, e, audio[int(s * SR):int(min(total, e) * SR)]) for s, e in parts]
@@ -134,6 +146,10 @@ def transcribe(wav, hint="", temperature=None, vad=True):
     out = []
     for i in range(len(pieces)):
         segs = found[i]
+        s, e, _ = pieces[i]
+        inside = [g for g in pauses if s < g < e]
+        for seg in segs:                       # pauses inside this piece: where its text can be cut
+            seg["gaps"] = [g for g in inside if seg["start"] < g < seg["end"]] or inside
         if out and segs and segs[0]["text"] == out[-1]["text"]:
             segs = segs[1:]
         out += segs

@@ -171,7 +171,8 @@ Thai puts a space between phrases and sentences; add those spaces where the reco
 Keep every line id and return every line. Don't merge lines: timing comes from the audio. You may move a word or two across the boundary between neighbouring lines when a line clearly ends with the start of the next sentence (for example a question's ending stuck to the start of the answer).
 parts: when one line holds two speakers, or two sentences that should be read separately, also give the \
 tidied text cut into pieces in order (joined, they equal th, spaces aside); the line's time is shared out by \
-length. Otherwise leave parts out. Long lines with no spaces or punctuation usually need this.
+length. Also cut a line holding several short answers or sentences (each ending in ค่ะ, ครับ, นะ, \
+a question…) so each can be one person's line. Otherwise leave parts out.
 kind: "speech" for talking; "song" when the line is lyrics being sung; "sound" when there are no real \
 words (laughing, music, noise). For "sound" lines put a short Thai-free description in th like "(笑)" or "♪".
 suspect: true when you still think the words may be wrong after your changes (you'll be asked again later \
