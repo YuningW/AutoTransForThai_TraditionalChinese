@@ -74,26 +74,33 @@ def base_px(w, h, style):
     return min(w, h) * 0.058 * float(style["size"])
 
 
-def caption_block(line, which, w, h, style):
-    """One caption line -> a renderer block. which: zh | th | both."""
+def caption_block(line, which, w, h, style, speakers=None):
+    """Caption line(s) on screen together -> one renderer block. `line` may be a list: people talking
+    at once each get their own rows, earliest first, in their own colour. which: zh | th | both."""
     s = style
+    group = line if isinstance(line, list) else [line]
+    colours = {p["id"]: p.get("color") for p in speakers or [] if p.get("color")}
     zh_px = base_px(w, h, s)
     th_px = zh_px * float(s["th_scale"]) if which == "both" else zh_px
-    th, zh = (line.get("th") or "").strip(), (line.get("zh") or "").strip()
-    if line.get("kind") == "sound":
-        th = ""
 
     def row(text, fam, px, col):
         return {"text": text, "font": fam, "size": round(px, 1), "color": col, "bold": bool(s["bold"]),
                 "stroke": round(px * float(s["outline"]), 1), "stroke_color": s["outline_color"],
                 "shadow": round(px * float(s["shadow"]), 1)}
 
-    zh_row = row(zh, s["zh_font"], zh_px, s["color"]) if which in ("zh", "both") and zh else None
-    th_row = row(th, s["th_font"], th_px, s["th_color"] if which == "both" else s["color"]) if which in ("th", "both") and th else None
-    if not zh_row and not th_row:
+    rows = []
+    for l in sorted(group, key=lambda x: x.get("start", 0)):
+        th, zh = (l.get("th") or "").strip(), (l.get("zh") or "").strip()
+        if l.get("kind") == "sound":
+            th = ""
+        own = colours.get(l.get("speaker"))
+        zh_row = row(zh, s["zh_font"], zh_px, own or s["color"]) if which in ("zh", "both") and zh else None
+        th_row = row(th, s["th_font"], th_px, own or (s["th_color"] if which == "both" else s["color"])) \
+            if which in ("th", "both") and th else None
+        pair = (th_row, zh_row) if s["order"] == "th_above" else (zh_row, th_row)
+        rows += [r for r in pair if r]
+    if not rows:
         return None
-    top_first = s["order"] == "th_above"
-    rows = [r for r in ((th_row, zh_row) if top_first else (zh_row, th_row)) if r]
     if s["position"] == "top":
         y, anchor = 0.05, "top"
     elif s["position"] == "custom":
@@ -179,7 +186,7 @@ def timeline(lines, touches, which):
     return spans
 
 
-def frames(lines, touches, which, w, h, style, folder, on_progress=None):
+def frames(lines, touches, which, w, h, style, folder, on_progress=None, speakers=None):
     """Render one PNG per distinct screen and return an ffmpeg concat list for them."""
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
@@ -190,10 +197,12 @@ def frames(lines, touches, which, w, h, style, folder, on_progress=None):
     entries = []
     for i, (a, b, on) in enumerate(spans):
         blocks = []
-        for kind, x in on:
-            blk = caption_block(x, which, w, h, s) if kind == "line" else touch_block(x, w, h, s)
+        talking = [x for kind, x in on if kind == "line"]
+        if talking:
+            blk = caption_block(talking, which, w, h, s, speakers)
             if blk:
                 blocks.append(blk)
+        blocks += [touch_block(x, w, h, s) for kind, x in on if kind == "touch"]
         if blocks:
             key = hashlib.sha1(json.dumps(blocks, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
             png = folder / f"{key}.png"

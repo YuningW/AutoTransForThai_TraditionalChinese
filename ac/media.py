@@ -4,7 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from . import paths
+from . import paths, procs
 
 
 class MediaError(RuntimeError):
@@ -85,12 +85,16 @@ def burn(src, frames_list, dst, duration, on_progress):
             "-c:v", "h264_videotoolbox", "-q:v", "65", "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", str(dst)]
     p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    procs.register(p)
     for line in p.stdout:
         m = re.match(r"out_time_us=(\d+)", line)
         if m and duration:
             on_progress(min(1.0, int(m.group(1)) / 1e6 / duration))
     err = p.stderr.read()
-    if p.wait() != 0:
+    code = p.wait()
+    procs.unregister(p)
+    procs.check()
+    if code != 0:
         raise MediaError("Burning the captions failed: " + err.strip()[-300:])
 
 

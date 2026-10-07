@@ -87,6 +87,7 @@ def get_lines(jid: str):
 
 
 class LineIn(BaseModel):
+    speaker: str | None = None
     th: str | None = None
     zh: str | None = None
     start: float | None = None
@@ -116,9 +117,24 @@ def redo(jid: str, body: RedoIn):
     return jobs.load(jid)
 
 
+@app.post("/api/jobs/{jid}/stop")
+def stop(jid: str):
+    return jobs.stop(jid)
+
+
 @app.post("/api/jobs/{jid}/retry")
 def retry(jid: str):
     jobs.retry(jid)
+    return jobs.load(jid)
+
+
+class AgainIn(BaseModel):
+    clean_voice: bool = True
+
+
+@app.post("/api/jobs/{jid}/listen-again")
+def listen_again(jid: str, body: AgainIn):
+    jobs.listen_again(jid, body.clean_voice)
     return jobs.load(jid)
 
 
@@ -185,6 +201,42 @@ def add_line(jid: str, body: NewLineIn):
     return jobs.add_line(jid, body.start, body.end, body.th, body.zh)
 
 
+@app.post("/api/jobs/{jid}/lines/{lid}/split")
+def split_line(jid: str, lid: int):
+    return jobs.split_speakers(jid, lid)
+
+
+class SpeakersIn(BaseModel):
+    speakers: list[dict]
+
+
+@app.post("/api/jobs/{jid}/speakers")
+def set_speakers(jid: str, body: SpeakersIn):
+    return jobs.set_speakers(jid, body.speakers)
+
+
+class AssignIn(BaseModel):
+    ids: list[int]
+    speaker: str = ""
+
+
+@app.post("/api/jobs/{jid}/assign")
+def assign(jid: str, body: AssignIn):
+    return {"assigned": jobs.assign_speaker(jid, body.ids, body.speaker)}
+
+
+@app.post("/api/jobs/{jid}/recognise-voices")
+def recognise_voices(jid: str):
+    jobs.recognise_voices(jid)
+    return jobs.load(jid)
+
+
+@app.post("/api/jobs/{jid}/guess-speakers")
+def guess_speakers(jid: str):
+    jobs.guess_speakers(jid)
+    return jobs.load(jid)
+
+
 @app.delete("/api/jobs/{jid}/lines/{lid}")
 def delete_line(jid: str, lid: int):
     jobs.delete_line(jid, lid)
@@ -237,6 +289,9 @@ def get_settings():
     s = paths.load_settings()
     return {
         "listen_model": models.listen_key(), "claude_model": models.claude_model(),
+        "claude_effort": s.get("claude_effort") or "auto",
+        "efforts": [{"key": k, **v} for k, v in models.EFFORTS.items()],
+        "clean_voice": bool(s.get("clean_voice")), "fast": bool(s.get("fast")),
         "listen_models": [{"key": k, **{x: v[x] for x in ("label", "about")}, "ready": models.is_ready(k)}
                           for k, v in models.LISTEN.items()],
         "claude_models": [{"key": k, **v} for k, v in models.CLAUDE.items()],
@@ -262,6 +317,7 @@ def _fonts():
 class SettingsIn(BaseModel):
     listen_model: str | None = None
     claude_model: str | None = None
+    claude_effort: str | None = None
 
 
 @app.post("/api/settings")
@@ -275,6 +331,10 @@ def set_settings(body: SettingsIn):
         if body.claude_model not in models.CLAUDE:
             raise ValueError("Unknown Claude model.")
         ch["claude_model"] = body.claude_model
+    if body.claude_effort:
+        if body.claude_effort not in models.EFFORTS:
+            raise ValueError("Unknown effort level.")
+        ch["claude_effort"] = body.claude_effort
     paths.save_settings(ch)
     return get_settings()
 
@@ -287,7 +347,8 @@ def get_memory():
 
 
 class MemoryIn(BaseModel):
-    kind: str                 # names | words | rules
+    kind: str                 # names | words | rules | people
+    color: str = ""
     th: str = ""
     zh: str = ""
     text: str = ""
@@ -296,12 +357,19 @@ class MemoryIn(BaseModel):
 
 @app.post("/api/memory")
 def add_memory(body: MemoryIn):
+    if body.kind == "people":
+        if not body.text.strip():
+            raise ValueError("Type the person's name.")
+        memory.remember_people([{"name": body.text.strip(), "color": body.color or "#FFE14D"}])
+        return memory.load()
     if body.kind not in ("names", "words", "rules"):
         raise ValueError("Unknown kind.")
     return memory.add(body.kind, body.th, body.zh, body.text, body.note, source="added by hand")
 
 
 class MemoryEditIn(BaseModel):
+    name: str | None = None
+    color: str | None = None
     th: str | None = None
     zh: str | None = None
     text: str | None = None
@@ -311,6 +379,11 @@ class MemoryEditIn(BaseModel):
 @app.patch("/api/memory/{kind}/{eid}")
 def edit_memory(kind: str, eid: str, body: MemoryEditIn):
     return memory.edit(kind, eid, body.model_dump(exclude_none=True))
+
+
+@app.post("/api/memory/people/{pid}/forget-voice")
+def forget_voice(pid: str):
+    return memory.forget_voice(pid)
 
 
 @app.delete("/api/memory/{kind}/{eid}")
@@ -354,6 +427,7 @@ def main():
         if "--no-browser" not in sys.argv:
             webbrowser.open(url)
         return
+    jobs.recover_interrupted()
     if "--no-browser" not in sys.argv:
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()
     print(f"AutoCaption is running at {url}  (Ctrl+C to stop)")

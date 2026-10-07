@@ -12,7 +12,7 @@ import os
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
-from . import memory, models, paths
+from . import memory, models, paths, procs
 
 CHUNK = 90          # lines per request; long videos run several requests side by side
 
@@ -28,6 +28,7 @@ def ask(system, prompt, schema, cwd, images=(), effort=None, timeout=900):
     except BrainError as e:
         if "signed in" in str(e) or "isn't installed" in str(e):
             raise
+        procs.check()
         return _ask(system, prompt, schema, cwd, images, effort, timeout)
 
 
@@ -44,14 +45,24 @@ def _ask(system, prompt, schema, cwd, images, effort, timeout):
         prompt += "\n\nPictures to read (open each with the Read tool):\n" + "\n".join(str(p) for p in images)
     else:
         args += ["--tools", ""]
+    effort = models.claude_effort(effort)
     if effort:
         args += ["--effort", effort]
     env = {k: v for k, v in os.environ.items()
            if k not in ("ELECTRON_RUN_AS_NODE", "CLAUDECODE", "ANTHROPIC_API_KEY") and not k.startswith("VSCODE_")}
+    procs.check()
+    proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, cwd=str(cwd), env=env)
+    procs.register(proc)
     try:
-        p = subprocess.run(args, input=prompt, capture_output=True, text=True, cwd=str(cwd), env=env, timeout=timeout)
+        stdout, stderr = proc.communicate(prompt, timeout=timeout)
     except subprocess.TimeoutExpired:
+        proc.kill()
         raise BrainError("Claude took too long to answer. Try again.") from None
+    finally:
+        procs.unregister(proc)
+    procs.check()                        # the Stop button ended it
+    p = subprocess.CompletedProcess(args, proc.returncode, stdout, stderr)
     try:
         out = json.loads(p.stdout)
     except ValueError:
@@ -86,8 +97,13 @@ def _chunks(lines, n=CHUNK):
 
 
 def _parallel(fn, items):
+    jid = getattr(procs.current, "jid", None)
+
+    def run(item):                       # worker threads belong to the same job (for Stop)
+        procs.current.jid = jid
+        return fn(item)
     with ThreadPoolExecutor(max_workers=3) as ex:
-        return list(ex.map(fn, items))
+        return list(ex.map(run, items))
 
 
 def _context(job):
@@ -151,7 +167,11 @@ silence or music (for example "ขอบคุณที่รับชม", "ซ
 where the speaker said English, or a word that makes no sense where a similar-sounding word does.
 Keep the speaker's own style: slang, particles (นะ, ค่ะ, ครับ, อ่ะ, ปะ), English mixed in. Don't make it formal.
 When someone speaks English, keep it in English letters as said; don't turn it into Thai.
-Keep every line id and return every line. Don't merge or split lines: timing comes from the audio. You may move a word or two across the boundary between neighbouring lines when a line clearly ends with the start of the next sentence (for example a question's ending stuck to the start of the answer).
+Thai puts a space between phrases and sentences; add those spaces where the recogniser left them out.
+Keep every line id and return every line. Don't merge lines: timing comes from the audio. You may move a word or two across the boundary between neighbouring lines when a line clearly ends with the start of the next sentence (for example a question's ending stuck to the start of the answer).
+parts: when one line holds two speakers, or two sentences that should be read separately, also give the \
+tidied text cut into pieces in order (joined, they equal th, spaces aside); the line's time is shared out by \
+length. Otherwise leave parts out. Long lines with no spaces or punctuation usually need this.
 kind: "speech" for talking; "song" when the line is lyrics being sung; "sound" when there are no real \
 words (laughing, music, noise). For "sound" lines put a short Thai-free description in th like "(笑)" or "♪".
 suspect: true when you still think the words may be wrong after your changes (you'll be asked again later \
@@ -162,7 +182,8 @@ POLISH_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["
               "required": ["id", "th", "kind", "suspect"], "properties": {
                   "id": {"type": "integer"}, "th": {"type": "string"},
                   "kind": {"type": "string", "enum": ["speech", "song", "sound"]},
-                  "suspect": {"type": "boolean"}, "reason": {"type": "string"}}}}}}
+                  "suspect": {"type": "boolean"}, "reason": {"type": "string"},
+                  "parts": {"type": "array", "items": {"type": "string"}}}}}}}
 
 
 def polish(job, lines, helpers):
@@ -388,3 +409,28 @@ def suggest_touches(job, lines, sheets, every):
         "label on each frame is its time.",
         "Captions:\n" + _lines_text(lines, ("th", "zh"))) if x)
     return ask(TOUCH_SYSTEM, prompt, TOUCH_SCHEMA, job["dir"], images=sheets, effort="high")
+
+
+# ---------------------------------------------------------------- who says each line
+
+SPEAKER_SYSTEM = """You work out who says each caption line in a Thai video, from the words alone: who is \
+being addressed (พี่มิ้ลค์ is said TO Milk, by someone else), people naming themselves (เลิฟค่ะ, Thai speakers \
+often use their own name for "I"), question and answer turns, and the lines the user already assigned (true). \
+Give a person's id only when the text gives a real reason; otherwise "" (unknown). Don't guess by alternating."""
+
+SPEAKER_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["lines"], "properties": {
+    "lines": {"type": "array", "items": {"type": "object", "additionalProperties": False,
+              "required": ["id", "speaker"], "properties": {
+                  "id": {"type": "integer"}, "speaker": {"type": "string"}}}}}}
+
+
+def guess_speakers(job, lines, people):
+    who = "\n".join(f'- id "{p["id"]}": {p.get("name") or "(no name)"}' for p in people)
+    rows = []
+    for l in lines:
+        row = {"id": l["id"], "time": f"{l['start']:.1f}", "th": l.get("th", ""), "zh": l.get("zh", "")}
+        if l.get("speaker") and not l.get("speaker_guess"):
+            row["speaker"], row["by_user"] = l["speaker"], True
+        rows.append(json.dumps(row, ensure_ascii=False))
+    prompt = "\n\n".join(x for x in (_context(job), "People:\n" + who, "Lines:\n" + "\n".join(rows)) if x)
+    return ask(SPEAKER_SYSTEM, prompt, SPEAKER_SCHEMA, job["dir"], effort="low")

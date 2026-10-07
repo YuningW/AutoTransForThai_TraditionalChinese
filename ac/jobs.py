@@ -22,7 +22,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import brain, captions, fetch, media, memory, models, paths, style
+from . import brain, captions, fetch, media, memory, models, paths, procs, style, voices
 
 _locks = {}
 _gpu = threading.Semaphore(1)        # one Whisper / Demucs run at a time
@@ -132,13 +132,46 @@ def delete(jid):
 
 def _run(jid, fn, *args):
     def target():
+        procs.current.jid = jid
+        procs.clear(jid)
         try:
             fn(jid, *args)
         except Exception as e:  # shown on the page
-            msg = str(e) or e.__class__.__name__
-            update(jid, busy=False, error=msg, label="", progress=None)
-            log(jid, "Stopped: " + msg, "error")
+            if procs.stopped(jid) or isinstance(e, procs.Stopped):
+                _after_stop(jid)
+            else:
+                msg = str(e) or e.__class__.__name__
+                update(jid, busy=False, error=msg, label="", progress=None)
+                log(jid, "Stopped: " + msg, "error")
+        finally:
+            procs.clear(jid)
     threading.Thread(target=target, daemon=True).start()
+
+
+def stop(jid):
+    """The Stop button: end whatever this video is doing. What's already done is kept."""
+    job = load(jid)
+    if not job.get("busy"):
+        return job
+    procs.stop(jid)
+    update(jid, label="Stopping…")
+    return load(jid)
+
+
+def _after_stop(jid):
+    has_lines = bool(lines(jid))
+    what = load(jid).get("state")
+    update(jid, busy=False, label="", progress=None, state="ready" if has_lines else "stopped",
+           error=None if has_lines else "You stopped it before the captions were made. Press Try again to start over.")
+    log(jid, "You stopped it" + (f" while {STATE_DOING.get(what, 'working')}" if what else "") +
+        (". Everything finished before that is kept." if has_lines else "."), "warn")
+
+
+STATE_DOING = {"fetching": "downloading", "preparing": "reading the video", "cleaning": "removing the music",
+               "listening": "listening", "reading": "reading your screenshots", "tidying": "tidying the Thai",
+               "translating": "translating", "checking": "checking its work", "fixing": "fixing your flags",
+               "reviewing": "fixing a stretch", "burning": "saving the video", "touches": "picking emoji",
+               "speakers": "working out who's talking", "redoing": "redoing"}
 
 
 def _begin(jid, state, label=""):
@@ -151,19 +184,22 @@ def _begin(jid, state, label=""):
 
 
 def _step(jid, state, label, progress=None):
+    procs.check(jid)
     update(jid, state=state, label=label, progress=progress)
 
 
 # ---------------------------------------------------------------- new jobs
 
 def _new_job(title, about="", clean_voice=False, fast=False, **fields):
+    paths.save_settings({"clean_voice": bool(clean_voice), "fast": bool(fast)})     # remembered for next time
     jid = uuid.uuid4().hex[:12]
     (paths.JOBS / jid / "helpers").mkdir(parents=True)
     job = {"id": jid, "title": title, "about": (about or "").strip(), "created": time.time(), "updated": time.time(),
            "state": "fetching", "busy": True, "label": "Starting", "progress": None, "error": None,
            "options": {"clean_voice": bool(clean_voice), "fast": bool(fast), "listen_model": models.listen_key(),
                        "claude_model": models.claude_model()},
-           "style": paths.load_settings().get("style") or {}, "info": {}, "media": {}, "helpers": [],
+           "style": paths.load_settings().get("style") or {},
+           "speakers": [dict(p) for p in memory.load().get("people") or []], "info": {}, "media": {}, "helpers": [],
            "activity": [], "exports": [], "learned": [], "lines_rev": 0, **fields}
     save(job)
     return load(jid)
@@ -239,8 +275,21 @@ def _make(jid):
     _read_helpers(jid)
     _polish_and_translate(jid)
     _self_check(jid)
+    _auto_voices(jid)
     update(jid, busy=False, state="ready", label="", progress=None)
     log(jid, "Captions are ready for you to check.", "done")
+
+
+def _auto_voices(jid):
+    """Your usual people's voices are remembered: colour the lines they clearly say. Never stops the run."""
+    names = {p.get("name") for p in load(jid).get("speakers") or []}
+    ids = {"id:" + p["id"] for p in load(jid).get("speakers") or []}
+    if any((n in names or n in ids) and v[1] >= 3 for n, v in memory.remembered_voices().items()):
+        try:
+            _step(jid, "speakers", "Recognising voices you've taught it")
+            _recognise(jid)
+        except Exception as e:
+            log(jid, f"Couldn't recognise voices ({e}).", "warn")
 
 
 def _mmss(s):
@@ -251,9 +300,11 @@ def _mmss(s):
 def _sub(jid, args, label, weight=(0, 1)):
     """Run a python -m step, pass its progress to the page, return its last message."""
     a, b = weight
-    env = {**os.environ, "AC_WHISPER": _whisper(jid)}
+    env = {**os.environ, "AC_WHISPER": _whisper(jid), "AC_SPLIT_AT_PAUSES": "1" if models.split_at_pauses(_listen_key(jid)) else "0"}
+    procs.check(jid)
     p = subprocess.Popen([sys.executable, "-m", *args], cwd=str(paths.ROOT), stdout=subprocess.PIPE,
                          stderr=subprocess.DEVNULL, text=True, env=env)
+    procs.register(p)
     last = {}
     for line in p.stdout:
         try:
@@ -264,15 +315,21 @@ def _sub(jid, args, label, weight=(0, 1)):
         if "progress" in msg:
             update(jid, progress=round(a + (b - a) * msg["progress"], 3), label=label)
     p.wait()
+    procs.unregister(p)
+    procs.check(jid)
     if last.get("error") or p.returncode != 0:
         raise JobError(last.get("error") or f"{label} stopped unexpectedly.")
     return last
 
 
+def _listen_key(jid):
+    opts = load(jid).get("options") or {}
+    return models.QUICK if opts.get("fast") else (opts.get("listen_model") or models.listen_key())
+
+
 def _whisper(jid):
     """The listening model for this video, made ready (Thai-tuned ones are converted once)."""
-    opts = load(jid).get("options") or {}
-    key = "whisper-turbo" if opts.get("fast") else (opts.get("listen_model") or models.listen_key())
+    key = _listen_key(jid)
     if not models.is_ready(key) and "hf" in models.LISTEN.get(key, {}):
         update(jid, label=f"Getting {models.LISTEN[key]['label']} ready (one time, a few minutes)", progress=None)
     return models.mlx_path(key)
@@ -378,7 +435,15 @@ def _polish_and_translate(jid, keep_edited=True):
         l["kind"] = r["kind"]
         l["suspect"] = bool(r.get("suspect"))
         l["why"] = r.get("reason") or ""
+        parts = [x.strip() for x in r.get("parts") or [] if x.strip()]
+        if len(parts) > 1:
+            l["_parts"] = parts
+    ls, n_split = _split_parts(ls)
+    by_id = {l["id"]: l for l in ls}
+    work = [l for l in ls if not (keep_edited and locked(l))]
     save_lines(jid, ls)
+    if n_split:
+        log(jid, f"Cut {n_split} long lines where the speaker or sentence changes.")
     log(jid, f"Tidied the Thai: {changed} lines changed.")
 
     _step(jid, "translating", "Claude is translating into Traditional Chinese")
@@ -394,6 +459,28 @@ def _polish_and_translate(jid, keep_edited=True):
             h["used"] = True
         save(job)
     log(jid, "Translated every line.")
+
+
+def _split_parts(ls):
+    """Lines Claude cut into parts (one speaker or sentence each): share the time out by length."""
+    out, n, next_id = [], 0, max((l["id"] for l in ls), default=0) + 1
+    for l in ls:
+        parts = l.pop("_parts", None)
+        if not parts:
+            out.append(l)
+            continue
+        n += 1
+        total = sum(captions.visible_len(p) for p in parts) or 1
+        t = l["start"]
+        for i, p in enumerate(parts):
+            dur = (l["end"] - l["start"]) * captions.visible_len(p) / total
+            piece = {**l, "th": p, "start": round(t, 3), "end": round(t + dur, 3)}
+            if i:
+                piece["id"] = next_id
+                next_id += 1
+            out.append(piece)
+            t += dur
+    return out, n
 
 
 # ---------------------------------------------------------------- self-check
@@ -613,6 +700,9 @@ def edit_line(jid, lid, changes):
         for k in ("start", "end"):
             if k in changes and changes[k] is not None:
                 l[k] = round(max(0.0, float(changes[k])), 3)
+        if "speaker" in changes:
+            l["speaker"] = changes["speaker"] or None
+            l.pop("speaker_guess", None)
         if l["end"] <= l["start"]:
             l["end"] = round(l["start"] + 0.5, 3)
         save_lines(jid, ls)
@@ -644,6 +734,65 @@ def _redo_job(jid, what):
     log(jid, "Redone with your helpers and everything it has learned.", "done")
 
 
+def listen_again(jid, clean_voice=True):
+    """Start the listening over (e.g. with the music removed). Lines you typed or fixed with a note stay."""
+    job = load(jid)
+    if not job.get("source"):
+        raise JobError("The video isn't here yet.")
+    with _lock(jid):
+        job = load(jid)
+        job["options"] = {**job["options"], "clean_voice": bool(clean_voice), "listen_model": models.listen_key(),
+                          "claude_model": models.claude_model()}
+        save(job)
+    _begin(jid, "listening", "Starting over")
+    _run(jid, _listen_again_job)
+
+
+def _listen_again_job(jid):
+    d = job_dir(jid)
+    hear = d / "audio.wav"
+    if load(jid)["options"].get("clean_voice"):
+        _isolate_voice(jid)
+        hear = d / "voice.wav"
+    _step(jid, "listening", "Listening (Whisper)", 0)
+    segs = _listen(jid, hear, memory.whisper_hint())
+    old = lines(jid)
+    keep = [l for l in old if locked(l)]
+    first = max((l["id"] for l in old), default=0) + 1
+    fresh = [l for l in captions.from_segments(segs, first_id=first)
+             if not any(l["start"] < k["end"] and l["end"] > k["start"] for k in keep)]
+    save_lines(jid, captions.fix_timing(keep + fresh))
+    log(jid, f"Listened again{' with the music removed' if load(jid)['options'].get('clean_voice') else ''}: "
+             f"{len(fresh)} lines, plus {len(keep)} of yours kept.")
+    _read_helpers(jid)
+    _polish_and_translate(jid)
+    _self_check(jid)
+    _auto_voices(jid)
+    update(jid, busy=False, state="ready", label="", progress=None)
+    log(jid, "Captions are ready for you to check.", "done")
+
+
+def recover_interrupted():
+    """At start-up: a job still marked busy was cut off when AutoCaption stopped. Free it."""
+    for f in paths.JOBS.glob("*/job.json"):
+        try:
+            j = json.loads(f.read_text())
+        except ValueError:
+            continue
+        if not j.get("busy"):
+            continue
+        has_lines = (f.parent / "lines.json").exists()
+        what = {"reviewing": "Fix a stretch", "fixing": "Fix flagged lines", "burning": "Save",
+                "touches": "Let Claude suggest some"}.get(j.get("state"), "")
+        if has_lines and what:
+            msg = f"“{what}” was cut off when AutoCaption stopped. Nothing was lost; run it again."
+            update(j["id"], busy=False, state="ready", label="", progress=None, error=None)
+            log(j["id"], msg, "warn")
+        else:
+            update(j["id"], busy=False, label="", progress=None,
+                   error="AutoCaption stopped while working on this. Press Try again.")
+
+
 def retry(jid):
     """Pick up after an error."""
     job = load(jid)
@@ -657,8 +806,8 @@ def retry(jid):
     elif not lines(jid):
         _begin(jid, "preparing", "Reading the video")
         _run(jid, _make)
-    else:
-        redo(jid, "all")
+    else:                                   # captions are there: just clear the message
+        update(jid, error=None, state="ready")
 
 
 # ---------------------------------------------------------------- export
@@ -703,7 +852,7 @@ def _burn_job(jid, which, folder, base, files):
     shutil.rmtree(frames_dir, ignore_errors=True)
     kept = [t for t in touches(jid) if not t.get("pending")]
     lst = style.frames(lines(jid), kept, which, m.get("width") or 1920, m.get("height") or 1080, job.get("style"),
-                       frames_dir, lambda p: update(jid, progress=round(p, 3)))
+                       frames_dir, lambda p: update(jid, progress=round(p, 3)), job.get("speakers"))
     update(jid, label="Burning captions into the video", progress=0)
     label = {"zh": "中文字幕", "both": "中泰字幕", "th": "Thai captions"}[which]
     out = folder / f"{base} ({label}).mp4"
@@ -801,6 +950,170 @@ def add_line(jid, start, end=None, th="", zh=""):
         ls.sort(key=lambda l: l["start"])
         save_lines(jid, ls)
         return new
+
+
+def split_speakers(jid, lid):
+    """Two people talking at once: a second line over the same time, for the other person."""
+    with _lock(jid):
+        ls = lines(jid)
+        l = next((x for x in ls if x["id"] == lid), None)
+        if not l:
+            raise JobError("That line is gone.")
+        people = load(jid).get("speakers") or []
+        other = next((p["id"] for p in people if p["id"] != l.get("speaker")), None)
+        new = {**{k: v for k, v in l.items() if k not in ("explain", "feedback", "th_before", "zh_before", "heard", "attempts")},
+               "id": max(x["id"] for x in ls) + 1, "th": "", "zh": "", "speaker": other, "status": "edited", "conf": 1.0}
+        ls.insert(ls.index(l) + 1, new)
+        save_lines(jid, ls)
+        return new
+
+
+def set_speakers(jid, people):
+    """People who talk, each with a caption colour: [{"id", "name", "color"}]."""
+    clean, seen = [], set()
+    for p in people or []:
+        pid = str(p.get("id") or uuid.uuid4().hex[:6])
+        if pid in seen:
+            continue
+        seen.add(pid)
+        clean.append({"id": pid, "name": (p.get("name") or "").strip()[:30], "color": p.get("color") or "#FFFFFF"})
+    with _lock(jid):
+        ids = {p["id"] for p in clean}
+        ls = lines(jid)
+        if any(l.get("speaker") and l["speaker"] not in ids for l in ls):
+            for l in ls:
+                if l.get("speaker") and l["speaker"] not in ids:
+                    l["speaker"] = None
+            save_lines(jid, ls)
+        update(jid, speakers=clean)
+    memory.remember_people(clean)
+    return load(jid)
+
+
+def assign_speaker(jid, ids, speaker):
+    """Many lines to one person at once (speaker "" clears)."""
+    ids = set(int(i) for i in ids or [])
+    with _lock(jid):
+        ls = lines(jid)
+        for l in ls:
+            if l["id"] in ids:
+                l["speaker"] = speaker or None
+                l.pop("speaker_guess", None)
+        save_lines(jid, ls)
+    return len(ids)
+
+
+def recognise_voices(jid):
+    if not (load(jid).get("speakers") or []):
+        raise JobError("Add the people first (Caption style → People).")
+    _begin(jid, "speakers", "Recognising voices")
+    _run(jid, _voices_job)
+
+
+def _voices_job(jid):
+    _recognise(jid, quiet=False)
+    update(jid, busy=False, state="ready", label="", progress=None)
+
+
+def _voiceprints(jid, ls):
+    """Each line's voiceprint (cached in voices.npz; recomputed when a line's time changes)."""
+    import numpy as np
+    d = job_dir(jid)
+    cache_f = d / "voices.npz"
+    cache = dict(np.load(cache_f)) if cache_f.exists() else {}
+    # a line's own stretch of sound: stop where the next line starts, so its voice doesn't creep in
+    starts = sorted(l["start"] for l in ls)
+    def span(l):
+        nxt = next((t for t in starts if t > l["start"] + voices.MIN_SECONDS), l["end"])
+        return l["start"], min(l["end"], nxt)
+    key = lambda l: "{}_{:.2f}_{:.2f}".format(l["id"], *span(l))
+    todo = [{"key": key(l), "start": span(l)[0], "end": span(l)[1]} for l in ls
+            if span(l)[1] - span(l)[0] >= voices.MIN_SECONDS and key(l) not in cache]
+    if todo:
+        (d / "voices_todo.json").write_text(json.dumps(todo))
+        wav = d / ("voice.wav" if (d / "voice.wav").exists() else "audio.wav")
+        with _gpu:
+            _sub(jid, ["ac.voices", str(wav), str(d / "voices_todo.json"), str(d / "voices_new.npz")], "Recognising voices")
+        cache.update(dict(np.load(d / "voices_new.npz")))
+        np.savez(cache_f, **cache)
+        (d / "voices_new.npz").unlink(missing_ok=True)
+    return {l["id"]: cache[key(l)] for l in ls if key(l) in cache}
+
+
+def _recognise(jid, quiet=True):
+    """Learn each person's voice from the lines you assigned (plus what's remembered), then give the
+    unassigned lines to whoever they clearly sound like. Returns how many lines it coloured."""
+    import numpy as np
+    job = load(jid)
+    people = job.get("speakers") or []
+    if not people:
+        return 0
+    ls = lines(jid)
+    vecs = _voiceprints(jid, ls)
+    yours = [l for l in ls if l.get("speaker") and not l.get("speaker_guess") and l["id"] in vecs]
+    remembered = memory.remembered_voices()
+    prints, learned = {}, {}
+    for p in people:
+        mine = [vecs[l["id"]] for l in yours if l["speaker"] == p["id"]]
+        old = remembered.get("id:" + p["id"]) or remembered.get(p.get("name"))
+        if mine and p.get("name"):
+            learned[p["name"]] = (voices.unit(np.mean(mine, 0)).tolist(), len(mine))
+        parts = ([voices.unit(np.mean(mine, 0)) * len(mine)] if mine else []) + \
+                ([np.array(old[0]) * min(old[1], 20)] if old else [])
+        if parts and (len(mine) >= 2 or (old and old[1] >= 3)):
+            prints[p["id"]] = voices.unit(np.sum(parts, 0))
+    if not prints:
+        if not quiet:
+            log(jid, "To recognise voices, first give each person at least 2–3 lines "
+                     "(the chip on a line, or tick lines and Assign).", "warn")
+        return 0
+    counts = {}
+    for l in ls:
+        if l.get("speaker") and not l.get("speaker_guess"):
+            continue                                   # yours
+        who = voices.match(vecs[l["id"]], prints) if l["id"] in vecs else None
+        if who:
+            l["speaker"], l["speaker_guess"] = who, "voice"
+            counts[who] = counts.get(who, 0) + 1
+        elif l.get("speaker_guess") == "voice":
+            l["speaker"] = None
+            l.pop("speaker_guess", None)
+    save_lines(jid, ls)
+    if learned:
+        memory.remember_people(people)        # so the voices have someone to be remembered with
+        memory.learn_voices(learned)
+    names = {p["id"]: p.get("name") or "?" for p in people}
+    left = sum(1 for l in ls if not l.get("speaker"))
+    if counts or not quiet:
+        log(jid, "Recognised voices: " + (", ".join(f"{names[k]} {v}" for k, v in counts.items()) or "no clear matches")
+                 + f". {left} lines left for you (too short or unclear).", "done")
+    return sum(counts.values())
+
+
+def guess_speakers(jid):
+    if not (load(jid).get("speakers") or []):
+        raise JobError("Add the people first (Caption style → People).")
+    _begin(jid, "speakers", "Claude is guessing who says each line")
+    _run(jid, _guess_job)
+
+
+def _guess_job(jid):
+    job = load(jid)
+    ls = lines(jid)
+    r = brain.guess_speakers(job, ls, job["speakers"])
+    ids = {p["id"] for p in job["speakers"]}
+    by_id = {l["id"]: l for l in ls}
+    n = 0
+    for g in r["lines"]:
+        l = by_id.get(g["id"])
+        if not l or (l.get("speaker") and not l.get("speaker_guess")):     # yours stay
+            continue
+        if g.get("speaker") in ids:
+            l["speaker"], l["speaker_guess"] = g["speaker"], True
+            n += 1
+    save_lines(jid, ls)
+    update(jid, busy=False, state="ready", label="", progress=None)
+    log(jid, f"Guessed who says {n} lines (dashed chips). Correct any that are wrong.", "done")
 
 
 def delete_line(jid, lid):

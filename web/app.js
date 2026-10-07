@@ -31,7 +31,7 @@ const STATE_WORDS = {
   fetching: "Downloading", preparing: "Reading the video", cleaning: "Removing music", listening: "Listening",
   reading: "Reading your screenshots", tidying: "Tidying the Thai", translating: "Translating", checking: "Checking itself",
   fixing: "Fixing your flags", redoing: "Redoing", burning: "Burning captions in", ready: "Ready to check",
-  reviewing: "Listening again to a stretch", touches: "Picking moments for emoji",
+  reviewing: "Listening again to a stretch", touches: "Picking moments for emoji", speakers: "Working out who's talking",
 };
 
 /* ============================================================ start view */
@@ -144,7 +144,8 @@ $("#newForm").addEventListener("submit", async e => {
 
 function resetForm() {
   setVideo(null);
-  $("#link").value = ""; $("#about").value = ""; $("#cleanVoice").checked = false; $("#fast").checked = false;
+  $("#link").value = ""; $("#about").value = "";
+  if (settings) { $("#cleanVoice").checked = settings.clean_voice = $("#cleanVoice").checked; settings.fast = $("#fast").checked; }
   pending.original = []; pending.translation = [];
   renderChips("original"); renderChips("translation");
   $$("[data-text]").forEach(t => { t.value = ""; });
@@ -197,10 +198,11 @@ async function refresh(jid) {
     const j = await api("GET", `/api/jobs/${jid}`);
     const firstVideo = !job || (!job.media?.duration && j.media?.duration);
     const first = !job;
-    if (job && job.id === j.id) j.style = job.style;      // the page owns the style while you edit it
+    if (job && job.id === j.id) { j.style = job.style; j.speakers = job.speakers; }   // the page owns these while you edit
     job = j;
     renderJob();
-    if (first) { renderStylePanel(); placeOverlay(); }
+    if (first) { renderStylePanel(); renderPeople(); placeOverlay(); picked.clear(); }
+    else if (job.speakers && !document.activeElement?.closest?.("#peopleList")) { /* keep the page's copy */ }
     if ((j.touches_rev || 0) !== touchesRev) await loadTouches();
     if (firstVideo && j.media?.duration) { video.src = `/api/jobs/${jid}/video`; }
     if (j.lines_rev !== linesRev) {
@@ -228,6 +230,8 @@ function renderJob() {
   $("#statusText").textContent = failed ? "Stopped" : (job.label || STATE_WORDS[job.state] || "Working");
   $("#jobError").textContent = failed ? job.error : "";
   $("#retry").hidden = !failed;
+  $("#stopJob").hidden = !job.busy;
+  $("#stopJob").disabled = job.label === "Stopping…";
   const known = typeof job.progress === "number";
   $("#bar").classList.toggle("unknown", !known || !job.busy);
   $("#barFill").style.width = known ? `${Math.round(job.progress * 100)}%` : "0";
@@ -237,6 +241,11 @@ function renderJob() {
   ["#addLineHere", "#addTouchHere", "#markRange"].forEach(s => { $(s).disabled = noVideo; });
   $("#suggestTouches").disabled = !!job.busy || !(job.counts && job.counts.lines);
   if (!$("#rangeBox").hidden) renderRange();
+  const music = !!job.options?.clean_voice, done = job.state === "ready" && !job.busy && job.counts?.lines;
+  $("#again").hidden = !done;
+  $("#againText").textContent = music ? "Listened with the background music removed."
+    : "Background music drowning out words?";
+  $("#againBtn").textContent = music ? "Listen again without removing music" : "Listen again with the music removed";
   $("#fixNow").disabled = !!job.busy;
 
   // exports
@@ -279,6 +288,19 @@ function renderJob() {
   updateFixbar();
 }
 
+$("#againBtn").onclick = async () => {
+  const music = !job.options?.clean_voice;
+  if (!confirm("Start the listening over? Lines you typed or fixed with a note stay; everything else is redone.")) return;
+  try { await api("POST", `/api/jobs/${job.id}/listen-again`, { clean_voice: music }); refresh(job.id); }
+  catch (ex) { alert(ex.message); }
+};
+
+$("#stopJob").onclick = async () => {
+  if (!confirm("Stop what it's doing now? Anything already finished is kept.")) return;
+  try { job = { ...job, ...(await api("POST", `/api/jobs/${job.id}/stop`)) }; renderJob(); refresh(job.id); }
+  catch (ex) { alert(ex.message); }
+};
+
 $("#retry").onclick = async () => {
   try { await api("POST", `/api/jobs/${job.id}/retry`); refresh(job.id); } catch (ex) { alert(ex.message); }
 };
@@ -295,6 +317,8 @@ function renderLines() {
   const open = new Set($$(".line .flagbox:not([hidden])", ol).map(b => +b.closest(".line").dataset.id));
   ol.replaceChildren(...lines.map(l => lineEl(l, open.has(l.id))));
   updateFixbar();
+  for (const id of [...picked]) if (!lines.some(l => l.id === id)) picked.delete(id);
+  renderBulk();
   current = null; tick();
 }
 
@@ -309,6 +333,7 @@ function lineEl(l, flagOpen) {
   li.classList.add(l.kind || "speech");
   $(".time", li).textContent = fmtTime(l.start);
   $(".time", li).title = `${fmtTime(l.start)} – ${fmtTime(l.end)}. Play from here`;
+  paintWho(li, l);
   $(".th", li).textContent = l.th;
   $(".zh", li).textContent = l.zh || "";
   $(".dot", li).title = unsure ? "It wasn't sure it heard this right" : l.status === "fixed" ? "It fixed this line" : l.status === "edited" ? "You typed this" : "";
@@ -354,6 +379,15 @@ const ol = $("#lines");
 ol.addEventListener("click", e => {
   const l = lineOf(e.target);
   if (!l) return;
+  if (e.target.classList.contains("pick")) {
+    const on = e.target.checked;
+    if (e.shiftKey && lastPick !== null) {            // Shift: the whole range from the last tick
+      const a = lines.findIndex(x => x.id === lastPick), b = lines.findIndex(x => x.id === l.id);
+      lines.slice(Math.min(a, b), Math.max(a, b) + 1).forEach(x => on ? picked.add(x.id) : picked.delete(x.id));
+    } else if (on) picked.add(l.id); else picked.delete(l.id);
+    lastPick = l.id; renderBulk();
+    return;
+  }
   if (e.target.closest(".time")) { video.currentTime = l.start + 0.01; video.play(); return; }
   if (e.target.closest(".flag")) {
     const box = $(".flagbox", e.target.closest(".line"));
@@ -365,6 +399,18 @@ ol.addEventListener("click", e => {
   const ft = e.target.closest(".flag-types button");
   if (ft) { patch(l, { flag: ft.dataset.flag === l.flag ? "" : ft.dataset.flag }); return; }
   if (e.target.closest(".unflag")) { patch(l, { flag: "", note: "" }); return; }
+  if (e.target.closest(".twoppl")) {
+    if (!(job.speakers || []).length) {
+      $("#stylePanel").open = true; $("#addPerson").scrollIntoView({ block: "center" });
+      alert("Add the people first (Caption style → People), so each line can have its own colour.");
+      return;
+    }
+    api("POST", `/api/jobs/${job.id}/lines/${l.id}/split`).then(async n => {
+      lines = await api("GET", `/api/jobs/${job.id}/lines`); linesRev = -1; renderLines();
+      const el = $(`.line[data-id="${n.id}"] .zh`); if (el) { el.scrollIntoView({ block: "center" }); el.focus(); }
+    }).catch(ex => alert(ex.message));
+    return;
+  }
   if (e.target.closest(".delline")) {
     if (!confirm("Delete this line?")) return;
     api("DELETE", `/api/jobs/${job.id}/lines/${l.id}`).then(() => {
@@ -378,6 +424,11 @@ ol.addEventListener("click", e => {
     const v = op === "=" ? video.currentTime : l[k] + (op === "+" ? 0.2 : -0.2);
     patch(l, { [k]: Math.round(v * 1000) / 1000 });
   }
+});
+ol.addEventListener("change", e => {
+  if (!e.target.classList.contains("who")) return;
+  const l = lineOf(e.target);
+  if (l) patch(l, { speaker: e.target.value });
 });
 ol.addEventListener("focusout", e => {
   const l = lineOf(e.target);
@@ -469,6 +520,9 @@ async function loadSettings() {
     return b;
   }));
   renderModels();
+  if (!$("#startView").hidden && !pending.video && !$("#link").value) {
+    $("#cleanVoice").checked = !!settings.clean_voice; $("#fast").checked = !!settings.fast;
+  }
 }
 
 function renderModels() {
@@ -478,12 +532,16 @@ function renderModels() {
     r.onchange = () => onPick(m.key);
     const t = document.createElement("span");
     t.innerHTML = `<b></b><small></small>`;
-    t.querySelector("b").textContent = m.label + (m.key === current ? " (in use)" : "");
+    t.querySelector("b").textContent = m.label + (m.key === current && name !== "ef" ? " (in use)" : "");
     t.querySelector("small").textContent = m.about + ("ready" in m && !m.ready ? " The first time, it downloads (2–6 GB) and gets ready in a few minutes." : "");
     l.append(r, t); return l;
   });
   $("#listenModels").replaceChildren(...card(settings.listen_models, settings.listen_model, "lm", k => pickModel({ listen_model: k })));
   $("#claudeModels").replaceChildren(...card(settings.claude_models, settings.claude_model, "cm", k => pickModel({ claude_model: k })));
+  const haiku = settings.claude_model.startsWith("claude-haiku");
+  $("#efforts").replaceChildren(...card(settings.efforts, settings.claude_effort, "ef", k => pickModel({ claude_effort: k })));
+  $$("#efforts input").forEach(i => { i.disabled = haiku; });
+  $("#effortNote").textContent = haiku ? "Claude Haiku 4.5 has no effort setting; it always answers quickly." : "";
   $("#openSettings").textContent = "Models";
   $("#openSettings").title = `Listening: ${label(settings.listen_models, settings.listen_model)}. Claude: ${label(settings.claude_models, settings.claude_model)}.`;
 }
@@ -557,31 +615,121 @@ $$("input[name=st-order]").forEach(r => r.addEventListener("change", () => setSt
 $("#styleDefault").onclick = () => saveStyleNow(true).then(() => loadSettings()).catch(ex => alert(ex.message));
 $("#styleReset").onclick = () => { job.style = {}; styleChanged(true); };
 
+/* ---------------------------------------------------------- people (caption colour per person) */
+
+const PERSON_COLOURS = ["#FFE14D", "#9FD8FF", "#FFB3D1", "#B8F5A4", "#FFC48A", "#D7B8FF"];
+function renderPeople() {
+  const people = job?.speakers || [];
+  $("#peopleList").replaceChildren(...people.map((p, i) => {
+    const li = document.createElement("li");
+    const c = document.createElement("input"); c.type = "color"; c.value = hex6(p.color); c.setAttribute("aria-label", "Colour");
+    const n = document.createElement("input"); n.className = "field"; n.value = p.name; n.placeholder = `Person ${i + 1} (e.g. Milk)`;
+    const x = document.createElement("button"); x.type = "button"; x.className = "ghost"; x.textContent = "Remove";
+    c.oninput = () => { p.color = c.value; savePeople(true); };
+    n.onchange = () => { p.name = n.value.trim(); savePeople(); };
+    x.onclick = () => { job.speakers = people.filter(q => q !== p); savePeople(); };
+    li.append(c, n, x); return li;
+  }));
+}
+let peopleTimer = null;
+function savePeople(later) {
+  renderPeople(); current = undefined; tick();
+  $$(".line").forEach(li => paintWho(li, lines.find(l => l.id === +li.dataset.id)));
+  clearTimeout(peopleTimer);
+  const send = async () => {
+    try {
+      const j = await api("POST", `/api/jobs/${job.id}/speakers`, { speakers: job.speakers || [] });
+      job.speakers = j.speakers;
+      if (j.lines_rev !== linesRev) { lines = await api("GET", `/api/jobs/${job.id}/lines`); linesRev = j.lines_rev; renderLines(); }
+    } catch (ex) { alert(ex.message); }
+  };
+  if (later) peopleTimer = setTimeout(send, 400); else send();
+}
+$("#addPerson").onclick = () => {
+  const people = job.speakers || [];
+  people.push({ id: Math.random().toString(36).slice(2, 8), name: "", color: PERSON_COLOURS[people.length % PERSON_COLOURS.length] });
+  job.speakers = people; savePeople();
+  setTimeout(() => $("#peopleList li:last-child .field")?.focus(), 50);
+};
+
+/* ---------------------------------------------------------- many lines at once */
+
+const picked = new Set();
+let lastPick = null;
+function renderBulk() {
+  $$(".line").forEach(li => {
+    const on = picked.has(+li.dataset.id);
+    li.classList.toggle("picked", on); $(".pick", li).checked = on;
+  });
+  const n = picked.size, people = job?.speakers || [];
+  $("#bulkbar").hidden = n === 0;
+  $("#selCount").textContent = `${n} line${n === 1 ? "" : "s"} ticked`;
+  const keep = $("#bulkWho").value;
+  $("#bulkWho").replaceChildren(new Option("Nobody (no colour)", ""), ...people.map((p, i) => new Option(p.name || `Person ${i + 1}`, p.id)));
+  if ([...$("#bulkWho").options].some(o => o.value === keep)) $("#bulkWho").value = keep;
+  else if (people[0]) $("#bulkWho").value = people[0].id;
+  $("#fixbar").classList.toggle("lifted", n > 0);
+}
+$("#bulkAssign").onclick = async () => {
+  if (!(job.speakers || []).length && $("#bulkWho").value === "") {
+    $("#stylePanel").open = true; $("#addPerson").scrollIntoView({ block: "center" });
+    alert("Add the people first (Caption style → People)."); return;
+  }
+  try {
+    await api("POST", `/api/jobs/${job.id}/assign`, { ids: [...picked], speaker: $("#bulkWho").value });
+    picked.clear();
+    lines = await api("GET", `/api/jobs/${job.id}/lines`); linesRev = -1; renderLines();
+  } catch (ex) { alert(ex.message); }
+};
+$("#bulkClear").onclick = () => { picked.clear(); renderBulk(); };
+$("#recogniseVoices").onclick = async () => {
+  try { await api("POST", `/api/jobs/${job.id}/recognise-voices`); refresh(job.id); } catch (ex) { alert(ex.message); }
+};
+$("#guessWho").onclick = async () => {
+  try { await api("POST", `/api/jobs/${job.id}/guess-speakers`); refresh(job.id); } catch (ex) { alert(ex.message); }
+};
+
+function paintWho(li, l) {
+  const sel = $(".who", li), people = job?.speakers || [];
+  if (!l) return;
+  sel.hidden = !people.length;
+  sel.replaceChildren(new Option("—", ""), ...people.map((p, i) => new Option(p.name || `Person ${i + 1}`, p.id)));
+  sel.value = l.speaker || "";
+  const p = people.find(x => x.id === l.speaker);
+  sel.style.setProperty("--who", p ? p.color : "transparent");
+  sel.classList.toggle("set", !!p);
+  sel.classList.toggle("guess", !!(p && l.speaker_guess));
+  sel.title = !p || !l.speaker_guess ? "" : l.speaker_guess === "voice" ? "Recognised by voice: change it if it's wrong" : "Claude's guess from the words: change it if it's wrong";
+}
+
 /* ---------------------------------------------------------- video + overlay */
 
 let current = null, touches = [], touchesRev = -1, selTouch = null;
-function lineAt(t) {
-  let lo = 0, hi = lines.length - 1, best = null;
+function linesAt(t) {
+  // lines can overlap when two people talk at once: every line covering t, earliest first
+  let lo = 0, hi = lines.length - 1, best = -1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
     if (lines[mid].start <= t) { best = mid; lo = mid + 1; } else hi = mid - 1;
   }
-  // a line you add may overlap the one before it: show the latest one that covers t
-  for (let i = best; i !== null && i >= 0 && i > best - 3; i--) if (t <= lines[i].end) return lines[i];
-  return null;
+  const on = [];
+  for (let i = best; i >= 0 && i > best - 8; i--) if (t <= lines[i].end) on.unshift(lines[i]);
+  return on;
 }
 function tick() {
   const t = video.currentTime;
   $$(".now-t").forEach(x => { x.textContent = fmtTime(t); });
-  const l = lines.length ? lineAt(t) : null;
-  if (l !== current) {
-    current = l;
+  const on = lines.length ? linesAt(t) : [];
+  const key = on.map(x => x.id).join(",");
+  if (key !== current) {
+    current = key;
     $$(".line.now").forEach(x => x.classList.remove("now"));
-    drawCaption(l);
+    drawCaption(on);
+    on.forEach(x => $(`.line[data-id="${x.id}"]`)?.classList.add("now"));
+    const l = on[on.length - 1];
     if (l) {
       const li = $(`.line[data-id="${l.id}"]`);
       if (li) {
-        li.classList.add("now");
         if ($("#follow").checked && !editing() && !video.paused) {
           const r = li.getBoundingClientRect();
           if (r.top < 110 || r.bottom > innerHeight - 80) li.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
@@ -628,22 +776,29 @@ function placeOverlay() {
 video.addEventListener("loadedmetadata", placeOverlay);
 new ResizeObserver(placeOverlay).observe($("#player"));
 
-function drawCaption(l) {
-  const st = fullStyle(), boxEl = $("#ovBox"), A = $("#ovA"), B = $("#ovB");
-  A.textContent = ""; B.textContent = ""; boxEl.style.background = "none"; boxEl.style.padding = "0";
-  if (!l || !st) return;
+function drawCaption(on) {
+  const st = fullStyle(), boxEl = $("#ovBox");
+  boxEl.replaceChildren(); boxEl.style.background = "none"; boxEl.style.padding = "0";
+  if (!on.length || !st) return;
   const show = $("input[name=show]:checked").value;
   const zhPx = Math.min(frame.vw, frame.vh) * frame.scale * 0.058 * st.size;
   const thPx = show === "both" ? zhPx * st.th_scale : zhPx;
-  const th = l.kind === "sound" ? "" : (l.th || ""), zh = l.zh || "";
+  const colour = id => ((job.speakers || []).find(p => p.id === id) || {}).color;
   const rows = [];
-  if (show !== "zh" && th) rows.push([th, thPx, true]);
-  if (show !== "th" && zh) rows.push([zh, zhPx, false]);
-  if (st.order === "zh_above") rows.reverse();
-  [A, B].forEach((el, i) => {
-    const r = rows[i];
-    el.textContent = r ? r[0] : "";
-    if (r) Object.assign(el.style, rowCss(st, r[1], r[2] && show === "both"), { marginTop: i ? `${zhPx * 0.12}px` : "0" });
+  for (const l of on) {
+    const th = l.kind === "sound" ? "" : (l.th || ""), zh = l.zh || "", own = colour(l.speaker);
+    const pair = [];
+    if (show !== "zh" && th) pair.push([th, thPx, true]);
+    if (show !== "th" && zh) pair.push([zh, zhPx, false]);
+    if (st.order === "zh_above") pair.reverse();
+    pair.forEach(r => rows.push([...r, own]));
+  }
+  rows.forEach(([text, px, isTh, own], i) => {
+    const el = document.createElement("div");
+    el.className = "ov-row"; el.textContent = text;
+    Object.assign(el.style, rowCss(st, px, isTh && show === "both"), { marginTop: i ? `${zhPx * 0.12}px` : "0" });
+    if (own) el.style.color = own;
+    boxEl.append(el);
   });
   if (st.box && rows.length) Object.assign(boxEl.style, { background: st.box_color, padding: `${zhPx * 0.19}px ${zhPx * 0.32}px`, borderRadius: `${zhPx * 0.25}px` });
 }
@@ -851,7 +1006,7 @@ $("#rangeGo").onclick = async () => {
 async function loadMemoryCount() {
   try {
     const m = await api("GET", "/api/memory");
-    const n = m.names.length + m.words.length + m.rules.length;
+    const n = m.names.length + m.words.length + m.rules.length + (m.people || []).length;
     $("#memCount").textContent = n || "";
     return m;
   } catch { return null; }
@@ -859,6 +1014,32 @@ async function loadMemoryCount() {
 async function renderMemory() {
   const m = await loadMemoryCount();
   if (!m) return;
+  $('[data-mem="people"]').replaceChildren(...(m.people || []).map(p => {
+    const li = document.createElement("li");
+    const c = document.createElement("input"); c.type = "color"; c.value = hex6(p.color || "#FFFFFF"); c.setAttribute("aria-label", `${p.name}'s colour`);
+    const n = document.createElement("input"); n.className = "field mname"; n.value = p.name; n.setAttribute("aria-label", "Name");
+    const v = document.createElement("span"); v.className = "mvoice";
+    v.textContent = p.voice ? `voice learned from ${p.voice_n} line${p.voice_n === 1 ? "" : "s"}` : "voice not learned yet";
+    const save = ch => api("PATCH", `/api/memory/people/${p.id}`, ch).then(renderMemory).catch(ex => alert(ex.message));
+    c.onchange = () => save({ color: c.value });
+    n.onchange = () => n.value.trim() && save({ name: n.value.trim() });
+    li.append(c, n, v);
+    if (p.voice) {
+      const f = document.createElement("button"); f.type = "button"; f.textContent = "Forget voice";
+      f.onclick = async () => {
+        if (!confirm(`Forget ${p.name}'s voice? Lines won't be coloured for ${p.name} automatically until you teach it again.`)) return;
+        await api("POST", `/api/memory/people/${p.id}/forget-voice`); renderMemory();
+      };
+      li.append(f);
+    }
+    const x = document.createElement("button"); x.type = "button"; x.textContent = "Remove";
+    x.onclick = async () => {
+      if (!confirm(`Remove ${p.name}? New videos won't start with them, and their voice is forgotten. Videos you already made keep their colours.`)) return;
+      await api("DELETE", `/api/memory/people/${p.id}`); renderMemory();
+    };
+    li.append(x);
+    return li;
+  }));
   for (const kind of ["names", "words", "rules"]) {
     $(`[data-mem="${kind}"]`).replaceChildren(...m[kind].map(e => {
       const li = document.createElement("li");

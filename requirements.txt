@@ -9,3 +9,4 @@ silero-vad>=6.2
 pythainlp>=5.0
 audioread>=3.0
 soundfile>=0.12
+speechbrain>=1.1

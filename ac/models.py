@@ -18,11 +18,11 @@ LISTEN = {
     "whisper-large-v3": {"label": "Whisper large-v3 (OpenAI)", "mlx": "mlx-community/whisper-large-v3-mlx",
                          "about": "OpenAI's general model. On our Thai test: 85.8% right, missed 7 of 96 lines."},
     "whisper-turbo": {"label": "Whisper turbo (OpenAI)", "mlx": "mlx-community/whisper-large-v3-turbo",
-                      "about": "About 6× faster, more Thai mistakes."},
+                      "about": "Fast but weakest on Thai: 74.1% right, missed 14 of 96 on our test."},
     "typhoon-large-v3": {"label": "Typhoon Whisper large-v3 (Thai)", "hf": "typhoon-ai/typhoon-whisper-large-v3",
                          "about": "Whisper retrained on Thai by Typhoon (SCB 10X). On our Thai test: 87.2% right, missed 6 of 96."},
     "typhoon-turbo": {"label": "Typhoon Whisper turbo (Thai)", "hf": "typhoon-ai/typhoon-whisper-turbo",
-                      "about": "Thai-trained and fast."},
+                      "about": "Thai-trained and fast; used for Quicker listening. On our Thai test: 82.0% right, missed 12 of 96."},
     "thonburian-large-v3": {"label": "Thonburian Whisper large-v3 (Thai)", "hf": "biodatlab/whisper-th-large-v3-combined",
                             "about": "Whisper retrained on Thai by Mahidol University's biodatlab. On our Thai test: 88.7% right, missed 6 of 96, slow."},
     "pathumma-large-v3": {"label": "Pathumma Whisper large-v3 (Thai)", "hf": "nectec/Pathumma-whisper-th-large-v3",
@@ -48,6 +48,11 @@ def mlx_path(key):
         return str(out)
     convert(m["hf"], out)
     return str(out)
+
+
+def split_at_pauses(key):
+    """Thai-tuned (converted) models don't time phrases inside a chunk; listen to each pause-to-pause stretch."""
+    return "hf" in LISTEN.get(key, {})
 
 
 def is_ready(key):
@@ -115,6 +120,26 @@ def convert(repo, out, on_progress=None):
     (tmp / "config.json").write_text(json.dumps({**dims, "model_type": "whisper"}, indent=1))
     shutil.rmtree(out, ignore_errors=True)
     tmp.rename(out)
+
+
+# How hard Claude thinks. "auto": deeper for translating, fixing and touches, lighter for tidying and checking.
+EFFORTS = {
+    "auto": {"label": "Auto", "about": "Thinks harder where it matters (translating, fixing), lighter elsewhere. Recommended."},
+    "low": {"label": "Low", "about": "Fastest, uses the least of your plan; more slips in wording."},
+    "medium": {"label": "Medium", "about": "Quicker than Auto for everyday clips."},
+    "high": {"label": "High", "about": "Every step thinks carefully."},
+    "xhigh": {"label": "Extra high", "about": "Slower; for tricky dialogue, slang, wordplay."},
+    "max": {"label": "Max", "about": "Slowest and uses the most of your plan."},
+}
+QUICK = "typhoon-turbo"
+
+
+def claude_effort(step_default=None):
+    """The --effort to pass for a step, or None. Haiku 4.5 has no effort setting."""
+    if claude_model().startswith("claude-haiku"):
+        return None
+    e = paths.load_settings().get("claude_effort") or "auto"
+    return step_default if e == "auto" else e
 
 
 def listen_key():

@@ -55,8 +55,8 @@
         <input id="about" class="field" placeholder="e.g. MilkLove, Girl Rules EP3 behind the scenes">
       </details>
 
-      <label class="check"><input type="checkbox" id="cleanVoice"> Music or crowd noise under the talking (takes a few minutes longer)</label>
-      <label class="check"><input type="checkbox" id="fast"> Quicker listening (about 6× faster, gets more Thai words wrong)</label>
+      <label class="check strong"><input type="checkbox" id="cleanVoice"> <span><b>Remove background music first</b><small>For clips with songs, BGM, fancams or crowd noise: it takes the music out, then listens to the voices. Adds about 10 seconds per minute of video.</small></span></label>
+      <label class="check"><input type="checkbox" id="fast"> <span>Quicker listening<small>Several times faster, but misses more Thai.</small></span></label>
 
       <button class="primary big" id="go" type="submit" disabled>Make captions</button>
       <p class="form-error" id="formError" role="alert"></p>
@@ -75,7 +75,7 @@
   <section class="stage">
     <div class="player" id="player">
       <video id="video" controls playsinline preload="metadata"></video>
-      <div class="overlay" id="overlay"><div class="ov-box" id="ovBox"><div class="ov-row" id="ovA"></div><div class="ov-row" id="ovB"></div></div></div>
+      <div class="overlay" id="overlay"><div class="ov-box" id="ovBox"></div></div>
       <div class="touch-layer" id="touchLayer"></div>
     </div>
     <div class="view-opts">
@@ -84,6 +84,11 @@
       <label><input type="radio" name="show" value="zh"> 中文</label>
       <label><input type="radio" name="show" value="th"> Thai</label>
       <span class="muted drag-hint" id="dragHint">Pause to drag emoji around, or the captions when “Where” is “Drag it”.</span>
+    </div>
+
+    <div class="again" id="again" hidden>
+      <span id="againText"></span>
+      <button class="secondary" type="button" id="againBtn"></button>
     </div>
 
     <div class="tools" id="tools">
@@ -107,7 +112,8 @@
     </div>
 
     <div class="status" id="status">
-      <div class="status-line"><span class="spinner" id="spinner"></span><span id="statusText"></span></div>
+      <div class="status-line"><span class="spinner" id="spinner"></span><span id="statusText"></span>
+        <button class="ghost stop" type="button" id="stopJob">Stop</button></div>
       <div class="bar" id="bar"><i id="barFill"></i></div>
       <p class="error" id="jobError" role="alert"></p>
       <button class="secondary" id="retry" type="button" hidden>Try again</button>
@@ -144,6 +150,16 @@
           <label><input type="radio" name="st-order" value="zh_above"> 中文 above Thai</label>
         </div>
         <p class="muted small">Videos that already have subtitles at the bottom: choose Top.</p>
+        <div class="people">
+          <h4>People <span class="muted small">Give each person a caption colour, then pick who says each line (the chip on the line). When two talk at once, each gets their own row.</span></h4>
+          <ul class="people-list" id="peopleList"></ul>
+          <div class="style-actions">
+            <button class="secondary" type="button" id="addPerson">+ Add person</button>
+            <button class="secondary" type="button" id="recogniseVoices">Recognise voices</button>
+            <button class="ghost" type="button" id="guessWho">Or let Claude guess from the words</button>
+          </div>
+          <p class="muted small"><b>Recognise voices:</b> give each person 3–5 lines yourself (the chip on a line, or tick lines and Assign), then press it. It learns their voices on your Mac (no Claude usage), colours the lines that clearly sound like them, and remembers the voices for your next videos. Remove anyone who isn't in this video so it won't pick them.</p>
+        </div>
         <div class="style-actions">
           <button class="secondary" type="button" id="styleDefault">Use for all new videos</button>
           <button class="ghost" type="button" id="styleReset">Back to default</button>
@@ -230,6 +246,12 @@
     <ol class="lines" id="lines"></ol>
     <div class="empty-lines" id="emptyLines">Captions appear here as soon as it has heard the video.</div>
 
+    <div class="bulkbar" id="bulkbar" hidden>
+      <span id="selCount"></span>
+      <label>Who says them <select class="field" id="bulkWho"></select></label>
+      <button class="primary" type="button" id="bulkAssign">Assign</button>
+      <button class="ghost" type="button" id="bulkClear">Clear selection</button>
+    </div>
     <div class="fixbar" id="fixbar" hidden>
       <span id="flagCount"></span>
       <button class="primary" id="fixNow" type="button">Fix flagged lines</button>
@@ -244,6 +266,11 @@
     <button class="ghost" value="close" aria-label="Close">Close</button>
   </form>
   <p class="muted">Used for every video. It adds to this when you fix lines with a note. You can also add or remove things yourself.</p>
+
+  <h3>People</h3>
+  <p class="muted small">Everyone you've given a caption colour. New videos start with them, and once a voice is learned, their lines are coloured automatically. Changes here apply to new videos.</p>
+  <ul class="mem-list people-mem" data-mem="people"></ul>
+  <form class="mem-add" data-kind="people"><input type="color" name="color" value="#FFE14D" aria-label="Colour"><input class="field" name="text" placeholder="Name, e.g. View"><button class="secondary">Add</button></form>
 
   <h3>Names</h3>
   <ul class="mem-list" data-mem="names"></ul>
@@ -271,13 +298,20 @@
   <div class="model-list" id="listenModels" role="radiogroup" aria-label="Listening model"></div>
   <h3>Tidying, translating, checking and fixing (Claude)</h3>
   <div class="model-list" id="claudeModels" role="radiogroup" aria-label="Claude model"></div>
+  <h3>How hard Claude thinks</h3>
+  <div class="model-list effort-list" id="efforts" role="radiogroup" aria-label="Effort"></div>
+  <p class="muted small" id="effortNote"></p>
   <p class="muted small" id="modelNote">New choices apply to the next video you start, and to fixes and redos from now on.</p>
 </dialog>
 
 <template id="lineTpl">
   <li class="line">
-    <button class="time" type="button"></button>
+    <div class="left">
+      <input type="checkbox" class="pick" aria-label="Select this line">
+      <button class="time" type="button"></button>
+    </div>
     <div class="texts">
+      <select class="who" aria-label="Who is talking"></select>
       <div class="th" contenteditable="plaintext-only" spellcheck="false" lang="th"></div>
       <div class="zh" contenteditable="plaintext-only" spellcheck="false" lang="zh-Hant"></div>
       <div class="why"></div>
@@ -303,6 +337,7 @@
         <button type="button" data-t="end+">End +0.2s</button>
       </div>
       <div class="flag-actions">
+        <button type="button" class="twoppl">Two people at once: add a line for the other</button>
         <button type="button" class="delline">Delete this line</button>
         <button type="button" class="unflag">Not wrong</button>
       </div>

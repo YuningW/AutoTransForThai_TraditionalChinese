@@ -62,12 +62,34 @@ class Style(unittest.TestCase):
         self.assertEqual(([r["text"] for r in top["rows"]], top["anchor"]), (["你好"], "top"))
         self.assertIsNone(style.caption_block({"th": "", "zh": ""}, "both", 1920, 1080, style.merged({})))
 
+    def test_people_talking_at_once_get_own_rows_and_colours(self):
+        people = [{"id": "m", "color": "#FFE14D"}, {"id": "l", "color": "#9FD8FF"}]
+        a = {"start": 1, "end": 3, "th": "ก", "zh": "甲", "speaker": "l"}
+        b = {"start": 0.5, "end": 3, "th": "ข", "zh": "乙", "speaker": "m"}
+        blk = style.caption_block([a, b], "zh", 1920, 1080, style.merged({}), people)
+        self.assertEqual([(r["text"], r["color"]) for r in blk["rows"]], [("乙", "#FFE14D"), ("甲", "#9FD8FF")])
+        # a short line is stretched to be readable, up to the same person's next line, not the other's
+        ls = captions.fix_timing([{"start": 1.0, "end": 1.1, "th": "ก", "speaker": "m"},
+                                  {"start": 1.05, "end": 2.0, "th": "ข", "speaker": "l"},
+                                  {"start": 1.5, "end": 2.5, "th": "ค", "speaker": "m"}])
+        self.assertEqual(ls[0]["end"], 1.46)
+
     def test_timeline_merges_touches_and_lines(self):
         lines = [{"start": 1, "end": 3, "th": "ก", "zh": "甲"}, {"start": 5, "end": 6, "th": "ข", "zh": ""}]
         touches = [{"start": 2, "end": 5.5, "text": "💗"}]
         spans = style.timeline(lines, touches, "zh")                 # line 2 has no Chinese: not shown
         shown = [(a, b, sorted(k for k, _ in on)) for a, b, on in spans]
         self.assertEqual(shown, [(0.0, 1, []), (1, 2, ["line"]), (2, 3, ["line", "touch"]), (3, 5.5, ["touch"])])
+
+
+class Voices(unittest.TestCase):
+    def test_only_clear_matches_are_coloured(self):
+        from ac import voices
+        milk, love = voices.unit([1, 0, 0]), voices.unit([0, 1, 0])
+        prints = {"milk": milk, "love": love}
+        self.assertEqual(voices.match(voices.unit([0.9, 0.2, 0.1]), prints), "milk")
+        self.assertIsNone(voices.match(voices.unit([0.6, 0.55, 0.2]), prints))     # too close to call
+        self.assertIsNone(voices.match(voices.unit([0.1, 0.1, 1.0]), prints))      # sounds like nobody taught
 
 
 class Junk(unittest.TestCase):

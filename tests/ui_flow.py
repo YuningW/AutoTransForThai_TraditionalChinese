@@ -137,7 +137,7 @@ async def main(base, jid, video, out):
             await p.click('.line[data-id="9"] .time')
             await asyncio.sleep(1.5)
             await p.js("document.querySelector('#video').pause()")
-            ov = await p.js("document.querySelector('#ovZh').textContent")
+            ov = await p.js("document.querySelector('#ovBox').textContent")
             now = await p.js("document.querySelector('.line.now')?.dataset.id")
             print("seek ok: line", now, "|", ov)
             await p.shot(Path(out) / "ui_job.png")

@@ -53,15 +53,17 @@ def main():
         path = models.mlx_path(key)
         out = out_dir / f"bench_{key}.json"
         t = time.time()
+        split = "1" if models.split_at_pauses(key) else "0"
         p = subprocess.run([sys.executable, "-m", "ac.listen", wav, str(out)], cwd=ROOT,
-                           env={**os.environ, "AC_WHISPER": path}, capture_output=True, text=True)
+                           env={**os.environ, "AC_WHISPER": path, "AC_SPLIT_AT_PAUSES": split}, capture_output=True, text=True)
         secs = time.time() - t
         if p.returncode != 0:
             print(f"{key:22} failed: {p.stdout[-300:]}")
             continue
         segs = json.loads(out.read_text())
         found, missed = score(segs, ref)
-        print(f"{key:22} found {found:5.1f}%   missed {len(missed):3d}/{len(ref)}   {secs:5.0f} s", flush=True)
+        avg = sum(s["end"] - s["start"] for s in segs) / max(1, len(segs))
+        print(f"{key:22} found {found:5.1f}%   missed {len(missed):3d}/{len(ref)}   {len(segs)} segments ({avg:.1f} s avg)   {secs:5.0f} s", flush=True)
         for m in missed[:6]:
             print(f"{'':24}missed {m['start']:>4}s  {m['th']}")
 

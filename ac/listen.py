@@ -9,6 +9,7 @@ Runs as its own process so the model's memory is handed back when it finishes:
 Prints {"progress": 0..1} lines while working, then {"done": n_segments}.
 """
 import json
+import os
 import re
 import sys
 import warnings
@@ -37,19 +38,20 @@ def load_wav(path):
         return np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float32) / 32768
 
 
-def speech_parts(audio):
-    """[(start, end)] in seconds where someone seems to be talking, grouped into chunks."""
+def speech_parts(audio, join_gap=JOIN_GAP, min_silence=350, max_chunk=MAX_CHUNK):
+    """[(start, end)] in seconds where someone seems to be talking, grouped into chunks.
+    join_gap 0 keeps every pause as a boundary (see SPLIT_AT_PAUSES)."""
     import torch
     from silero_vad import get_speech_timestamps, load_silero_vad
     ts = get_speech_timestamps(torch.from_numpy(audio), load_silero_vad(), sampling_rate=SR,
-                               return_seconds=True, min_silence_duration_ms=350, speech_pad_ms=250)
+                               return_seconds=True, min_silence_duration_ms=min_silence, speech_pad_ms=150 if min_silence < 300 else 250)
     chunks = []
     for t in ts:
         s, e = float(t["start"]), float(t["end"])
         while e - s > MAX_CHUNK:            # one long stretch of talking: cut it
             chunks.append([s, s + MAX_CHUNK])
             s += MAX_CHUNK
-        if chunks and s - chunks[-1][1] < JOIN_GAP and e - chunks[-1][0] <= MAX_CHUNK:
+        if chunks and s - chunks[-1][1] < join_gap and e - chunks[-1][0] <= max_chunk:
             chunks[-1][1] = e
         else:
             chunks.append([s, e])
@@ -98,34 +100,43 @@ def _coverage(segs, length):
 def transcribe(wav, hint="", temperature=None, vad=True):
     audio = load_wav(wav)
     total = len(audio) / SR
-    parts = speech_parts(audio) if vad else [[0.0, total]]
+    # Thai-tuned models write a whole chunk as one run of text with no usable timing inside, so
+    # lines could only be cut by length (mid-sentence, two speakers in one line). For them each
+    # stretch between pauses is listened to on its own: a change of speaker nearly always has a pause.
+    split = os.environ.get("AC_SPLIT_AT_PAUSES") == "1"
+    gap, longest = (float(os.environ.get("AC_SPLIT_JOIN", "0")), float(os.environ.get("AC_SPLIT_MAX", MAX_CHUNK))) \
+        if split else (JOIN_GAP, MAX_CHUNK)
+    parts = speech_parts(audio, gap, max_chunk=longest) if vad else [[0.0, total]]
     temps = (0.0, 0.4) if temperature is None else (temperature, min(1.0, temperature + 0.3))
     other = OTHER_MODEL.get(paths.WHISPER, "mlx-community/whisper-large-v3-mlx")
-    out, done = [], 0.0
-    work = sum(e - s for s, e in parts) or 1
-    for s, e in parts:
-        piece = audio[int(s * SR):int(min(total, e) * SR)]
-        if len(piece) < SR * 0.3:
+    pieces = [(s, e, audio[int(s * SR):int(min(total, e) * SR)]) for s, e in parts]
+    pieces = [x for x in pieces if len(x[2]) >= SR * 0.3]
+    work = sum(e - s for s, e, _ in pieces) or 1
+    found, done = {}, 0.0
+    for i, (s, e, piece) in enumerate(pieces):
+        found[i] = _decode(piece, s, e, paths.WHISPER, hint, temps)
+        done += e - s
+        say(progress=round(0.9 * min(1.0, done / work), 3))
+    # The voice detector heard talking but almost nothing came back: Whisper sometimes drops a
+    # whole stretch, and told "this is Thai" it often drops English entirely. Listen again, letting
+    # it pick the language, more loosely, then with the other model. Each try runs over all such
+    # stretches in one go, because switching models means loading 3 GB again.
+    for model, t, lang in ((paths.WHISPER, (0.0, 0.4), None), (paths.WHISPER, (0.3, 0.6), "th"), (other, (0.0, 0.4), None)):
+        weak = [i for i, (s, e, _) in enumerate(pieces) if e - s > 2.5 and _coverage(found[i], e - s) < 0.3]
+        if not weak or not model:
             continue
-        segs = _decode(piece, s, e, paths.WHISPER, hint, temps)
-        # The voice detector heard talking but almost nothing came back: Whisper sometimes
-        # drops a whole stretch, and told "this is Thai" it often drops English entirely.
-        # Listen again: letting it pick the language, more loosely, then with the other model.
-        if e - s > 2.5 and _coverage(segs, e - s) < 0.3:
-            for model, t, lang in ((paths.WHISPER, (0.0, 0.4), None), (paths.WHISPER, (0.3, 0.6), "th"),
-                                   (other, (0.0, 0.4), None)):
-                if not model:
-                    continue
-                again = _decode(piece, s, e, model, hint, t, lang)
-                if _coverage(again, e - s) > _coverage(segs, e - s) + 0.15:
-                    segs = again
-                if _coverage(segs, e - s) >= 0.3:
-                    break
+        for i in weak:
+            s, e, piece = pieces[i]
+            again = _decode(piece, s, e, model, hint, t, lang)
+            if _coverage(again, e - s) > _coverage(found[i], e - s) + 0.15:
+                found[i] = again
+    say(progress=1.0)
+    out = []
+    for i in range(len(pieces)):
+        segs = found[i]
         if out and segs and segs[0]["text"] == out[-1]["text"]:
             segs = segs[1:]
         out += segs
-        done += e - s
-        say(progress=round(min(1.0, done / work), 3))
     return out
 
 

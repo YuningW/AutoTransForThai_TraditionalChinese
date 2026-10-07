@@ -9,8 +9,9 @@ A quick web tool that downloads a Thai video (or takes one you drop in) and writ
 5. Something skipped, or a whole part wrong? Press **Fix a stretch…**, mark **From here** and **To here**, and say what's wrong. It listens to just that part again several ways (Thai, any language, another model, the voice with the music removed) and rewrites those lines. Or press **+ Caption at …** and type one yourself.
 6. It learns from your notes: names, words and style rules go into **What it has learned** and are used for every video after that. You can edit that list yourself.
 7. **Caption style**: pick a theme (經典白, 字幕黃, 黑底框, 奶茶, 粉嫩, 手寫, 娃娃, 夜空) or set the Chinese and Thai fonts, size, colours, outline, shadow, a dark box, and where the captions sit (bottom, top, or drag them). The preview on the video matches what gets burned in.
-8. **Emoji and notes**: add (臉紅)💗, (偷笑)🤭, a name tag… at any moment and drag it where you want, or **Let Claude suggest some**: it looks at frames from the video and the captions and proposes touches for you to keep or remove.
-9. **Save**: SRT files (Thai, Chinese, both) plus, if you like, a copy of the video with the captions, emoji and notes burned in. They go to `~/Movies/AutoCaption/<video title>/`.
+8. **People and colours**: under Caption style → People, give each person a colour (Milk 🟡, Love 🔵…). Pick who says a line with the chip on it, or tick many lines (Shift-click ticks a range) and assign them at once. When two people talk over each other, press **Two people at once** on a line: each gets their own row, in their own colour. Your usual people are remembered for new videos. **Recognise voices**: give each person 3–5 lines yourself, press it, and it learns their voices on your Mac (no Claude usage), colours the lines that clearly sound like them, and remembers the voices so your next videos are coloured automatically. **Or let Claude guess from the words** (someone says their own name, or is called พี่มิ้ลค์). Guesses have a dashed chip until you change them.
+9. **Emoji and notes**: add (臉紅)💗, (偷笑)🤭, a name tag… at any moment and drag it where you want, or **Let Claude suggest some**: it looks at frames from the video and the captions and proposes touches for you to keep or remove.
+10. **Save**: SRT files (Thai, Chinese, both) plus, if you like, a copy of the video with the captions, emoji and notes burned in. They go to `~/Movies/AutoCaption/<video title>/`.
 
 ## Start
 
@@ -38,15 +39,25 @@ Under **Models** you can pick which Whisper model listens. Thai-tuned versions o
 | [Thonburian Whisper large-v3](https://huggingface.co/biodatlab/whisper-th-large-v3-combined) (biodatlab) | 88.7% | 6 | much slower |
 | [Typhoon Whisper large-v3](https://huggingface.co/typhoon-ai/typhoon-whisper-large-v3) (SCB 10X) | 87.2% | 6 | |
 | Whisper large-v3 (OpenAI) | 85.8% | 7 | |
+| [Typhoon Whisper turbo](https://huggingface.co/typhoon-ai/typhoon-whisper-turbo) | 82.0% | 12 | used for **Quicker listening** |
+| Whisper turbo (OpenAI) | 74.1% | 14 | |
 
-One video is a small test, so treat the differences as a hint, not a ranking. To score models on your own video, use `tests/bench_listen.py` with a file of subtitles you trust. The turbo models are several times faster but less accurate; tick **Quicker listening** when you start a video to use one.
+One video is a small test, so treat the differences as a hint, not a ranking. To score models on your own video, use `tests/bench_listen.py` with a file of subtitles you trust. The turbo models are faster but skipped whole stretches of talking in this test; tick **Quicker listening** when you start a video to use Typhoon turbo.
+
+With the background music removed first, the scores stayed the same on this interview (its music is quiet), so that option is for clips where music or a crowd is loud.
+
+Thai-tuned models write each burst of speech as one run of text with no timing inside it, so AutoCaption listens to them pause by pause, and Claude cuts any line that still holds two speakers or two sentences.
+
+**Recognising voices** uses SpeechBrain's ECAPA speaker model. On *THE INTERVIEW EP.1* (Girl Rules, six people, 21 minutes), whose English captions name each speaker: after 4 lines per person it coloured 56% of the remaining lines by itself, 96% of them right (Milk vs Love: 90 of 91), and left the short or unclear ones blank. With only remembered voices (nothing assigned) it did the same: 58% coloured, 97% right.
+
+Under **Models** you can also set **how hard Claude thinks**: Auto (deeper for translating and fixing, lighter for tidying), or one level for every step from Low (fastest, uses the least of your plan) to Max.
 
 ## Good to know
 
 - **Songs**: lines that are sung lyrics are marked ♪ and not translated. Type your own if you want them.
 - **Videos that already have subtitles burned in** (iQIYI and so on): set **Where** to **Top** in Caption style so the two don't overlap.
 - **Models** (top right): choose which model listens and which Claude model tidies, translates, checks and fixes. See [Choosing a listening model](#choosing-a-listening-model).
-- **Music or crowd under the talking**: tick that box when you start. It takes away the music before listening, which costs a few minutes but helps a lot with fancams and variety shows.
+- **Background music**: tick **Remove background music first** when you start (it remembers your choice). It takes the music out, then listens to the voices, which adds about 10 seconds per minute of video. Already started without it? Press **Listen again with the music removed** on the video's page; lines you typed or fixed with a note are kept.
 - Your own typed edits are never overwritten when it redoes or fixes things.
 - Everything it works with stays in `work/` (not in git). Delete a video from the list to remove its working files; saved SRT and video files stay.
 

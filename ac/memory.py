@@ -16,8 +16,9 @@ import uuid
 from . import paths
 
 KEEP_EXAMPLES = 40
+KEEP_PEOPLE = 30
 _lock = threading.Lock()
-EMPTY = {"names": [], "words": [], "rules": [], "examples": []}
+EMPTY = {"names": [], "words": [], "rules": [], "examples": [], "people": []}
 
 
 def load():
@@ -91,7 +92,7 @@ def edit(kind, eid, changes):
         m = load()
         for e in m.get(kind, []):
             if e.get("id") == eid:
-                e.update({k: v for k, v in changes.items() if k in ("th", "zh", "note", "text")})
+                e.update({k: v for k, v in changes.items() if k in ("th", "zh", "note", "text", "name", "color")})
                 e["updated"] = time.time()
         _save(m)
         return m
@@ -101,6 +102,62 @@ def remove(kind, eid):
     with _lock:
         m = load()
         m[kind] = [e for e in m.get(kind, []) if e.get("id") != eid]
+        _save(m)
+        return m
+
+
+def remember_people(people):
+    """Your usual people and their caption colours, so new videos start with them (voiceprints kept)."""
+    with _lock:
+        m = load()
+        known = {p["name"]: p for p in m["people"] if p.get("name")}
+        for p in people or []:
+            name = (p.get("name") or "").strip()
+            if name:
+                old = known.get(name, {})
+                known[name] = {**old, "id": old.get("id") or p.get("id") or _new_id(), "name": name,
+                               "color": p.get("color") or old.get("color")}
+        m["people"] = list(known.values())[-KEEP_PEOPLE:]
+        _save(m)
+
+
+def learn_voices(prints):
+    """prints: {name: (unit voiceprint list, n lines)}. Folded into what's remembered, weighted by lines."""
+    import numpy as np
+    with _lock:
+        m = load()
+        for p in m["people"]:
+            if p.get("name") in prints:
+                vec, n = prints[p["name"]]
+                old_n = int(p.get("voice_n") or 0)
+                if p.get("voice") and old_n:
+                    v = (np.array(p["voice"]) * old_n + np.array(vec) * n) / (old_n + n)
+                else:
+                    v = np.array(vec)
+                v = v / (np.linalg.norm(v) + 1e-9)
+                p["voice"], p["voice_n"] = [round(float(x), 5) for x in v], min(old_n + n, 200)
+        _save(m)
+
+
+def remembered_voices():
+    """{name: (unit voiceprint, n)} and {id: ...} for people whose voice has been learned."""
+    out = {}
+    for p in load()["people"]:
+        if p.get("voice"):
+            v = (p["voice"], int(p.get("voice_n") or 0))
+            out[p["name"]] = v
+            if p.get("id"):
+                out["id:" + p["id"]] = v
+    return out
+
+
+def forget_voice(pid):
+    with _lock:
+        m = load()
+        for p in m["people"]:
+            if p.get("id") == pid:
+                p.pop("voice", None)
+                p.pop("voice_n", None)
         _save(m)
         return m
 

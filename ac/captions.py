@@ -106,10 +106,12 @@ def _line(start, end, th, conf):
 
 
 def fix_timing(lines):
-    """Short lines stay up long enough to read, without running into the next one."""
+    """Short lines stay up long enough to read, without running into the same person's next line.
+    Lines of different people may overlap: that's two people talking at once."""
     lines.sort(key=lambda l: l["start"])
     for i, l in enumerate(lines):
-        nxt = lines[i + 1]["start"] if i + 1 < len(lines) else l["end"] + 10
+        same = [x for x in lines[i + 1:] if x.get("speaker") == l.get("speaker")]
+        nxt = same[0]["start"] if same else l["end"] + 10
         want = max(l["end"], l["start"] + MIN_SECONDS, l["start"] + 0.06 * visible_len(l["th"]))
         l["end"] = round(min(want + 0.15, max(l["end"], nxt - 0.04)), 3)
         if l["end"] <= l["start"]:
