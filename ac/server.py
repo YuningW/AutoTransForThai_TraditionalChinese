@@ -58,17 +58,18 @@ class LinkIn(BaseModel):
     clean_voice: bool = False
     fast: bool = False
     video_subs: bool = True
+    subs_check: bool = False
 
 
 @app.post("/api/jobs")
 def new_job(body: LinkIn):
-    return jobs.create_from_link(body.url, body.about, body.clean_voice, body.fast, body.video_subs)
+    return jobs.create_from_link(body.url, body.about, body.clean_voice, body.fast, body.video_subs, body.subs_check)
 
 
 @app.post("/api/jobs/upload")
 def upload_job(file: UploadFile = File(...), about: str = Form(""), clean_voice: bool = Form(False),
-               fast: bool = Form(False), video_subs: bool = Form(True)):
-    return jobs.create_from_upload(file.filename, file.file, about, clean_voice, fast, video_subs)
+               fast: bool = Form(False), video_subs: bool = Form(True), subs_check: bool = Form(False)):
+    return jobs.create_from_upload(file.filename, file.file, about, clean_voice, fast, video_subs, subs_check)
 
 
 @app.get("/api/jobs")
@@ -340,7 +341,7 @@ def get_settings():
         "listen_model": models.listen_key(), "claude_model": models.claude_model(),
         "claude_effort": s.get("claude_effort") or "auto",
         "efforts": [{"key": k, **v} for k, v in models.EFFORTS.items()],
-        "clean_voice": bool(s.get("clean_voice")), "fast": bool(s.get("fast")), "video_subs": s.get("video_subs", True),
+        "clean_voice": bool(s.get("clean_voice")), "fast": bool(s.get("fast")), "video_subs": s.get("video_subs", True), "subs_check": bool(s.get("subs_check")),
         "listen_models": [{"key": k, **{x: v[x] for x in ("label", "about")}, "ready": models.is_ready(k)}
                           for k, v in models.LISTEN.items()],
         "claude_models": [{"key": k, **v} for k, v in models.CLAUDE.items()],

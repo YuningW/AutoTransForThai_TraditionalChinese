@@ -192,13 +192,15 @@ def _step(jid, state, label, progress=None):
 
 # ---------------------------------------------------------------- new jobs
 
-def _new_job(title, about="", clean_voice=False, fast=False, video_subs=True, **fields):
-    paths.save_settings({"clean_voice": bool(clean_voice), "fast": bool(fast), "video_subs": bool(video_subs)})
+def _new_job(title, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, **fields):
+    subs_check = bool(subs_check and video_subs)
+    paths.save_settings({"clean_voice": bool(clean_voice), "fast": bool(fast), "video_subs": bool(video_subs),
+                         "subs_check": subs_check})
     jid = uuid.uuid4().hex[:12]
     (paths.JOBS / jid / "helpers").mkdir(parents=True)
     job = {"id": jid, "title": title, "about": (about or "").strip(), "created": time.time(), "updated": time.time(),
            "state": "fetching", "busy": True, "label": "Starting", "progress": None, "error": None,
-           "options": {"clean_voice": bool(clean_voice), "fast": bool(fast), "video_subs": bool(video_subs),
+           "options": {"clean_voice": bool(clean_voice), "fast": bool(fast), "video_subs": bool(video_subs), "subs_check": subs_check,
                        "listen_model": models.listen_key(),
                        "claude_model": models.claude_model()},
            "style": paths.load_settings().get("style") or {},
@@ -208,7 +210,7 @@ def _new_job(title, about="", clean_voice=False, fast=False, video_subs=True, **
     return load(jid)
 
 
-def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=True):
+def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False):
     url = fetch.clean_url(url)
     key = fetch.video_key(url)
     for f in paths.JOBS.glob("*/job.json"):
@@ -218,17 +220,17 @@ def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=Tr
             continue
         if j.get("key") == key and j.get("source") and not j.get("error"):
             return load(j["id"])                     # same video again: open the earlier job
-    job = _new_job(url, about, clean_voice, fast, video_subs, key=key, info={"url": url})
+    job = _new_job(url, about, clean_voice, fast, video_subs, subs_check, key=key, info={"url": url})
     _run(job["id"], _fetch_then_make, url)
     return job
 
 
-def create_from_upload(filename, stream, about="", clean_voice=False, fast=False, video_subs=True):
+def create_from_upload(filename, stream, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False):
     ext = Path(filename or "video.mp4").suffix.lower()
     if ext not in VIDEO_EXT:
         raise JobError("That doesn't look like a video file (" + (ext or "no extension") + ").")
     title = Path(filename).stem
-    job = _new_job(title, about, clean_voice, fast, video_subs, info={"title": title, "file": filename})
+    job = _new_job(title, about, clean_voice, fast, video_subs, subs_check, info={"title": title, "file": filename})
     dst = job_dir(job["id"]) / ("source" + ext)
     with open(dst, "wb") as f:
         shutil.copyfileobj(stream, f, 4 * 1024 * 1024)
@@ -577,7 +579,7 @@ def _self_check(jid):
     ls = lines(jid)
     by_id = {l["id"]: l for l in ls}
     _step(jid, "checking", "Checking its own work")
-    problems = brain.review(job, [l for l in ls if not locked(l)], job["helpers"])
+    problems = brain.review(job, [l for l in ls if not locked(l)], _check_refs(job))
 
     targets = {}
     for l in ls:
@@ -702,7 +704,7 @@ def _fix(jid, targets, learn=True):
     by_id = {l["id"]: l for l in ls}
     result = {"lines": [], "lessons": []}
     for i in range(0, len(targets), 25):
-        r = brain.fix(job, ls, targets[i:i + 25], relistened, job["helpers"])
+        r = brain.fix(job, ls, targets[i:i + 25], relistened, _check_refs(job))
         result["lines"] += r["lines"]
         result["lessons"] += r["lessons"]
     changed, neighbours = 0, 0
@@ -1347,7 +1349,8 @@ def _review_work(jid, start, end, note, state="reviewing", why=""):
     # (its words weren't in what was listened to) stays as it is
     inside = [l for l in ls if min(end, l["end"]) - max(start, l["start"]) > 0.5 * (l["end"] - l["start"])]
     keep = [l for l in inside if locked(l)]
-    r = brain.rebuild(load(jid), ls, start, end, inside, keep, attempts, note, load(jid)["helpers"], why)
+    job = load(jid)
+    r = brain.rebuild(job, ls, start, end, inside, keep, attempts, note, job["helpers"] if why == SUBS_WHY else _check_refs(job), why)
     next_id = max((l["id"] for l in ls), default=0) + 1
     new = []
     for x in r["lines"]:
@@ -1431,8 +1434,15 @@ def _merge_gaps(gaps, join, longest):
     return [(round(a, 2), round(b, 2)) for a, b in merged]
 
 
+def _check_refs(job):
+    """Subtitles written by people, for the checks: only when "Also check the captions against them" is on."""
+    return job["helpers"] if job["options"].get("subs_check") else []
+
+
 def _fill_from_subtitles(jid):
     """Listen again where the video's subtitles show talking the captions are missing. Never stops the run."""
+    if not load(jid)["options"].get("subs_check"):
+        return
     try:
         gaps = subtitle_gaps(jid)
     except Exception as e:

@@ -121,16 +121,16 @@ $("#newForm").addEventListener("submit", async e => {
   e.preventDefault();
   const err = $("#formError"); err.textContent = "";
   const go = $("#go"); go.disabled = true;
-  const about = $("#about").value.trim(), clean = $("#cleanVoice").checked, fast = $("#fast").checked, vsubs = $("#videoSubs").checked;
+  const about = $("#about").value.trim(), clean = $("#cleanVoice").checked, fast = $("#fast").checked, vsubs = $("#videoSubs").checked, scheck = vsubs && $("#subsCheck").checked;
   try {
     let job;
     if (pending.video) {
       const f = new FormData();
-      f.append("file", pending.video); f.append("about", about); f.append("clean_voice", clean); f.append("fast", fast); f.append("video_subs", vsubs);
+      f.append("file", pending.video); f.append("about", about); f.append("clean_voice", clean); f.append("fast", fast); f.append("video_subs", vsubs); f.append("subs_check", scheck);
       job = await uploadVideo(f, p => { go.textContent = `Copying the video… ${Math.round(p * 100)}%`; });
     } else {
       go.textContent = "Starting…";
-      job = await api("POST", "/api/jobs", { url: $("#link").value.trim(), about, clean_voice: clean, fast, video_subs: vsubs });
+      job = await api("POST", "/api/jobs", { url: $("#link").value.trim(), about, clean_voice: clean, fast, video_subs: vsubs, subs_check: scheck });
     }
     await sendHelpers(job.id);
     resetForm();
@@ -145,7 +145,8 @@ $("#newForm").addEventListener("submit", async e => {
 function resetForm() {
   setVideo(null);
   $("#link").value = ""; $("#about").value = "";
-  if (settings) { $("#cleanVoice").checked = settings.clean_voice = $("#cleanVoice").checked; settings.fast = $("#fast").checked; }
+  if (settings) { $("#cleanVoice").checked = settings.clean_voice = $("#cleanVoice").checked; settings.fast = $("#fast").checked;
+    settings.video_subs = $("#videoSubs").checked; settings.subs_check = $("#subsCheck").checked; }
   pending.original = []; pending.translation = [];
   renderChips("original"); renderChips("translation");
   $$("[data-text]").forEach(t => { t.value = ""; });
@@ -540,6 +541,8 @@ async function loadSettings() {
   if (!$("#startView").hidden && !pending.video && !$("#link").value) {
     $("#cleanVoice").checked = !!settings.clean_voice; $("#fast").checked = !!settings.fast;
     $("#videoSubs").checked = settings.video_subs !== false;
+    $("#subsCheck").checked = !!settings.subs_check;
+    $("#subsCheck").disabled = !$("#videoSubs").checked;
   }
 }
 
@@ -1375,3 +1378,5 @@ loadMemoryCount();
 loadSettings().catch(() => {});
 route();
 setInterval(() => { if (!$("#startView").hidden) loadJobList(); }, 5000);
+
+$("#videoSubs").addEventListener("change", () => { $("#subsCheck").disabled = !$("#videoSubs").checked; });

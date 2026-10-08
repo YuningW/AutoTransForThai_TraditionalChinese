@@ -212,7 +212,7 @@ def polish(job, lines, helpers):
         if not chunk:
             return []
         ref = _helpers_text(helpers, "original", chunk[0]["start"], chunk[-1]["end"])
-        meant = _meaning_text(helpers, chunk[0]["start"], chunk[-1]["end"])
+        meant = _meaning_text(helpers, chunk[0]["start"], chunk[-1]["end"]) if job["options"].get("subs_check") else ""
         prompt = "\n\n".join(x for x in (
             _context(job),
             f"Memory (names, words and rules learned from the user's earlier feedback):\n{mem}" if mem else "",

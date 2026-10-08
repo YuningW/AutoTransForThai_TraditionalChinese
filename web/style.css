@@ -317,6 +317,8 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .check small { color: var(--ink-3); font-size: 13px; }
 .check.strong { background: var(--sheet); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; color: var(--ink); }
 .check.strong:has(input:checked) { border-color: var(--ink); }
+.check.sub { margin: -4px 0 0 26px; }
+.check.sub:has(input:disabled) { opacity: .5; }
 .again { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 14px; color: var(--ink-2); }
 .again .secondary { font-size: 14px; padding: 6px 12px; }
 .effort-list { flex-direction: row; flex-wrap: wrap; }
