@@ -10,7 +10,9 @@ no API key needed.
 import json
 import os
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from . import memory, models, paths, procs
 
@@ -70,9 +72,49 @@ def _ask(system, prompt, schema, cwd, images, effort, timeout):
         if "login" in msg.lower() or "auth" in msg.lower():
             msg = "Claude isn't signed in. Open Terminal and run: claude  (then sign in)"
         raise BrainError(msg or "Claude didn't answer.") from None
+    _note_usage(cwd, out)
     if out.get("is_error") or out.get("structured_output") is None:
         raise BrainError(str(out.get("result") or out.get("api_error_status") or "Claude couldn't finish.")[:300])
     return out["structured_output"]
+
+
+def _note_usage(cwd, out):
+    """Each answer says how many tokens it took: kept per video in usage.jsonl, with the step it was for."""
+    u = out.get("usage") or {}
+    if not u:
+        return
+    try:
+        step = json.loads((Path(cwd) / "job.json").read_text()).get("state", "")
+    except (OSError, ValueError):
+        step = ""
+    row = {"at": time.time(), "step": step, "model": models.claude_model(),
+           "input": u.get("input_tokens", 0), "output": u.get("output_tokens", 0),
+           "cache_write": u.get("cache_creation_input_tokens", 0), "cache_read": u.get("cache_read_input_tokens", 0),
+           "cost_usd": out.get("total_cost_usd") or 0}
+    try:
+        with open(Path(cwd) / "usage.jsonl", "a") as f:
+            f.write(json.dumps(row) + "\n")
+    except OSError:
+        pass
+
+
+def usage(job_dir):
+    """Totals for one video, overall and per step."""
+    rows = []
+    try:
+        rows = [json.loads(x) for x in (Path(job_dir) / "usage.jsonl").read_text().splitlines() if x.strip()]
+    except (OSError, ValueError):
+        pass
+    keys = ("input", "output", "cache_write", "cache_read", "cost_usd")
+    total = {k: sum(r.get(k, 0) for r in rows) for k in keys}
+    total["calls"] = len(rows)
+    steps = {}
+    for r in rows:
+        st = steps.setdefault(r.get("step") or "other", {k: 0 for k in keys} | {"calls": 0})
+        for k in keys:
+            st[k] += r.get(k, 0)
+        st["calls"] += 1
+    return {"total": total, "steps": steps}
 
 
 def _lines_text(lines, fields=("th",)):

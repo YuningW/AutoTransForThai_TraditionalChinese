@@ -129,6 +129,11 @@ def stop(jid: str):
     return jobs.stop(jid)
 
 
+@app.get("/api/jobs/{jid}/usage")
+def job_usage(jid: str):
+    return brain.usage(jobs.job_dir(jid))
+
+
 @app.post("/api/jobs/{jid}/retry")
 def retry(jid: str):
     jobs.retry(jid)

@@ -295,7 +295,15 @@ def _finish(jid):
     _fill_from_subtitles(jid)
     _auto_voices(jid)
     update(jid, busy=False, state="ready", label="", progress=None)
-    log(jid, "Captions are ready for you to check.", "done")
+    log(jid, "Captions are ready for you to check." + _usage_note(jid), "done")
+
+
+def _usage_note(jid):
+    t = brain.usage(job_dir(jid))["total"]
+    if not t["calls"]:
+        return ""
+    read = t["input"] + t["cache_write"] + t["cache_read"]
+    return f" Claude read {read / 1000:,.0f}k tokens and wrote {t['output'] / 1000:,.0f}k so far for this video ({t['calls']} requests)."
 
 
 def _resume(jid, state):
