@@ -76,11 +76,20 @@ def browser_copy(src, info, dst):
           "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst)], "Making a playable copy")
 
 
-def burn(src, frames_list, dst, duration, on_progress):
-    """Lay the rendered caption frames (style.frames) over the video."""
+def burn(src, frames_list, dst, duration, on_progress, sprites=()):
+    """Lay the rendered caption frames (style.frames) over the video, then any moving items
+    (style.sprites): each a still picture that ffmpeg moves/turns/squashes on every frame."""
+    inputs = ["-i", str(src), "-f", "concat", "-safe", "0", "-i", str(frames_list)]
+    graph = ["[1:v]format=rgba[c]", "[0:v][c]overlay=eof_action=pass:format=auto[v0]"]
+    for i, sp in enumerate(sprites):
+        inputs += ["-loop", "1", "-framerate", "30", "-i", sp["png"]]
+        pre = "format=rgba" + ("," + sp["pre"] if sp["pre"] else "")
+        graph.append(f"[{i + 2}:v]{pre}[s{i}]")
+        graph.append(f"[v{i}][s{i}]overlay=x='{sp['x']}':y='{sp['y']}':eval=frame:format=auto:shortest=0:"
+                     f"enable='between(t,{sp['start']:.3f},{sp['end']:.3f})'[v{i + 1}]")
+    graph.append(f"[v{len(sprites)}]format=yuv420p[v]")
     args = [paths.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-progress", "pipe:1", "-nostats",
-            "-i", str(src), "-f", "concat", "-safe", "0", "-i", str(frames_list),
-            "-filter_complex", "[1:v]format=rgba[c];[0:v][c]overlay=eof_action=pass:format=auto,format=yuv420p[v]",
+            *inputs, "-filter_complex", ";".join(graph), "-t", f"{duration:.3f}" if duration else "36000",
             "-map", "[v]", "-map", "0:a?",
             "-c:v", "h264_videotoolbox", "-q:v", "65", "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", str(dst)]

@@ -253,3 +253,63 @@ def still(line, touches, which, w, h, style, out):
     s = merged(style)
     blocks = [b for b in [caption_block(line, which, w, h, s)] if b] + [touch_block(t, w, h, s) for t in touches]
     renderer.render(out, w, h, blocks)
+
+
+# ---------------------------------------------------------------- movement (logos, text, emoji)
+#
+# A moving item is drawn once as a small picture (a sprite); ffmpeg moves, turns or squashes it on every
+# frame while saving. Each movement: filters for the sprite, and x/y for where its top-left goes
+# (cx, cy = where its centre sits when still; w/h = the sprite's size this frame; W/H = the video's).
+MOTIONS = ("float", "wiggle", "flip", "pulse", "spin", "fly", "across")
+
+
+def motion_filters(motion, period, cx, cy, W, H):
+    p = max(0.4, float(period or 2.0))
+    still = (f"{cx:.1f}-w/2", f"{cy:.1f}-h/2")
+    turn = "c=none:ow='hypot(iw,ih)':oh='hypot(iw,ih)'"
+    if motion == "float":
+        return "", still[0], f"{cy:.1f}-h/2+{0.015 * H:.1f}*sin(2*PI*t/{p})"
+    if motion == "wiggle":
+        return f"rotate=a='0.16*sin(2*PI*t/{p})':{turn}", *still
+    if motion == "spin":
+        return f"rotate=a='2*PI*t/{p}':{turn}", *still
+    if motion == "flip":                     # turns like a coin: the width shrinks to nothing and back
+        return f"scale=w='max(2,iw*abs(cos(PI*t/{p})))':h=ih:eval=frame", *still
+    if motion == "pulse":
+        k = f"(1+0.09*sin(2*PI*t/{p}))"
+        return f"scale=w='iw*{k}':h='ih*{k}':eval=frame", *still
+    if motion == "fly":                      # a figure-8 around its spot
+        return "", f"{cx:.1f}-w/2+{0.07 * W:.1f}*sin(2*PI*t/{p})", f"{cy:.1f}-h/2+{0.045 * H:.1f}*sin(4*PI*t/{p})"
+    if motion == "across":                   # across the screen at its height, again and again
+        return "", f"-w+mod(t,{p})/{p}*(W+w)", f"{cy:.1f}-h/2+{0.012 * H:.1f}*sin(2*PI*t/{p / 4:.2f})"
+    return "", *still
+
+
+def sprites(touches, w, h, style, folder, duration):
+    """Moving items -> [{"png", "pre", "x", "y", "start", "end"}] for media.burn."""
+    from PIL import Image
+    folder = Path(folder)
+    s = merged(style)
+    out = []
+    for i, t in enumerate(touches):
+        if t.get("motion") not in MOTIONS:
+            continue
+        blk = touch_block(t, w, h, s)
+        if not blk:
+            continue
+        full = folder / f"move_{i}_full.png"
+        renderer.render(full, w, h, [blk])
+        im = Image.open(full)
+        box = im.getbbox()
+        if not box:
+            continue
+        pad = 4
+        box = (max(0, box[0] - pad), max(0, box[1] - pad), min(w, box[2] + pad), min(h, box[3] + pad))
+        png = folder / f"move_{i}.png"
+        im.crop(box).save(png)
+        full.unlink()
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        pre, x, y = motion_filters(t["motion"], t.get("period"), cx, cy, w, h)
+        start, end = (0.0, duration) if t.get("whole") else (t["start"], t["end"])
+        out.append({"png": str(png), "pre": pre, "x": x, "y": y, "start": start, "end": end})
+    return out

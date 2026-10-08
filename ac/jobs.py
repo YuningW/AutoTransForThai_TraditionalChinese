@@ -915,12 +915,15 @@ def _burn_job(jid, which, folder, base, files):
     shutil.rmtree(frames_dir, ignore_errors=True)
     dur = m.get("duration") or 0
     kept = [({**t, "start": 0.0, "end": dur} if t.get("whole") else t) for t in touches(jid) if not t.get("pending")]
-    lst = style.frames(lines(jid), kept, which, m.get("width") or 1920, m.get("height") or 1080, job.get("style"),
+    still = [t for t in kept if t.get("motion") not in style.MOTIONS]
+    moving = [t for t in kept if t.get("motion") in style.MOTIONS]
+    lst = style.frames(lines(jid), still, which, m.get("width") or 1920, m.get("height") or 1080, job.get("style"),
                        frames_dir, lambda p: update(jid, progress=round(p, 3)), job.get("speakers"))
+    moves = style.sprites(moving, m.get("width") or 1920, m.get("height") or 1080, job.get("style"), frames_dir, dur)
     update(jid, label="Burning captions into the video", progress=0)
     label = {"zh": "中文字幕", "both": "中泰字幕", "th": "Thai captions"}[which]
     out = folder / f"{base} ({label}).mp4"
-    media.burn(d / job["source"], lst, out, m.get("duration"), lambda p: update(jid, progress=round(p, 3)))
+    media.burn(d / job["source"], lst, out, m.get("duration"), lambda p: update(jid, progress=round(p, 3)), moves)
     shutil.rmtree(frames_dir, ignore_errors=True)
     files = files + [{"kind": f"video-{which}", "path": str(out)}]
     update(jid, busy=False, state="ready", label="", progress=None, exports=files)
@@ -1019,13 +1022,14 @@ def _save_touches(jid, ts):
 
 
 TOUCH_FIELDS = {"start", "end", "text", "x", "y", "size", "kind", "color", "outline_color", "font", "pending",
-                "image", "w", "opacity", "whole", "bold", "outline", "standout", "edge", "edge_color", "plate_color"}
+                "image", "w", "opacity", "whole", "bold", "outline", "standout", "edge", "edge_color", "plate_color",
+                "motion", "period"}
 
 
 def _clean_touch(t):
     t = {k: v for k, v in t.items() if k in TOUCH_FIELDS}
     for k, lo, hi in (("x", 0.0, 1.0), ("y", 0.0, 1.0), ("size", 0.3, 4.0), ("w", 0.03, 1.0), ("opacity", 0.05, 1.0),
-                      ("outline", 0.0, 0.3), ("edge", 0.0, 0.06)):
+                      ("outline", 0.0, 0.3), ("edge", 0.0, 0.06), ("period", 0.4, 20.0)):
         if k in t:
             t[k] = max(lo, min(hi, float(t[k])))
     if "start" in t:

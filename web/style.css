@@ -386,3 +386,44 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .seg { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 14px; }
 .seg label { display: flex; gap: 4px; align-items: center; }
 .be-image[hidden], .be-edge[hidden], .be-plate[hidden] { display: none !important; }
+
+/* ---------------------------------------------------------- movement (matches style.motion_filters) */
+.touch.mv { animation-duration: var(--p, 2s); animation-iteration-count: infinite; animation-timing-function: linear; }
+.touch.mv.paused { animation-play-state: paused; }
+.touch.mv-float { animation-name: mv-float; }
+.touch.mv-wiggle { animation-name: mv-wiggle; }
+.touch.mv-spin { animation-name: mv-spin; }
+.touch.mv-flip { animation-name: mv-flip; }
+.touch.mv-pulse { animation-name: mv-pulse; }
+.touch.mv-fly { animation-name: mv-fly; }
+.touch.mv-across { animation-name: mv-across; }
+@keyframes mv-float { 0%, 50%, 100% { transform: translate(-50%, -50%); } 25% { transform: translate(-50%, calc(-50% + var(--ay))); }
+  75% { transform: translate(-50%, calc(-50% - var(--ay))); } }
+@keyframes mv-wiggle { 0%, 50%, 100% { transform: translate(-50%, -50%) rotate(0); } 25% { transform: translate(-50%, -50%) rotate(9deg); }
+  75% { transform: translate(-50%, -50%) rotate(-9deg); } }
+@keyframes mv-spin { from { transform: translate(-50%, -50%) rotate(0); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+@keyframes mv-flip { 0%, 100% { transform: translate(-50%, -50%) scaleX(1); } 50% { transform: translate(-50%, -50%) scaleX(0.02); } }
+@keyframes mv-pulse { 0%, 50%, 100% { transform: translate(-50%, -50%) scale(1); } 25% { transform: translate(-50%, -50%) scale(1.09); }
+  75% { transform: translate(-50%, -50%) scale(0.91); } }
+@keyframes mv-fly {
+  0.0% { transform: translate(calc(-50% + var(--ax) * 0.000), calc(-50% + var(--ay) * 0.000)); }
+  6.25% { transform: translate(calc(-50% + var(--ax) * 0.383), calc(-50% + var(--ay) * 0.707)); }
+  12.5% { transform: translate(calc(-50% + var(--ax) * 0.707), calc(-50% + var(--ay) * 1.000)); }
+  18.75% { transform: translate(calc(-50% + var(--ax) * 0.924), calc(-50% + var(--ay) * 0.707)); }
+  25.0% { transform: translate(calc(-50% + var(--ax) * 1.000), calc(-50% + var(--ay) * 0.000)); }
+  31.25% { transform: translate(calc(-50% + var(--ax) * 0.924), calc(-50% + var(--ay) * -0.707)); }
+  37.5% { transform: translate(calc(-50% + var(--ax) * 0.707), calc(-50% + var(--ay) * -1.000)); }
+  43.75% { transform: translate(calc(-50% + var(--ax) * 0.383), calc(-50% + var(--ay) * -0.707)); }
+  50.0% { transform: translate(calc(-50% + var(--ax) * 0.000), calc(-50% + var(--ay) * -0.000)); }
+  56.25% { transform: translate(calc(-50% + var(--ax) * -0.383), calc(-50% + var(--ay) * 0.707)); }
+  62.5% { transform: translate(calc(-50% + var(--ax) * -0.707), calc(-50% + var(--ay) * 1.000)); }
+  68.75% { transform: translate(calc(-50% + var(--ax) * -0.924), calc(-50% + var(--ay) * 0.707)); }
+  75.0% { transform: translate(calc(-50% + var(--ax) * -1.000), calc(-50% + var(--ay) * 0.000)); }
+  81.25% { transform: translate(calc(-50% + var(--ax) * -0.924), calc(-50% + var(--ay) * -0.707)); }
+  87.5% { transform: translate(calc(-50% + var(--ax) * -0.707), calc(-50% + var(--ay) * -1.000)); }
+  93.75% { transform: translate(calc(-50% + var(--ax) * -0.383), calc(-50% + var(--ay) * -0.707)); }
+  100.0% { transform: translate(calc(-50% + var(--ax) * -0.000), calc(-50% + var(--ay) * -0.000)); }
+}
+@keyframes mv-across { from { transform: translate(calc(-50% + var(--x0)), -50%); } to { transform: translate(calc(-50% + var(--x1)), -50%); } }
+.touch.mv-float, .touch.mv-wiggle, .touch.mv-flip, .touch.mv-pulse { animation-timing-function: ease-in-out; }
+@media (prefers-reduced-motion: reduce) { .touch.mv { animation-duration: calc(var(--p, 2s) * 3); } }

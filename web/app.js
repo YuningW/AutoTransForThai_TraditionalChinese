@@ -881,6 +881,7 @@ function drawTouches(time, force) {
         width: `${(t.w || 0.15) * frame.w}px`, opacity: t.opacity ?? 1 });
       Object.assign(img.style, standoutCss(t));
       img.onpointerdown = e => dragTouch(e, t, img);
+      moveStyle(img, t);
       return img;
     }
     const el = document.createElement("div");
@@ -899,6 +900,7 @@ function drawTouches(time, force) {
     else if (t.kind === "bubble") Object.assign(el.style, { padding: `${px * 0.2}px ${px * 0.35}px`, borderRadius: `${px * 0.6}px` });
     else Object.assign(el.style, { color: t.color || "#fff", webkitTextStroke: `${px * 0.2}px ${t.outline_color || "#F06A9F"}`, paintOrder: "stroke fill" });
     el.onpointerdown = e => dragTouch(e, t, el);
+    moveStyle(el, t);
     return el;
   }));
 }
@@ -1001,6 +1003,8 @@ function selectTouch(id) {
     const d = Math.round((t.end - t.start) * 2) / 2; $("#teDur").value = d; $("#teDurOut").textContent = d + "s";
     $$("input[name=te-kind]").forEach(r => { r.checked = r.value === (t.kind || "plain"); });
     $("#teColor").value = hex6(t.color || "#FFFFFF"); $("#teOutline").value = hex6(t.outline_color || "#F06A9F");
+    $("#teMotion").value = t.motion || ""; $("#teSpeed").value = 8.5 - (t.period || 2);
+    $("#teSpeedOut").textContent = speedLabel(t.period || 2); $("#teSpeed").disabled = !t.motion;
   }
   renderTouchList(); drawTouches(video.currentTime, true);
 }
@@ -1014,6 +1018,32 @@ $("#teOutline").addEventListener("input", () => { const t = selT(); if (t) patch
 $("#teStartHere").onclick = () => { const t = selT(); if (t) { const d = t.end - t.start; patchTouch(t, { start: video.currentTime, end: video.currentTime + d }); } };
 $("#teDelete").onclick = () => { const t = selT(); if (t) removeTouch(t); };
 $("#teDone").onclick = () => selectTouch(null);
+
+/* ---------------------------------------------------------- movement preview */
+
+// the same movements the saved video gets (style.motion_filters), in step with the video's time
+function moveStyle(el, t) {
+  if (!t.motion || t.id === selTouch && dragging) return;
+  const p = t.period || 2;
+  el.classList.add("mv", `mv-${t.motion}`);
+  if (video.paused) el.classList.add("paused");
+  el.style.setProperty("--p", `${p}s`);
+  el.style.setProperty("--ay", `${(t.motion === "fly" ? 0.045 : 0.015) * frame.h}px`);
+  el.style.setProperty("--ax", `${0.07 * frame.w}px`);
+  const left = frame.left + t.x * frame.w;
+  el.style.setProperty("--x0", `${frame.left - left - frame.w * 0.06}px`);
+  el.style.setProperty("--x1", `${frame.left + frame.w - left + frame.w * 0.06}px`);
+  el.style.animationDelay = `-${(video.currentTime % p).toFixed(2)}s`;
+}
+function syncMoves() {
+  $$("#touchLayer .mv").forEach(el => {
+    el.classList.toggle("paused", video.paused);
+    const t = touches.find(x => x.id === el.dataset.id);
+    if (t) el.style.animationDelay = `-${(video.currentTime % (t.period || 2)).toFixed(2)}s`;
+  });
+}
+["play", "pause", "seeked"].forEach(ev => video.addEventListener(ev, syncMoves));
+function speedLabel(p) { return p <= 1 ? "fast" : p <= 2.5 ? "medium" : p <= 4.5 ? "slow" : "very slow"; }
 
 /* ---------------------------------------------------------- your text and logo */
 
@@ -1118,6 +1148,8 @@ function fillBrandEditor(t) {
   $("#beColor").value = hex6(t.color || "#FFFFFF"); $("#beOutlineColor").value = hex6(t.outline_color || "#000000");
   $("#beBold").checked = t.bold !== false;
   $("#beWhole").checked = !!t.whole; $("#bePart").hidden = !!t.whole;
+  $("#beMotion").value = t.motion || ""; $("#beSpeed").value = 8.5 - (t.period || 2);
+  $("#beSpeedOut").textContent = speedLabel(t.period || 2); $("#beSpeed").disabled = !t.motion;
   const d = Math.round((t.end - t.start) * 2) / 2; $("#beDur").value = d; $("#beDurOut").textContent = d + "s";
 }
 const bt = () => { const t = selT(); return t && isBrand(t) ? t : null; };
@@ -1140,6 +1172,18 @@ $("#beDur").addEventListener("input", () => { const t = bt(); if (t) { $("#beDur
 $("#beStartHere").onclick = () => { const t = bt(); if (t) { const d = t.end - t.start; patchTouch(t, { start: video.currentTime, end: video.currentTime + d }); } };
 $("#beDelete").onclick = () => { const t = bt(); if (t) removeTouch(t); };
 $("#beDone").onclick = () => selectTouch(null);
+for (const [m, sp, out] of [["#beMotion", "#beSpeed", "#beSpeedOut"], ["#teMotion", "#teSpeed", "#teSpeedOut"]]) {
+  $(m).addEventListener("change", () => {
+    const t = selT(); if (!t) return;
+    patchTouch(t, { motion: $(m).value || "", period: t.period || 2 }); $(sp).disabled = !$(m).value;
+  });
+  // the slider reads as speed (right = faster); what's stored is the seconds one round takes
+  $(sp).addEventListener("input", () => {
+    const t = selT(); if (!t) return;
+    const period = Math.round((8.5 - +$(sp).value) * 4) / 4;
+    $(out).textContent = speedLabel(period); patchTouch(t, { period }, true);
+  });
+}
 $$("input[name=be-standout]").forEach(r => r.addEventListener("change", () => {
   const t = bt(); if (!t) return;
   const ch = { standout: r.value };
