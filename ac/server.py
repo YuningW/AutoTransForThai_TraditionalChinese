@@ -266,6 +266,27 @@ def review(jid: str, body: RangeIn):
     return jobs.load(jid)
 
 
+@app.get("/api/logos")
+def get_logos():
+    return jobs.logos()
+
+
+@app.post("/api/logos")
+async def upload_logo(file: UploadFile = File(...)):
+    return jobs.add_logo(file.filename, await file.read())
+
+
+@app.get("/api/logos/{lid}")
+def logo_image(lid: str):
+    return FileResponse(jobs.logo_file(lid))
+
+
+@app.delete("/api/logos/{lid}")
+def delete_logo(lid: str):
+    jobs.remove_logo(lid)
+    return {"ok": True}
+
+
 @app.get("/api/jobs/{jid}/touches")
 def get_touches(jid: str):
     return jobs.touches(jid)

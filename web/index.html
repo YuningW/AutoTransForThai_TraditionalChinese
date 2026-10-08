@@ -197,6 +197,51 @@
       </div>
     </details>
 
+    <details class="panel" id="brandPanel">
+      <summary>Text and logo on the video <span class="count" id="brandCount"></span></summary>
+      <div class="panel-body">
+        <p class="muted small">Your own title, credit line or name, and your logo. They show for the whole video unless you change it. Pause the video and drag them to move.</p>
+        <div class="style-actions">
+          <button class="secondary" type="button" id="addText">+ Text</button>
+          <label class="pick"><input type="file" id="logoFile" accept="image/*" hidden>+ Logo from a picture</label>
+        </div>
+        <div class="saved-logos" id="savedLogos"></div>
+        <div class="touch-edit" id="brandEdit" hidden>
+          <input class="field" id="beText" placeholder="Your text, e.g. 中字 by @yourname">
+          <div class="grid2">
+            <label class="be-text">Font<select class="field" id="beFont"></select></label>
+            <label><span id="beSizeName">Size</span> <output id="beSizeOut"></output><input type="range" id="beSize" min="0.3" max="3" step="0.05"></label>
+            <label>See-through <output id="beOpOut"></output><input type="range" id="beOpacity" min="0.1" max="1" step="0.05"></label>
+            <label class="be-text">Outline <output id="beOutOut"></output><input type="range" id="beOutline" min="0" max="0.25" step="0.01"></label>
+          </div>
+          <div class="colors be-text">
+            <label><input type="color" id="beColor"> Text</label>
+            <label><input type="color" id="beOutlineColor"> Outline</label>
+            <label><input type="checkbox" id="beBold"> Bold</label>
+          </div>
+          <div class="corners" role="group" aria-label="Place it">
+            <span class="muted small">Place it</span>
+            <button type="button" data-corner="tl">↖ Top left</button>
+            <button type="button" data-corner="tc">↑ Top</button>
+            <button type="button" data-corner="tr">↗ Top right</button>
+            <button type="button" data-corner="bl">↙ Bottom left</button>
+            <button type="button" data-corner="br">↘ Bottom right</button>
+            <button type="button" data-corner="c">Middle</button>
+          </div>
+          <label class="check"><input type="checkbox" id="beWhole"> <span>Whole video</span></label>
+          <div class="grid2" id="bePart">
+            <label>Shows for <output id="beDurOut"></output><input type="range" id="beDur" min="0.5" max="30" step="0.5"></label>
+            <button class="ghost" type="button" id="beStartHere">Start here</button>
+          </div>
+          <div class="style-actions">
+            <button class="ghost" type="button" id="beDelete">Delete</button>
+            <button class="secondary" type="button" id="beDone">Done</button>
+          </div>
+        </div>
+        <ul class="touch-list" id="brandList"></ul>
+      </div>
+    </details>
+
     <details class="panel" id="exportPanel" open>
       <summary>Save captions</summary>
       <div class="panel-body">
@@ -206,7 +251,7 @@
           <label><input type="radio" name="burn" value="both"> 中文 + Thai</label>
           <label><input type="radio" name="burn" value="none"> Don't</label>
         </div>
-        <p class="muted">Uses the caption style above and the emoji and notes you kept. SRT files (Thai, Chinese, both) are always saved too. They go to <span id="outDir">~/Movies/AutoCaption</span>.</p>
+        <p class="muted">Uses the caption style above, the emoji and notes you kept, and your text and logo. SRT files (Thai, Chinese, both) are always saved too. They go to <span id="outDir">~/Movies/AutoCaption</span>.</p>
         <button class="primary" id="export" type="button">Save</button>
         <ul class="exports" id="exports"></ul>
       </div>

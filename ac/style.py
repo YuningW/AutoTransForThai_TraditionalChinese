@@ -112,10 +112,26 @@ def caption_block(line, which, w, h, style, speakers=None):
 
 
 def touch_block(t, w, h, style):
-    """A touch: emoji or a little note placed anywhere."""
+    """A touch: emoji or a little note placed anywhere; or your own text or logo."""
+    opacity = float(t.get("opacity") if t.get("opacity") is not None else 1.0)
+    if t.get("kind") == "image":
+        from . import paths
+        f = next((f for f in sorted(paths.LOGOS.glob(f"{t.get('image')}.*"))
+                  if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif", ".tif", ".tiff")), None)
+        if not f:
+            return None
+        return {"image": str(f), "x": float(t.get("x", 0.1)), "y": float(t.get("y", 0.1)),
+                "w": float(t.get("w") or 0.15), "opacity": opacity}
     px = base_px(w, h, style) * float(t.get("size") or 1.3)
+    if t.get("kind") == "text":                # your own text: a title, a credit, your name
+        return {"x": float(t.get("x", 0.85)), "y": float(t.get("y", 0.08)), "anchor": "center", "maxw": 0.9, "gap": 0,
+                "opacity": opacity, "box": None,
+                "rows": [{"text": t.get("text", ""), "font": t.get("font") or style["zh_font"], "size": round(px, 1),
+                          "color": t.get("color") or "#FFFFFF", "bold": bool(t.get("bold", True)),
+                          "stroke": round(px * float(t.get("outline", 0.08)), 1), "stroke_color": t.get("outline_color") or "#000000",
+                          "shadow": round(px * 0.04, 1)}]}
     bubble = t.get("kind") == "bubble"
-    return {"x": float(t.get("x", 0.8)), "y": float(t.get("y", 0.2)), "anchor": "center", "maxw": 0.6,
+    return {"x": float(t.get("x", 0.8)), "y": float(t.get("y", 0.2)), "anchor": "center", "maxw": 0.6, "opacity": opacity,
             "gap": 0, "box": {"color": "#FFFFFFEE", "pad": round(px * 0.35), "radius": round(px * 0.6)} if bubble else None,
             "rows": [{"text": t.get("text", ""), "font": t.get("font") or style["zh_font"], "size": round(px, 1),
                       "color": "#3A2A3A" if bubble else (t.get("color") or "#FFFFFF"), "bold": True,
@@ -173,7 +189,7 @@ def timeline(lines, touches, which):
     for l in lines:
         if which in ("zh", "both") and (l.get("zh") or "").strip() or which in ("th", "both") and (l.get("th") or "").strip():
             items.append(("line", l))
-    items += [("touch", t) for t in touches if (t.get("text") or "").strip()]
+    items += [("touch", t) for t in touches if (t.get("text") or "").strip() or t.get("kind") == "image"]
     cuts = sorted({0.0} | {round(x[1]["start"], 3) for x in items} | {round(x[1]["end"], 3) for x in items})
     spans = []
     for a, b in zip(cuts, cuts[1:]):
@@ -202,7 +218,7 @@ def frames(lines, touches, which, w, h, style, folder, on_progress=None, speaker
             blk = caption_block(talking, which, w, h, s, speakers)
             if blk:
                 blocks.append(blk)
-        blocks += [touch_block(x, w, h, s) for kind, x in on if kind == "touch"]
+        blocks += [b for b in (touch_block(x, w, h, s) for kind, x in on if kind == "touch") if b]
         if blocks:
             key = hashlib.sha1(json.dumps(blocks, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
             png = folder / f"{key}.png"

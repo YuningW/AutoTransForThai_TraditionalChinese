@@ -12,6 +12,8 @@ WORK = Path(os.environ.get("AC_WORK", ROOT / "work"))
 JOBS = WORK / "jobs"
 # What the tool has learned from your feedback: names, words, style rules.
 MEMORY = WORK / "memory.json"
+# Your logos, kept for every video.
+LOGOS = WORK / "logos"
 # Your choices: models, default caption style.
 SETTINGS = WORK / "settings.json"
 # Finished SRT files and captioned videos.
@@ -44,7 +46,7 @@ def claude():
 
 
 def ensure_dirs():
-    for d in (JOBS, OUT, SEP_MODELS):
+    for d in (JOBS, OUT, SEP_MODELS, LOGOS):
         d.mkdir(parents=True, exist_ok=True)
 
 

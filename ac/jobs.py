@@ -851,7 +851,8 @@ def _burn_job(jid, which, folder, base, files):
     m = job["media"]
     frames_dir = d / "frames"
     shutil.rmtree(frames_dir, ignore_errors=True)
-    kept = [t for t in touches(jid) if not t.get("pending")]
+    dur = m.get("duration") or 0
+    kept = [({**t, "start": 0.0, "end": dur} if t.get("whole") else t) for t in touches(jid) if not t.get("pending")]
     lst = style.frames(lines(jid), kept, which, m.get("width") or 1920, m.get("height") or 1080, job.get("style"),
                        frames_dir, lambda p: update(jid, progress=round(p, 3)), job.get("speakers"))
     update(jid, label="Burning captions into the video", progress=0)
@@ -874,6 +875,50 @@ def set_style(jid, st, as_default=False):
     return load(jid)
 
 
+# ---------------------------------------------------------------- your logos (kept for every video)
+
+LOGO_EXT = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif", ".tif", ".tiff"}
+
+
+def logos():
+    out = []
+    for f in sorted(paths.LOGOS.glob("*.*"), key=lambda f: f.stat().st_mtime, reverse=True):
+        if f.suffix.lower() in LOGO_EXT:
+            meta = paths.LOGOS / (f.stem + ".json")
+            name = json.loads(meta.read_text()).get("name") if meta.exists() else f.name
+            out.append({"id": f.stem, "name": name, "file": f.name})
+    return out
+
+
+def add_logo(filename, data):
+    ext = Path(filename or "logo.png").suffix.lower()
+    if ext not in LOGO_EXT:
+        raise JobError("Use a picture for the logo (PNG with a see-through background works best).")
+    if len(data) > 20 * 1024 * 1024:
+        raise JobError("That picture is over 20 MB.")
+    paths.LOGOS.mkdir(parents=True, exist_ok=True)
+    lid = uuid.uuid4().hex[:8]
+    (paths.LOGOS / f"{lid}{ext}").write_bytes(data)
+    (paths.LOGOS / f"{lid}.json").write_text(json.dumps({"name": Path(filename).stem}, ensure_ascii=False))
+    return {"id": lid, "name": Path(filename).stem, "file": f"{lid}{ext}"}
+
+
+def remove_logo(lid):
+    if not re.fullmatch(r"[0-9a-f]{8}", lid or ""):
+        raise JobError("Unknown logo.")
+    for f in paths.LOGOS.glob(f"{lid}.*"):
+        f.unlink()
+
+
+def logo_file(lid):
+    if not re.fullmatch(r"[0-9a-f]{8}", lid or ""):
+        raise JobError("Unknown logo.")
+    f = next((f for f in paths.LOGOS.glob(f"{lid}.*") if f.suffix.lower() in LOGO_EXT), None)
+    if not f:
+        raise JobError("That logo is gone.")
+    return f
+
+
 def touches(jid):
     f = job_dir(jid) / "touches.json"
     return json.loads(f.read_text()) if f.exists() else []
@@ -892,12 +937,14 @@ def _save_touches(jid, ts):
     return ts
 
 
-TOUCH_FIELDS = {"start", "end", "text", "x", "y", "size", "kind", "color", "outline_color", "font", "pending"}
+TOUCH_FIELDS = {"start", "end", "text", "x", "y", "size", "kind", "color", "outline_color", "font", "pending",
+                "image", "w", "opacity", "whole", "bold", "outline"}
 
 
 def _clean_touch(t):
     t = {k: v for k, v in t.items() if k in TOUCH_FIELDS}
-    for k, lo, hi in (("x", 0.02, 0.98), ("y", 0.02, 0.98), ("size", 0.4, 4.0)):
+    for k, lo, hi in (("x", 0.0, 1.0), ("y", 0.0, 1.0), ("size", 0.3, 4.0), ("w", 0.03, 1.0), ("opacity", 0.05, 1.0),
+                      ("outline", 0.0, 0.3)):
         if k in t:
             t[k] = max(lo, min(hi, float(t[k])))
     if "start" in t:
@@ -909,7 +956,10 @@ def _clean_touch(t):
 
 def add_touch(jid, t):
     t = {**style.TOUCH_DEFAULT, "x": 0.8, "y": 0.2, **_clean_touch(t), "id": uuid.uuid4().hex[:8]}
-    if not (t.get("text") or "").strip():
+    if t.get("kind") == "image":
+        if not t.get("image") or not any(paths.LOGOS.glob(f"{t['image']}.*")):
+            raise JobError("Choose a logo first.")
+    elif not (t.get("text") or "").strip():
         raise JobError("Type an emoji or a few words first.")
     t["end"] = max(t.get("end") or 0, t["start"] + 0.3)
     ts = touches(jid)

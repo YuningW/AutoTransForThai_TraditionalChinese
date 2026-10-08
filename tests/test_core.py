@@ -83,6 +83,16 @@ class Style(unittest.TestCase):
                                   {"start": 1.5, "end": 2.5, "th": "ค", "speaker": "m"}])
         self.assertEqual(ls[0]["end"], 1.46)
 
+    def test_logo_block_uses_the_picture(self):
+        from ac import paths
+        paths.LOGOS.mkdir(parents=True, exist_ok=True)
+        (paths.LOGOS / "abcd1234.png").write_bytes(b"png")
+        (paths.LOGOS / "abcd1234.json").write_text("{}")        # sorts first; must not be picked
+        b = style.touch_block({"kind": "image", "image": "abcd1234", "x": 0.1, "y": 0.9, "w": 0.2, "opacity": 0.5},
+                              1920, 1080, style.merged({}))
+        self.assertTrue(b["image"].endswith("abcd1234.png"))
+        self.assertEqual((b["w"], b["opacity"]), (0.2, 0.5))
+
     def test_timeline_merges_touches_and_lines(self):
         lines = [{"start": 1, "end": 3, "th": "ก", "zh": "甲"}, {"start": 5, "end": 6, "th": "ข", "zh": ""}]
         touches = [{"start": 2, "end": 5.5, "text": "💗"}]

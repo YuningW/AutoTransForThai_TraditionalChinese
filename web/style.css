@@ -365,3 +365,18 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .dots { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding-left: 42px; }
 .dots button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); padding: 0; }
 .dots button[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* ---------------------------------------------------------- your text and logo */
+.touch.logo { height: auto; max-width: none; user-select: none; -webkit-user-drag: none; }
+.saved-logos { display: flex; flex-wrap: wrap; gap: 8px; }
+.saved-logos:empty { display: none; }
+.saved-logo { position: relative; }
+.saved-logo button:first-child { width: 64px; height: 44px; padding: 4px; border: 1px solid var(--rule); border-radius: 8px;
+  background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 50% / 12px 12px; }
+.saved-logo img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; margin: auto; }
+.saved-logo .x { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; border-radius: 50%; border: 0;
+  background: var(--ink); color: var(--sheet); font-size: 12px; line-height: 18px; padding: 0; }
+.logo-thumb { height: 22px; max-width: 80px; object-fit: contain; flex: 1; object-position: left; }
+.corners { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.corners button { border: 1px solid var(--rule); background: var(--sheet); border-radius: 6px; padding: 3px 9px; font-size: 13px; }
+[hidden].be-text, .be-text[hidden] { display: none !important; }

@@ -184,7 +184,7 @@ const video = $("#video");
 async function openJob(jid) {
   $("#startView").hidden = true; $("#jobView").hidden = false;
   job = null; lines = []; linesRev = -1; touches = []; touchesRev = -1; selTouch = null;
-  $("#lines").replaceChildren(); $("#touchEdit").hidden = true; $("#rangeBox").hidden = true;
+  $("#lines").replaceChildren(); $("#touchEdit").hidden = true; $("#brandEdit").hidden = true; $("#rangeBox").hidden = true;
   range.from = range.to = null;
   if (!settings) await loadSettings().catch(() => {});
   video.removeAttribute("src"); video.load();
@@ -201,7 +201,7 @@ async function refresh(jid) {
     if (job && job.id === j.id) { j.style = job.style; j.speakers = job.speakers; }   // the page owns these while you edit
     job = j;
     renderJob();
-    if (first) { renderStylePanel(); renderPeople(); placeOverlay(); picked.clear(); }
+    if (first) { renderStylePanel(); renderPeople(); placeOverlay(); picked.clear(); renderSavedLogos(); }
     else if (job.speakers && !document.activeElement?.closest?.("#peopleList")) { /* keep the page's copy */ }
     if ((j.touches_rev || 0) !== touchesRev) await loadTouches();
     if (firstVideo && j.media?.duration) { video.src = `/api/jobs/${jid}/video`; }
@@ -861,12 +861,21 @@ function touchPx(t) {
 }
 let shownTouches = "";
 function drawTouches(time, force) {
-  const on = touches.filter(t => (t.start <= time && time < t.end) || t.id === selTouch);
+  const on = touches.filter(t => t.whole || (t.start <= time && time < t.end) || t.id === selTouch);
   const key = on.map(t => t.id + JSON.stringify(t)).join("|") + frame.w + JSON.stringify(fullStyle());
   if (key === shownTouches && !force) return;
   shownTouches = key;
   const st = fullStyle() || {};
   $("#touchLayer").replaceChildren(...on.map(t => {
+    if (t.kind === "image") {
+      const img = document.createElement("img");
+      img.className = "touch logo" + (t.id === selTouch ? " sel" : ""); img.dataset.id = t.id; img.draggable = false;
+      img.src = `/api/logos/${t.image}`; img.alt = "";
+      Object.assign(img.style, { left: `${frame.left + t.x * frame.w}px`, top: `${frame.top + t.y * frame.h}px`,
+        width: `${(t.w || 0.15) * frame.w}px`, opacity: t.opacity ?? 1 });
+      img.onpointerdown = e => dragTouch(e, t, img);
+      return img;
+    }
     const el = document.createElement("div");
     const px = touchPx(t);
     el.className = "touch" + (t.kind === "bubble" ? " bubble" : "") + (t.pending ? " pending" : "") + (t.id === selTouch ? " sel" : "");
@@ -876,7 +885,11 @@ function drawTouches(time, force) {
       left: `${frame.left + t.x * frame.w}px`, top: `${frame.top + t.y * frame.h}px`, fontSize: `${px}px`,
       fontFamily: `"${t.font || st.zh_font}", "PingFang TC", sans-serif`,
     });
-    if (t.kind === "bubble") Object.assign(el.style, { padding: `${px * 0.2}px ${px * 0.35}px`, borderRadius: `${px * 0.6}px` });
+    el.style.opacity = t.opacity ?? 1;
+    if (t.kind === "text") Object.assign(el.style, { color: t.color || "#fff", fontWeight: t.bold === false ? "500" : "700",
+      webkitTextStroke: `${px * (t.outline ?? 0.08) * 2}px ${t.outline_color || "#000"}`, paintOrder: "stroke fill",
+      textShadow: `0 ${px * 0.015}px ${px * 0.04}px rgba(0,0,0,.6)` });
+    else if (t.kind === "bubble") Object.assign(el.style, { padding: `${px * 0.2}px ${px * 0.35}px`, borderRadius: `${px * 0.6}px` });
     else Object.assign(el.style, { color: t.color || "#fff", webkitTextStroke: `${px * 0.2}px ${t.outline_color || "#F06A9F"}`, paintOrder: "stroke fill" });
     el.onpointerdown = e => dragTouch(e, t, el);
     return el;
@@ -895,18 +908,32 @@ function dragTouch(e, t, el) {
   };
   el.onpointerup = () => { el.onpointermove = null; if (moved) patchTouch(t, { x: t.x, y: t.y }); };
 }
+// Changes wait a moment so typing and dragging sliders don't send a request each time. They pile up
+// per item and all go together, so a quick second change (a corner button) never drops the first.
 let touchTimer = null;
+const touchPending = {};
 function patchTouch(t, ch, later) {
   Object.assign(t, ch);
+  touchPending[t.id] = { ...(touchPending[t.id] || {}), ...ch };
   drawTouches(video.currentTime, true); renderTouchList();
   clearTimeout(touchTimer);
-  const send = () => api("PATCH", `/api/jobs/${job.id}/touches/${t.id}`, ch).catch(ex => alert(ex.message));
-  if (later) touchTimer = setTimeout(send, 500); else send();
+  if (later) touchTimer = setTimeout(flushTouches, 500); else flushTouches();
 }
+function flushTouches() {
+  clearTimeout(touchTimer);
+  for (const [id, ch] of Object.entries(touchPending)) {
+    delete touchPending[id];
+    api("PATCH", `/api/jobs/${job.id}/touches/${id}`, ch).catch(ex => alert(ex.message));
+  }
+}
+addEventListener("pagehide", flushTouches);
+const isBrand = t => t.kind === "text" || t.kind === "image";
 function renderTouchList() {
-  $("#touchCount").textContent = touches.length || "";
-  const pend = touches.filter(t => t.pending).length;
-  $("#touchList").replaceChildren(...touches.map(t => {
+  renderBrandList();
+  const emoji = touches.filter(t => !isBrand(t));
+  $("#touchCount").textContent = emoji.length || "";
+  const pend = emoji.filter(t => t.pending).length;
+  $("#touchList").replaceChildren(...emoji.map(t => {
     const li = document.createElement("li");
     li.className = (t.pending ? "pending" : "") + (t.id === selTouch ? " sel" : "");
     const tm = document.createElement("button"); tm.type = "button"; tm.className = "tt"; tm.textContent = fmtTime(t.start);
@@ -943,7 +970,9 @@ async function removeTouch(t) {
 function selectTouch(id) {
   selTouch = id;
   const t = touches.find(x => x.id === id);
-  $("#touchEdit").hidden = !t;
+  $("#touchEdit").hidden = !t || isBrand(t);
+  $("#brandEdit").hidden = !t || !isBrand(t);
+  if (t && isBrand(t)) { fillBrandEditor(t); renderTouchList(); drawTouches(video.currentTime, true); return; }
   if (t) {
     $("#touchPanel").open = true;
     $("#teText").value = t.text;
@@ -964,6 +993,110 @@ $("#teOutline").addEventListener("input", () => { const t = selT(); if (t) patch
 $("#teStartHere").onclick = () => { const t = selT(); if (t) { const d = t.end - t.start; patchTouch(t, { start: video.currentTime, end: video.currentTime + d }); } };
 $("#teDelete").onclick = () => { const t = selT(); if (t) removeTouch(t); };
 $("#teDone").onclick = () => selectTouch(null);
+
+/* ---------------------------------------------------------- your text and logo */
+
+function renderBrandList() {
+  const items = touches.filter(isBrand);
+  $("#brandCount").textContent = items.length || "";
+  $("#brandList").replaceChildren(...items.map(t => {
+    const li = document.createElement("li"); li.className = t.id === selTouch ? "sel" : "";
+    const tm = document.createElement("span"); tm.className = "tt"; tm.textContent = t.whole ? "whole" : fmtTime(t.start);
+    let what;
+    if (t.kind === "image") { what = document.createElement("img"); what.src = `/api/logos/${t.image}`; what.className = "logo-thumb"; what.alt = "Logo"; }
+    else { what = document.createElement("span"); what.className = "tx"; what.textContent = t.text; }
+    const ed = document.createElement("button"); ed.type = "button"; ed.textContent = "Edit";
+    ed.onclick = () => { if (!t.whole) { video.currentTime = t.start + 0.01; } video.pause(); selectTouch(t.id); };
+    const del = document.createElement("button"); del.type = "button"; del.textContent = "Remove"; del.onclick = () => removeTouch(t);
+    li.append(tm, what, ed, del); return li;
+  }));
+}
+async function renderSavedLogos() {
+  let list = [];
+  try { list = await api("GET", "/api/logos"); } catch { /* */ }
+  $("#savedLogos").replaceChildren(...list.map(l => {
+    const b = document.createElement("span"); b.className = "saved-logo";
+    const use = document.createElement("button"); use.type = "button"; use.title = `Add ${l.name}`;
+    const img = document.createElement("img"); img.src = `/api/logos/${l.id}`; img.alt = l.name; use.append(img);
+    use.onclick = () => addBrand({ kind: "image", image: l.id, text: "", x: 0.1, y: 0.09, w: 0.14, opacity: 0.9, whole: true });
+    const x = document.createElement("button"); x.type = "button"; x.className = "x"; x.textContent = "×"; x.title = "Forget this logo";
+    x.onclick = async () => { if (confirm("Forget this logo? Videos already saved keep it.")) { await api("DELETE", `/api/logos/${l.id}`); renderSavedLogos(); } };
+    b.append(use, x); return b;
+  }));
+}
+async function addBrand(t) {
+  video.pause();
+  try {
+    const n = await api("POST", `/api/jobs/${job.id}/touches`, { start: video.currentTime, end: video.currentTime + 5, ...t });
+    touches.push(n); touches.sort((a, b) => a.start - b.start);
+    $("#brandPanel").open = true; selectTouch(n.id);
+    if (t.kind === "text") { $("#beText").select(); $("#beText").focus(); }
+  } catch (ex) { alert(ex.message); }
+}
+$("#addText").onclick = () => addBrand({ kind: "text", text: "中字 by ", x: 0.84, y: 0.07, size: 0.7, opacity: 0.85,
+  color: "#FFFFFF", outline_color: "#000000", outline: 0.08, bold: true, whole: true });
+$("#logoFile").addEventListener("change", async () => {
+  const f = $("#logoFile").files[0]; $("#logoFile").value = "";
+  if (!f) return;
+  const form = new FormData(); form.append("file", f);
+  try {
+    const l = await api("POST", "/api/logos", form);
+    renderSavedLogos();
+    addBrand({ kind: "image", image: l.id, text: "", x: 0.1, y: 0.09, w: 0.14, opacity: 0.9, whole: true });
+  } catch (ex) { alert(ex.message); }
+});
+
+function fillBrandEditor(t) {
+  const img = t.kind === "image";
+  $$(".be-text", $("#brandEdit")).forEach(el => { el.hidden = img; });
+  $("#beText").hidden = img;
+  if (!$("#beFont").options.length && settings) {
+    const all = [...settings.fonts.zh, ...settings.fonts.th];
+    $("#beFont").replaceChildren(...all.map(f => { const o = new Option(f.label, f.family); o.style.fontFamily = `"${f.family}"`; return o; }));
+  }
+  $("#beText").value = t.text || "";
+  $("#beFont").value = t.font || fullStyle()?.zh_font || "PingFang TC";
+  $("#beSizeName").textContent = img ? "Width" : "Size";
+  const size = img ? (t.w || 0.15) : (t.size || 0.7);
+  $("#beSize").min = img ? "0.03" : "0.3"; $("#beSize").max = img ? "0.6" : "3"; $("#beSize").step = img ? "0.01" : "0.05";
+  $("#beSize").value = size; $("#beSizeOut").textContent = Math.round(size * 100) + "%";
+  $("#beOpacity").value = t.opacity ?? 1; $("#beOpOut").textContent = Math.round((t.opacity ?? 1) * 100) + "%";
+  $("#beOutline").value = t.outline ?? 0.08; $("#beOutOut").textContent = Math.round((t.outline ?? 0.08) * 100) + "%";
+  $("#beColor").value = hex6(t.color || "#FFFFFF"); $("#beOutlineColor").value = hex6(t.outline_color || "#000000");
+  $("#beBold").checked = t.bold !== false;
+  $("#beWhole").checked = !!t.whole; $("#bePart").hidden = !!t.whole;
+  const d = Math.round((t.end - t.start) * 2) / 2; $("#beDur").value = d; $("#beDurOut").textContent = d + "s";
+}
+const bt = () => { const t = selT(); return t && isBrand(t) ? t : null; };
+$("#beText").addEventListener("input", () => { const t = bt(); if (t && $("#beText").value.trim()) patchTouch(t, { text: $("#beText").value }, true); });
+$("#beFont").addEventListener("change", () => { const t = bt(); if (t) patchTouch(t, { font: $("#beFont").value }); });
+$("#beSize").addEventListener("input", () => {
+  const t = bt(); if (!t) return; const v = +$("#beSize").value; $("#beSizeOut").textContent = Math.round(v * 100) + "%";
+  patchTouch(t, t.kind === "image" ? { w: v } : { size: v }, true);
+});
+$("#beOpacity").addEventListener("input", () => { const t = bt(); if (t) { $("#beOpOut").textContent = Math.round($("#beOpacity").value * 100) + "%"; patchTouch(t, { opacity: +$("#beOpacity").value }, true); } });
+$("#beOutline").addEventListener("input", () => { const t = bt(); if (t) { $("#beOutOut").textContent = Math.round($("#beOutline").value * 100) + "%"; patchTouch(t, { outline: +$("#beOutline").value }, true); } });
+$("#beColor").addEventListener("input", () => { const t = bt(); if (t) patchTouch(t, { color: $("#beColor").value }, true); });
+$("#beOutlineColor").addEventListener("input", () => { const t = bt(); if (t) patchTouch(t, { outline_color: $("#beOutlineColor").value }, true); });
+$("#beBold").addEventListener("change", () => { const t = bt(); if (t) patchTouch(t, { bold: $("#beBold").checked }); });
+$("#beWhole").addEventListener("change", () => {
+  const t = bt(); if (!t) return; $("#bePart").hidden = $("#beWhole").checked;
+  patchTouch(t, $("#beWhole").checked ? { whole: true } : { whole: false, start: video.currentTime, end: video.currentTime + 5 });
+});
+$("#beDur").addEventListener("input", () => { const t = bt(); if (t) { $("#beDurOut").textContent = $("#beDur").value + "s"; patchTouch(t, { end: t.start + +$("#beDur").value }, true); } });
+$("#beStartHere").onclick = () => { const t = bt(); if (t) { const d = t.end - t.start; patchTouch(t, { start: video.currentTime, end: video.currentTime + d }); } };
+$("#beDelete").onclick = () => { const t = bt(); if (t) removeTouch(t); };
+$("#beDone").onclick = () => selectTouch(null);
+// corners: measured from the item as drawn, so it sits fully inside the picture with a small margin
+$$("#brandEdit [data-corner]").forEach(b => b.addEventListener("click", () => {
+  const t = bt(); if (!t) return;
+  const el = $(`#touchLayer [data-id="${t.id}"]`);
+  const hw = el ? el.offsetWidth / 2 / frame.w : 0.08, hh = el ? el.offsetHeight / 2 / frame.h : 0.05;
+  const m = 0.03, c = b.dataset.corner;
+  const x = c.endsWith("l") ? m + hw : c.endsWith("r") ? 1 - m - hw : 0.5;
+  const y = c === "c" ? 0.5 : c.startsWith("t") ? m + hh : 1 - m - hh;
+  patchTouch(t, { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 });
+}));
 
 $("#addTouchHere").onclick = async () => {
   video.pause();

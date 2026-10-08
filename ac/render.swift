@@ -80,6 +80,27 @@ func draw(_ job: [String: Any]) throws {
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = ns
     for b in (job["blocks"] as? [[String: Any]]) ?? [] {
+        // see-through: the whole block (text, outline, box, picture) at this opacity
+        let opacity = CGFloat((b["opacity"] as? Double) ?? 1)
+        if opacity < 0.999 {
+            ctx.saveGState()
+            ctx.setAlpha(max(0.02, opacity))
+            ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+        }
+        defer { if opacity < 0.999 { ctx.endTransparencyLayer(); ctx.restoreGState() } }
+        // a picture (your logo): width as a share of the frame, centred on x/y
+        if let path = b["image"] as? String {
+            if let img = NSImage(contentsOfFile: path), img.size.width > 0 {
+                let w = CGFloat((b["w"] as? Double) ?? 0.15) * CGFloat(W)
+                let h = w * img.size.height / img.size.width
+                var x = CGFloat((b["x"] as? Double) ?? 0.5) * CGFloat(W) - w / 2
+                var y = CGFloat((b["y"] as? Double) ?? 0.5) * CGFloat(H) - h / 2
+                x = max(0, min(x, CGFloat(W) - w)); y = max(0, min(y, CGFloat(H) - h))
+                img.draw(in: CGRect(x: x, y: y, width: w, height: h), from: .zero, operation: .sourceOver, fraction: 1,
+                         respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high.rawValue])
+            }
+            continue
+        }
         let maxW = CGFloat((b["maxw"] as? Double) ?? 0.88) * CGFloat(W)
         let rows = ((b["rows"] as? [[String: Any]]) ?? []).filter { !(($0["text"] as? String) ?? "").isEmpty }.map { makeRow($0, maxWidth: maxW) }
         if rows.isEmpty { continue }
