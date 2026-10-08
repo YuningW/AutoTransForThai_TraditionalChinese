@@ -62,9 +62,19 @@ def speech_parts(audio, join_gap=JOIN_GAP, min_silence=350, max_chunk=MAX_CHUNK,
     return chunks
 
 
+# The same bit (1-12 letters, with or without spaces) four or more times in a row: "อ่ะ อ่ะ อ่ะ อ่ะ", "คือคือคือคือ"
+_LOOP = re.compile(r"(.{1,12}?)\s*(?:\1\s*){3,}")
+# Thai in UTF-8 compresses about 3:1 even when it's ordinary speech, so Whisper's usual
+# "compresses too well = stuck in a loop" test (2.4) throws away good Thai lines. Real loops score 10+.
+THAI_COMPRESSION_LIMIT = 6.0
+
+
 def _junk(seg, text):
     """Whisper's made-up lines: loops, a lone letter, or confident words over no speech."""
-    if seg.get("compression_ratio", 0) > 2.6:
+    if seg.get("compression_ratio", 0) > THAI_COMPRESSION_LIMIT:
+        return True
+    loop = _LOOP.search(text)
+    if loop and len(loop.group(0)) >= max(8, 0.5 * len(text)):
         return True
     if re.fullmatch(r"(?:\s*\S{1,2}[.\s]*)", text) and seg.get("avg_logprob", 0) < -0.5:
         return True
@@ -81,7 +91,7 @@ def _decode(piece, offset, end, model, hint, temps, language="th"):
     r = mlx_whisper.transcribe(piece, path_or_hf_repo=model, language=language, task="transcribe",
                                word_timestamps=os.environ.get("AC_WORD_TIMES", "1") == "1", verbose=None, temperature=temps,
                                condition_on_previous_text=False, initial_prompt=hint or None,
-                               sample_len=sample_len)
+                               sample_len=sample_len, compression_ratio_threshold=THAI_COMPRESSION_LIMIT)
     out = []
     for seg in r.get("segments", []):
         text = (seg.get("text") or "").strip()

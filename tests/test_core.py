@@ -106,6 +106,14 @@ class Junk(unittest.TestCase):
         self.assertTrue(listen._junk({"compression_ratio": 12.0, "avg_logprob": -0.1}, "ฮ."))
         self.assertTrue(listen._junk({"compression_ratio": 1.0, "avg_logprob": -0.7}, "ฮ."))
         self.assertFalse(listen._junk({"compression_ratio": 1.8, "avg_logprob": -0.2}, "ไม่รู้หน้าที่เหรอ"))
+        self.assertTrue(listen._junk({"compression_ratio": 3.0, "avg_logprob": -0.1}, "อ่ะ อ่ะ อ่ะ อ่ะ อ่ะ อ่ะ อ่ะ"))
+        self.assertTrue(listen._junk({"compression_ratio": 3.0, "avg_logprob": -0.1}, "ก็คือคือคือคือคือคือคือคือ"))
+
+    def test_long_ordinary_thai_is_kept(self):
+        # this compresses 2.9:1 like all Thai; the old filter threw it away
+        line = "แต่ว่าหนูก็เป็นอย่างนี้มาตั้งแต่เด็กอ่ะก็คือเหมือนอย่างที่บอกตั้งแต่แรก"
+        self.assertFalse(listen._junk({"compression_ratio": 2.9, "avg_logprob": -0.03, "no_speech_prob": 0.0}, line))
+        self.assertFalse(listen._junk({"compression_ratio": 2.0, "avg_logprob": -0.2}, "น่ารัก น่ารัก"))   # said twice: fine
 
 
 class Memory(unittest.TestCase):

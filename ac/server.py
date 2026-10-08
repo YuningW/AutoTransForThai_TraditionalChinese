@@ -254,6 +254,12 @@ class RangeIn(BaseModel):
     note: str = ""
 
 
+@app.post("/api/jobs/{jid}/fill-skipped")
+def fill_skipped(jid: str):
+    jobs.fill_skipped(jid)
+    return jobs.load(jid)
+
+
 @app.post("/api/jobs/{jid}/review")
 def review(jid: str, body: RangeIn):
     jobs.review_range(jid, body.start, body.end, body.note)

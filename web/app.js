@@ -31,7 +31,7 @@ const STATE_WORDS = {
   fetching: "Downloading", preparing: "Reading the video", cleaning: "Removing music", listening: "Listening",
   reading: "Reading your screenshots", tidying: "Tidying the Thai", translating: "Translating", checking: "Checking itself",
   fixing: "Fixing your flags", redoing: "Redoing", burning: "Burning captions in", ready: "Ready to check",
-  reviewing: "Listening again to a stretch", touches: "Picking moments for emoji", speakers: "Working out who's talking",
+  reviewing: "Listening again to a stretch", touches: "Picking moments for emoji", speakers: "Working out who's talking", filling: "Filling in skipped talking",
 };
 
 /* ============================================================ start view */
@@ -239,6 +239,7 @@ function renderJob() {
   $("#export").disabled = !!job.busy || !(job.counts && job.counts.lines);
   const noVideo = !job.media?.duration;
   ["#addLineHere", "#addTouchHere", "#markRange"].forEach(s => { $(s).disabled = noVideo; });
+  $("#fillSkipped").disabled = noVideo || !!job.busy || !(job.counts && job.counts.lines);
   $("#suggestTouches").disabled = !!job.busy || !(job.counts && job.counts.lines);
   if (!$("#rangeBox").hidden) renderRange();
   const music = !!job.options?.clean_voice, done = job.state === "ready" && !job.busy && job.counts?.lines;
@@ -1012,6 +1013,9 @@ $("#rangePlay").onclick = () => {
   video.currentTime = range.from; video.play();
   const stop = () => { if (range.to !== null && video.currentTime >= range.to) { video.pause(); video.removeEventListener("timeupdate", stop); } };
   video.addEventListener("timeupdate", stop);
+};
+$("#fillSkipped").onclick = async () => {
+  try { await api("POST", `/api/jobs/${job.id}/fill-skipped`); refresh(job.id); } catch (ex) { alert(ex.message); }
 };
 $("#rangeGo").onclick = async () => {
   try {

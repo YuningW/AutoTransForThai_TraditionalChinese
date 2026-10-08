@@ -368,7 +368,8 @@ def rebuild(job, lines, start, end, inside, keep, attempts, note):
     parts = [
         _context(job),
         f"Memory (learned from earlier feedback):\n{mem}" if mem else "",
-        f"The user marked {start:.1f}s to {end:.1f}s." + (f" Their note: \"{note}\"" if note else " No note."),
+        f"The user marked {start:.1f}s to {end:.1f}s." + (f" Their note: \"{note}\"" if note else
+            " (Found automatically: the voice detector hears talking here but there were no captions for it.)"),
         "Lines just before (context only):\n" + _lines_text(before, ("th", "zh")) if before else "",
         "Old captions in the stretch:\n" + (_lines_text(inside, ("th", "zh")) or "(none: this part had no captions)"),
         "Lines to keep exactly (the user's own):\n" + _lines_text(keep, ("th", "zh")) if keep else "",

@@ -167,7 +167,7 @@ def _after_stop(jid):
         (". Everything finished before that is kept." if has_lines else "."), "warn")
 
 
-STATE_DOING = {"fetching": "downloading", "preparing": "reading the video", "cleaning": "removing the music",
+STATE_DOING = {"filling": "filling in skipped talking", "fetching": "downloading", "preparing": "reading the video", "cleaning": "removing the music",
                "listening": "listening", "reading": "reading your screenshots", "tidying": "tidying the Thai",
                "translating": "translating", "checking": "checking its work", "fixing": "fixing your flags",
                "reviewing": "fixing a stretch", "burning": "saving the video", "touches": "picking emoji",
@@ -533,6 +533,7 @@ def _relisten(jid, targets):
     ls = lines(jid)
     idx = {l["id"]: i for i, l in enumerate(ls)}
     hint_base = memory.whisper_hint()
+    best = models.mlx_path(models.listen_key())          # short clips: the best model, even on Quicker listening
     plan, windows = [], []
     for t in targets:
         a, b = max(0, t["start"] - 0.8), t["end"] + 0.8
@@ -542,7 +543,7 @@ def _relisten(jid, targets):
         orig = rd / f"{t['id']}_orig.wav"
         media.cut_wav(d / "audio.wav", orig, a, b)
         windows.append((t["id"], a, b))
-        plan.append({"id": t["id"], "how": "listened again", "wav": str(orig), "hint": hint, "temperature": 0.0})
+        plan.append({"id": t["id"], "how": "listened again", "wav": str(orig), "hint": hint, "temperature": 0.0, "model": best})
 
     # Voice only: the windows go through the music remover as one file (much faster than one by one)
     try:
@@ -550,7 +551,7 @@ def _relisten(jid, targets):
         joined = _voice_windows(jid, windows)
         for (lid, _a, _b), wav in zip(windows, joined):
             hint = next(p["hint"] for p in plan if p["id"] == lid)
-            plan.append({"id": lid, "how": "listened to the voice with the music removed", "wav": str(wav), "hint": hint, "temperature": 0.0})
+            plan.append({"id": lid, "how": "listened to the voice with the music removed", "wav": str(wav), "hint": hint, "temperature": 0.0, "model": best})
     except Exception as e:                                       # still fine with the plain attempts
         log(jid, f"Couldn't remove the music for a second listen ({e}).", "warn")
 
@@ -1136,6 +1137,13 @@ def review_range(jid, start, end, note):
 
 
 def _review_job(jid, start, end, note):
+    gone, new, explain = _review_work(jid, start, end, note)
+    update(jid, busy=False, state="ready", label="", progress=None)
+    log(jid, f"Rebuilt {_mmss(start)}–{_mmss(end)}: {gone} old lines → {new} new. " + explain, "done")
+
+
+def _review_work(jid, start, end, note, state="reviewing"):
+    """Listen to one stretch again several ways and have Claude rewrite its lines. Returns (old, new, explain)."""
     d = job_dir(jid)
     rd = d / "relisten"
     shutil.rmtree(rd, ignore_errors=True)
@@ -1143,14 +1151,14 @@ def _review_job(jid, start, end, note):
     a, b = max(0.0, start - 0.4), end + 0.4
     clip = rd / "range_orig.wav"           # _voice_windows looks for <id>_orig.wav
     media.cut_wav(d / "audio.wav", clip, a, b)
-    main = _whisper(jid)
+    main = models.mlx_path(models.listen_key())          # short clips: always the best model, even on Quicker listening
     other = "mlx-community/whisper-large-v3-mlx" if "large-v3-mlx" not in main else "mlx-community/whisper-large-v3-turbo"
     hint = memory.whisper_hint()
     plan = [{"how": "listened again (Thai)", "wav": str(clip), "model": main, "language": "th"},
             {"how": "listened again, any language", "wav": str(clip), "model": main, "language": None},
             {"how": "another model, any language", "wav": str(clip), "model": other, "language": None}]
     try:
-        _step(jid, "reviewing", "Taking the music away from that stretch")
+        _step(jid, state, "Taking the music away from that stretch")
         voice = _voice_windows(jid, [("range", a, b)])[0]
         plan.append({"how": "the voice with the music removed (Thai)", "wav": str(voice), "model": main, "language": "th"})
     except Exception as e:
@@ -1158,13 +1166,13 @@ def _review_job(jid, start, end, note):
     for p in plan:
         p.update(hint=hint, temperature=0.0, timed=True, offset=a)
     (rd / "plan.json").write_text(json.dumps(plan, ensure_ascii=False))
-    _step(jid, "reviewing", f"Listening again to {_mmss(start)}–{_mmss(end)}", 0)
+    _step(jid, state, f"Listening again to {_mmss(start)}–{_mmss(end)}", 0)
     with _gpu:
         _sub(jid, ["ac.relisten", str(rd / "plan.json"), str(rd / "out.json")], "Listening again")
     results = json.loads((rd / "out.json").read_text())
     attempts = [{"how": p["how"], "segments": r} for p, r in zip(plan, results) if r]
 
-    _step(jid, "reviewing", "Claude is rebuilding that stretch")
+    _step(jid, state, f"Claude is rewriting {_mmss(start)}–{_mmss(end)}")
     ls = lines(jid)
     inside = [l for l in ls if l["end"] > start and l["start"] < end]
     keep = [l for l in inside if locked(l)]
@@ -1189,8 +1197,54 @@ def _review_job(jid, start, end, note):
         added = memory.learn(r.get("lessons"), source=load(jid).get("title", ""))
         if added:
             log(jid, "Learned for next time: " + "; ".join(x.get("rule") or f"{x.get('th')} → {x.get('zh')}" for x in added), "learn")
+    return len(gone), len(new), r.get("explain") or ""
+
+
+# ---------------------------------------------------------------- talking with no captions
+
+def skipped_speech(jid):
+    """Stretches where the voice detector hears talking but no real caption covers it (a "(music)" marker
+    doesn't count). [(start, end)], merged when close, each at most 2 minutes."""
+    d = job_dir(jid)
+    from . import listen
+    x = listen.load_wav(d / ("voice.wav" if (d / "voice.wav").exists() else "audio.wav"))
+    parts = listen.speech_parts(x, 0.8, max_chunk=12)
+    ls = [l for l in lines(jid) if l.get("kind") != "sound" and (l.get("th") or "").strip()]
+
+    def covered(a, b):
+        return sum(max(0.0, min(b, l["end"]) - max(a, l["start"])) for l in ls) / (b - a)
+    gaps = []
+    for a, b in parts:
+        if b - a > 1.5 and covered(a, b) < 0.35:
+            if gaps and a - gaps[-1][1] < 1.5 and b - gaps[-1][0] < 120:
+                gaps[-1][1] = b
+            else:
+                gaps.append([a, b])
+    return [(round(a, 2), round(b, 2)) for a, b in gaps]
+
+
+def fill_skipped(jid):
+    _begin(jid, "filling", "Looking for talking with no captions")
+    _run(jid, _fill_job)
+
+
+def _fill_job(jid):
+    _step(jid, "filling", "Looking for talking with no captions")
+    gaps = skipped_speech(jid)
+    if not gaps:
+        update(jid, busy=False, state="ready", label="", progress=None)
+        log(jid, "No skipped talking found: every stretch of speech has captions.", "done")
+        return
+    log(jid, f"Found {len(gaps)} stretch{'es' if len(gaps) > 1 else ''} of talking with no captions: "
+             + ", ".join(f"{_mmss(a)}–{_mmss(b)}" for a, b in gaps) + ".")
+    added = 0
+    for i, (a, b) in enumerate(gaps):
+        _step(jid, "filling", f"Listening again to {_mmss(a)}–{_mmss(b)} ({i + 1} of {len(gaps)})")
+        _, new, _ = _review_work(jid, a, b, "", state="filling")
+        added += new
+    _auto_voices(jid)
     update(jid, busy=False, state="ready", label="", progress=None)
-    log(jid, f"Rebuilt {_mmss(start)}–{_mmss(end)}: {len(gone)} old lines → {len(new)} new. " + (r.get("explain") or ""), "done")
+    log(jid, f"Filled in the skipped talking: {added} new lines in {len(gaps)} stretches. Check them; they're marked as fixed.", "done")
 
 
 # ---------------------------------------------------------------- cute touches, suggested by Claude
