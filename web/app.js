@@ -866,6 +866,7 @@ function touchPx(t) {
 }
 let shownTouches = "";
 function drawTouches(time, force) {
+  if (dragging) return;
   const on = touches.filter(t => t.whole || (t.start <= time && time < t.end) || t.id === selTouch);
   const key = on.map(t => t.id + JSON.stringify(t)).join("|") + frame.w + JSON.stringify(fullStyle());
   if (key === shownTouches && !force) return;
@@ -900,18 +901,32 @@ function drawTouches(time, force) {
     return el;
   }));
 }
+// Drag an emoji, note, text or logo. Nothing on the video is redrawn while you drag: redrawing
+// replaces the element under the pointer and the drag stops (that was the bug).
+let dragging = false;
 function dragTouch(e, t, el) {
-  e.preventDefault(); video.pause(); selectTouch(t.id);
+  if (e.button !== undefined && e.button !== 0) return;
+  e.preventDefault(); video.pause();
+  dragging = true;
+  $$("#touchLayer .sel").forEach(x => x.classList.remove("sel")); el.classList.add("sel");
   const box = $("#player").getBoundingClientRect();
-  el.setPointerCapture(e.pointerId);
+  const start = { x: e.clientX, y: e.clientY, tx: t.x, ty: t.y };
+  try { el.setPointerCapture(e.pointerId); } catch { /* */ }
   let moved = false;
-  el.onpointermove = ev => {
+  const move = ev => {
+    if (!moved && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 3) return;
     moved = true;
-    t.x = Math.max(0.02, Math.min(0.98, (ev.clientX - box.left - frame.left) / frame.w));
-    t.y = Math.max(0.02, Math.min(0.98, (ev.clientY - box.top - frame.top) / frame.h));
+    t.x = Math.max(0, Math.min(1, start.tx + (ev.clientX - start.x) / frame.w));
+    t.y = Math.max(0, Math.min(1, start.ty + (ev.clientY - start.y) / frame.h));
     el.style.left = `${frame.left + t.x * frame.w}px`; el.style.top = `${frame.top + t.y * frame.h}px`;
   };
-  el.onpointerup = () => { el.onpointermove = null; if (moved) patchTouch(t, { x: t.x, y: t.y }); };
+  const up = () => {
+    el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
+    dragging = false;
+    if (moved) patchTouch(t, { x: Math.round(t.x * 1000) / 1000, y: Math.round(t.y * 1000) / 1000 });
+    selectTouch(t.id);                       // open its editor now that the drag is over
+  };
+  el.addEventListener("pointermove", move); el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
 }
 // Changes wait a moment so typing and dragging sliders don't send a request each time. They pile up
 // per item and all go together, so a quick second change (a corner button) never drops the first.
