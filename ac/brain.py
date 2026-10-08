@@ -136,6 +136,20 @@ def _helpers_text(helpers, kind, start=None, end=None):
     return "\n\n".join(out)
 
 
+def _meaning_text(helpers, start, end):
+    """Translations of this stretch written by people (the video's English/Chinese captions, the user's
+    reference): they show what was said, though not the Thai words."""
+    return _helpers_text([h for h in helpers if h.get("items")], "translation", start, end)
+
+
+def _refs_for(helpers, start, end):
+    """Both kinds of reference for one stretch, as prompt blocks."""
+    orig = _helpers_text([h for h in helpers if h.get("items")], "original", start, end)
+    mean = _meaning_text(helpers, start, end)
+    return [f"Subtitles written by people for this stretch (Thai, as said):\n{orig}" if orig else "",
+            f"Subtitles written by people for this stretch (a translation: shows what was meant, not the Thai words):\n{mean}" if mean else ""]
+
+
 # ---------------------------------------------------------------- helpers (pictures)
 
 READ_SYSTEM = """You copy caption text out of screenshots exactly as written. The screenshots are usually \
@@ -176,7 +190,11 @@ a question…) so each can be one person's line. Otherwise leave parts out.
 kind: "speech" for talking; "song" when the line is lyrics being sung; "sound" when there are no real \
 words (laughing, music, noise). For "sound" lines put a short Thai-free description in th like "(笑)" or "♪".
 suspect: true when you still think the words may be wrong after your changes (you'll be asked again later \
-with a fresh listen), and say why in reason. Lines marked unsure=true had low recogniser confidence."""
+with a fresh listen), and say why in reason. Lines marked unsure=true had low recogniser confidence.
+A translation written by people (for example the video's English captions) may be given: it shows what was \
+meant, not the Thai words, so never translate it back into Thai. Use it to spot misheard lines: when a Thai \
+line's meaning clearly doesn't fit the translation at that time, mark it suspect and say what the translation \
+says in reason. Small differences of wording are normal; only flag a real mismatch."""
 
 POLISH_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["lines"], "properties": {
     "lines": {"type": "array", "items": {"type": "object", "additionalProperties": False,
@@ -194,10 +212,12 @@ def polish(job, lines, helpers):
         if not chunk:
             return []
         ref = _helpers_text(helpers, "original", chunk[0]["start"], chunk[-1]["end"])
+        meant = _meaning_text(helpers, chunk[0]["start"], chunk[-1]["end"])
         prompt = "\n\n".join(x for x in (
             _context(job),
             f"Memory (names, words and rules learned from the user's earlier feedback):\n{mem}" if mem else "",
             f"Reference transcript(s) from the user:\n{ref}" if ref else "",
+            f"Translation(s) written by people (what was meant; check the Thai against it):\n{meant}" if meant else "",
             "Captions to tidy (one JSON object per line):\n" + _lines_text(chunk, ("th",)),
             "Return every line.") if x)
         return ask(POLISH_SYSTEM, prompt, POLISH_SCHEMA, job["dir"])["lines"]
@@ -258,7 +278,11 @@ elsewhere, words that don't fit the conversation). Lines with unsure=true deserv
 address each other), Simplified characters, or mainland wording where Taiwan says it differently.
 - "timing": a line is far too long to read in its time (more than about 7 Chinese characters per second).
 For "translation" problems give the corrected Chinese in fix. For "heard" problems the line will be listened \
-to again; say what you suspect in why. Don't report lines that are fine. Don't rewrite style for taste."""
+to again; say what you suspect in why. Don't report lines that are fine. Don't rewrite style for taste.
+Subtitles written by people (the video's own captions) may be given with times. They're the best evidence: \
+a Thai line whose meaning doesn't fit them at that time is "heard"; a Chinese line that contradicts them is \
+"translation". They may be split or timed a little differently from these lines; small wording differences \
+are normal."""
 
 REVIEW_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["problems"], "properties": {
     "problems": {"type": "array", "items": {"type": "object", "additionalProperties": False,
@@ -268,7 +292,7 @@ REVIEW_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["
                      "why": {"type": "string"}, "fix": {"type": "string"}}}}}}
 
 
-def review(job, lines):
+def review(job, lines, helpers=()):
     mem = memory.prompt_text("both")
 
     def run(chunk):
@@ -277,6 +301,7 @@ def review(job, lines):
         prompt = "\n\n".join(x for x in (
             _context(job),
             f"Memory (the user's rules):\n{mem}" if mem else "",
+            *_refs_for(helpers, chunk[0]["start"], chunk[-1]["end"]),
             "Captions:\n" + _lines_text(chunk, ("th", "zh", "kind"))) if x)
         return ask(REVIEW_SYSTEM, prompt, REVIEW_SCHEMA, job["dir"])["problems"]
 
@@ -290,7 +315,9 @@ automatic check flagged. You cannot hear the audio. For lines flagged "heard" yo
 the speech recogniser (listening again, some with the music removed); the window each attempt covers is a \
 little wider than the line, so pick out the part that belongs to this line. Choose the reading that best \
 fits the attempts, the conversation, the user's note and the memory; when the attempts agree with the old \
-text, keep it. Then make the Chinese match the Thai.
+text, keep it. Subtitles written by people for the line's time (subtitles_by_people) are strong evidence: \
+Thai ones show the words, translations show the meaning (pick the attempt that means that). Then make the \
+Chinese match the Thai.
 Lines with a user note: the note is the user's own feedback and is the most important input. If the user \
 typed the correct text, use it.
 You may also return a context line (by its id) when this fix makes it wrong too: a word split across the two lines, or a neighbour whose translation no longer fits. Return only lines you looked at.
@@ -311,7 +338,7 @@ FIX_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["lin
                     "th": {"type": "string"}, "zh": {"type": "string"}, "rule": {"type": "string"}}}}}}
 
 
-def fix(job, lines, targets, relistened):
+def fix(job, lines, targets, relistened, helpers=()):
     """targets: lines to fix (with flag/note). relistened: {id: [attempt texts]}."""
     by_id = {l["id"]: l for l in lines}
     mem = memory.prompt_text("both")
@@ -325,6 +352,12 @@ def fix(job, lines, targets, relistened):
              "context": [{"id": c["id"], "th": c["th"], "zh": c.get("zh", "")} for c in ctx if c["id"] != t["id"]]}
         if t["id"] in relistened:
             b["listened_again"] = relistened[t["id"]]
+        subs = [f"[{h['label']}] " + " / ".join(i["text"] for i in h["items"]
+                                               if i["end"] >= t["start"] - 1 and i["start"] <= t["end"] + 1)
+                for h in helpers if h.get("items")]
+        subs = [x for x in subs if not x.endswith("] ")]
+        if subs:
+            b["subtitles_by_people"] = subs
         blocks.append(json.dumps(b, ensure_ascii=False))
     prompt = "\n\n".join(x for x in (
         _context(job),
@@ -339,7 +372,11 @@ REBUILD_SYSTEM = """You rebuild the captions for one stretch of a Thai video tha
 because lines were skipped, misheard, or badly split. You cannot hear the audio. You get several fresh \
 transcripts of the stretch from speech recognisers, each with timed segments (some in Thai, some letting the \
 recogniser pick the language, which catches English that a Thai-only pass drops), the old captions, the \
-conversation around it, and the user's note, which matters most.
+conversation around it, and the user's note, which matters most. Subtitles written by people for the stretch \
+may be given too: Thai ones show the words; translations show what was meant, so pick and correct the \
+transcripts to fit that meaning (never translate them back into Thai). Their timing can be off by a second \
+or more (they were timed by someone else), so times always come from the transcripts. If no transcript caught \
+anything a subtitle shows, write nothing for it: the subtitle may be timed for a moment just before or after.
 Write the captions for the whole stretch from scratch: original-language text (Thai, or English as spoken) and \
 Traditional Chinese (Taiwan usage, no 。 at line ends). Take start/end times from the transcript segments (you may \
 split a segment's time in proportion to its text); keep each line short enough to read (about 34 Thai letters, \
@@ -359,7 +396,7 @@ REBUILD_SCHEMA = {"type": "object", "additionalProperties": False, "required": [
     "lessons": FIX_SCHEMA["properties"]["lessons"]}}
 
 
-def rebuild(job, lines, start, end, inside, keep, attempts, note):
+def rebuild(job, lines, start, end, inside, keep, attempts, note, helpers=(), why=""):
     idx = [i for i, l in enumerate(lines) if l in inside]
     i0 = idx[0] if idx else next((i for i, l in enumerate(lines) if l["start"] >= start), len(lines))
     i1 = (idx[-1] + 1) if idx else i0
@@ -369,7 +406,8 @@ def rebuild(job, lines, start, end, inside, keep, attempts, note):
         _context(job),
         f"Memory (learned from earlier feedback):\n{mem}" if mem else "",
         f"The user marked {start:.1f}s to {end:.1f}s." + (f" Their note: \"{note}\"" if note else
-            " (Found automatically: the voice detector hears talking here but there were no captions for it.)"),
+            f" (Found automatically: {why or 'the voice detector hears talking here but there were no captions for it'}.)"),
+        *_refs_for(helpers, start - 1, end + 1),
         "Lines just before (context only):\n" + _lines_text(before, ("th", "zh")) if before else "",
         "Old captions in the stretch:\n" + (_lines_text(inside, ("th", "zh")) or "(none: this part had no captions)"),
         "Lines to keep exactly (the user's own):\n" + _lines_text(keep, ("th", "zh")) if keep else "",

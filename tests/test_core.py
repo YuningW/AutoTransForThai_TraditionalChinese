@@ -168,3 +168,38 @@ class Memory(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SubtitleGaps(unittest.TestCase):
+    def test_subtitles_show_talking_the_captions_missed(self):
+        from ac import jobs
+        job = {"media": {"duration": 60}, "helpers": [{"kind": "translation", "items": [
+            {"start": 1.0, "end": 3.0, "text": "I'm so hungry"},          # covered by a caption
+            {"start": 10.0, "end": 12.5, "text": "Wait for me!"},         # nothing heard here
+            {"start": 12.8, "end": 14.0, "text": "Come on"},              # right after: one stretch
+            {"start": 20.0, "end": 23.0, "text": "[Music]"},              # not talking
+            {"start": 30.0, "end": 30.4, "text": "Hm"}]}]}                # too short to matter
+        ls = [{"start": 0.8, "end": 3.1, "th": "หิวมากเลย", "kind": "speech"},
+              {"start": 20.0, "end": 23.0, "th": "♪", "kind": "sound"}]
+        old = jobs.load, jobs.lines
+        jobs.load, jobs.lines = (lambda jid: job), (lambda jid: ls)
+        try:
+            self.assertEqual(jobs.subtitle_gaps("x"), [(10.0, 14.0)])
+        finally:
+            jobs.load, jobs.lines = old
+
+    def test_long_runs_are_cut_into_stretches(self):
+        from ac import jobs
+        gaps = [[i * 10.0, i * 10.0 + 9.5] for i in range(10)]
+        out = jobs._merge_gaps(gaps, join=1.5, longest=60)
+        self.assertTrue(all(b - a <= 60 for a, b in out), out)
+        self.assertEqual((out[0][0], out[-1][1]), (0.0, 99.5))
+
+
+class TrackShift(unittest.TestCase):
+    def test_late_subtitles_are_lined_up(self):
+        from ac import jobs
+        ls = [{"start": t, "end": t + 1.5 + (t % 3) * 0.3} for t in range(0, 120, 4)]
+        late = [{"start": l["start"] + 2.5, "end": l["end"] + 2.5} for l in ls]
+        self.assertAlmostEqual(jobs.track_shift(late, ls), -2.5)
+        self.assertEqual(jobs.track_shift(ls, ls), 0.0)

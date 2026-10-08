@@ -31,6 +31,7 @@ PICTURE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif"}
 TEXT_EXT = {".srt", ".txt", ".vtt", ".ass"}
 THIN_LETTERS_PER_SECOND = 4.0         # captions this sparse over talking: words were lost
 RELISTEN_MAX = 40                     # lines the self-check may listen to again per run
+SUBS_FILL_MAX = 20                    # stretches a run fills in where the video's subtitles show talking
 UNSURE = 0.55                         # Whisper confidence below this gets a second listen
 
 
@@ -284,10 +285,25 @@ def _make(jid):
         reader.join()
     _read_helpers(jid)
     _polish_and_translate(jid)
+    _finish(jid)
+
+
+def _finish(jid):
     _self_check(jid)
+    _fill_from_subtitles(jid)
     _auto_voices(jid)
     update(jid, busy=False, state="ready", label="", progress=None)
     log(jid, "Captions are ready for you to check.", "done")
+
+
+def _resume(jid, state):
+    """Carry on from the step that stopped (Claude's usage limit, a lost connection…), keeping what was done."""
+    if state in ("reading", "tidying"):
+        _read_helpers(jid)
+        _polish_and_translate(jid)
+    elif state == "translating":
+        _translate(jid)
+    _finish(jid)
 
 
 def _auto_voices(jid):
@@ -511,9 +527,16 @@ def _polish_and_translate(jid, keep_edited=True):
     if n_split:
         log(jid, f"Cut {n_split} long lines where the speaker or sentence changes.")
     log(jid, f"Tidied the Thai: {changed} lines changed.")
+    _translate(jid, keep_edited)
 
+
+def _translate(jid, keep_edited=True):
+    job = load(jid)
+    ls = lines(jid)
+    by_id = {l["id"]: l for l in ls}
+    work = [l for l in ls if not (keep_edited and locked(l))]
     _step(jid, "translating", "Claude is translating into Traditional Chinese")
-    for r in brain.translate(job, work, helpers):
+    for r in brain.translate(job, work, job["helpers"]):
         l = by_id[r["id"]]
         l["zh"] = r["zh"].strip()
         if r.get("unsure"):
@@ -554,7 +577,7 @@ def _self_check(jid):
     ls = lines(jid)
     by_id = {l["id"]: l for l in ls}
     _step(jid, "checking", "Checking its own work")
-    problems = brain.review(job, [l for l in ls if not locked(l)])
+    problems = brain.review(job, [l for l in ls if not locked(l)], job["helpers"])
 
     targets = {}
     for l in ls:
@@ -679,7 +702,7 @@ def _fix(jid, targets, learn=True):
     by_id = {l["id"]: l for l in ls}
     result = {"lines": [], "lessons": []}
     for i in range(0, len(targets), 25):
-        r = brain.fix(job, ls, targets[i:i + 25], relistened)
+        r = brain.fix(job, ls, targets[i:i + 25], relistened, job["helpers"])
         result["lines"] += r["lines"]
         result["lessons"] += r["lessons"]
     changed, neighbours = 0, 0
@@ -793,6 +816,7 @@ def _redo_job(jid, what):
             by_id[r["id"]]["zh"] = r["zh"].strip()
         save_lines(jid, ls)
     _self_check(jid)
+    _fill_from_subtitles(jid)
     update(jid, busy=False, state="ready", label="", progress=None)
     log(jid, "Redone with your helpers and everything it has learned.", "done")
 
@@ -830,6 +854,7 @@ def _listen_again_job(jid):
     _read_helpers(jid)
     _polish_and_translate(jid)
     _self_check(jid)
+    _fill_from_subtitles(jid)
     _auto_voices(jid)
     update(jid, busy=False, state="ready", label="", progress=None)
     log(jid, "Captions are ready for you to check.", "done")
@@ -856,6 +881,9 @@ def recover_interrupted():
                    error="AutoCaption stopped while working on this. Press Try again.")
 
 
+RESUMABLE = ("reading", "tidying", "translating", "checking")
+
+
 def retry(jid):
     """Pick up after an error."""
     job = load(jid)
@@ -869,6 +897,11 @@ def retry(jid):
     elif not lines(jid):
         _begin(jid, "preparing", "Reading the video")
         _run(jid, _make)
+    elif job.get("state") in RESUMABLE:      # stopped part-way through making the captions: carry on from there
+        state = job["state"]
+        _begin(jid, state, "Carrying on")
+        log(jid, f"Carrying on from {STATE_DOING.get(state, state)}.")
+        _run(jid, _resume, state)
     else:                                   # captions are there: just clear the message
         update(jid, error=None, state="ready")
 
@@ -1278,7 +1311,7 @@ def _review_job(jid, start, end, note):
     log(jid, f"Rebuilt {_mmss(start)}–{_mmss(end)}: {gone} old lines → {new} new. " + explain, "done")
 
 
-def _review_work(jid, start, end, note, state="reviewing"):
+def _review_work(jid, start, end, note, state="reviewing", why=""):
     """Listen to one stretch again several ways and have Claude rewrite its lines. Returns (old, new, explain)."""
     d = job_dir(jid)
     rd = d / "relisten"
@@ -1314,7 +1347,7 @@ def _review_work(jid, start, end, note, state="reviewing"):
     # (its words weren't in what was listened to) stays as it is
     inside = [l for l in ls if min(end, l["end"]) - max(start, l["start"]) > 0.5 * (l["end"] - l["start"])]
     keep = [l for l in inside if locked(l)]
-    r = brain.rebuild(load(jid), ls, start, end, inside, keep, attempts, note)
+    r = brain.rebuild(load(jid), ls, start, end, inside, keep, attempts, note, load(jid)["helpers"], why)
     next_id = max((l["id"] for l in ls), default=0) + 1
     new = []
     for x in r["lines"]:
@@ -1339,6 +1372,90 @@ def _review_work(jid, start, end, note, state="reviewing"):
 
 
 # ---------------------------------------------------------------- talking with no captions
+
+SUBS_WHY = "the video's own subtitles show someone talking here, but there were no captions for it"
+_NOT_WORDS = re.compile(r"[\[(（【][^\])）】]*[\])）】]|[♪♫#*\-–—.,!?…'\"\s]")
+
+
+def subtitle_gaps(jid):
+    """Stretches where subtitles written by people (the video's own captions, burned-in subtitles, your timed
+    helpers) show talking but no caption covers it: what the listening dropped. [(start, end)]."""
+    job = load(jid)
+    ls = [l for l in lines(jid) if l.get("kind") != "sound" and (l.get("th") or "").strip()]
+    dur = (job.get("media") or {}).get("duration") or 1e9
+
+    def covered(a, b):              # lines a little wider: the two are timed by different people
+        return sum(max(0.0, min(b, l["end"] + 0.3) - max(a, l["start"] - 0.3)) for l in ls) / (b - a)
+    gaps = []
+    for h in job["helpers"]:
+        shift = track_shift(h.get("items") or [], ls)
+        for c in h.get("items") or []:
+            a, b = float(c["start"]) + shift, min(float(c["end"]) + shift, dur)
+            words = _NOT_WORDS.sub("", c.get("text") or "")      # "[Music]", "(laughs)", "♪" aren't talking
+            if b - a >= 0.8 and len(words) >= 2 and covered(a, b) < 0.3:
+                gaps.append([a, b])
+    return _merge_gaps(gaps, join=1.5, longest=60)
+
+
+def track_shift(cues, ls, most=6.0):
+    """Subtitles timed against another cut of the video (an intro added or trimmed) are early or late all the
+    way through: the shift in seconds that lines them up best with the captions, 0 when they already fit."""
+    if len(cues) < 5 or len(ls) < 5:
+        return 0.0
+    import numpy as np
+    step = 0.25
+    n = int((max(max(c["end"] for c in cues), max(l["end"] for l in ls)) + most) / step) + 2
+
+    def mask(items):
+        m = np.zeros(n, dtype=np.int32)
+        for x in items:
+            m[max(0, int(float(x["start"]) / step)):max(0, int(float(x["end"]) / step))] = 1
+        return m
+    cm, lm = mask(cues), mask(ls)
+    k = int(most / step)
+    scores = {d: int((np.roll(cm, d)[k:n - k] & lm[k:n - k]).sum()) for d in range(-k, k + 1)}
+    best = max(scores, key=lambda d: (scores[d], -abs(d)))
+    return best * step if scores[best] > 1.15 * scores[0] else 0.0     # only a clear improvement moves them
+
+
+def _merge_gaps(gaps, join, longest):
+    merged = []
+    for a, b in sorted(gaps):
+        if merged and a - merged[-1][1] < join and b - merged[-1][0] < longest:
+            merged[-1][1] = max(merged[-1][1], b)
+        elif merged and a < merged[-1][1]:            # overlaps but would grow too long: carry on after it
+            if b > merged[-1][1]:
+                merged.append([merged[-1][1], b])
+        else:
+            merged.append([a, b])
+    return [(round(a, 2), round(b, 2)) for a, b in merged]
+
+
+def _fill_from_subtitles(jid):
+    """Listen again where the video's subtitles show talking the captions are missing. Never stops the run."""
+    try:
+        gaps = subtitle_gaps(jid)
+    except Exception as e:
+        log(jid, f"Couldn't compare with the video's own subtitles ({e}).", "warn")
+        return
+    if not gaps:
+        return
+    todo = gaps[:SUBS_FILL_MAX]
+    log(jid, f"The video's own subtitles show talking in {len(gaps)} place{'s' if len(gaps) > 1 else ''} with no captions: "
+             + ", ".join(f"{_mmss(a)}–{_mmss(b)}" for a, b in gaps[:12]) + ("…" if len(gaps) > 12 else "") + ". Listening again.")
+    added = 0
+    for i, (a, b) in enumerate(todo):
+        _step(jid, "checking", f"Filling in talking the subtitles show ({i + 1} of {len(todo)})")
+        try:
+            _, new, _ = _review_work(jid, a, b, "", state="checking", why=SUBS_WHY)
+            added += new
+        except procs.Stopped:
+            raise
+        except Exception as e:
+            log(jid, f"Couldn't fill in {_mmss(a)}–{_mmss(b)} ({e}).", "warn")
+    log(jid, f"Filled in {added} lines the listening had missed." +
+             (f" {len(gaps) - len(todo)} more places are left: press Find skipped talking." if len(gaps) > len(todo) else ""))
+
 
 def skipped_speech(jid):
     """Stretches where the voice detector hears talking but no real caption covers it (a "(music)" marker
@@ -1369,14 +1486,8 @@ def skipped_speech(jid):
         dur = l["end"] - l["start"]
         if dur > 5 and captions.visible_len(l["th"]) / dur < THIN_LETTERS_PER_SECOND and talking(l["start"], l["end"]) > 0.6:
             gaps.append([l["start"], l["end"]])
-    merged = []
-    for a, b in sorted(gaps):
-        if merged and a - merged[-1][1] < 1.5 and b - merged[-1][0] < 120:
-            merged[-1][1] = max(merged[-1][1], b)
-        else:
-            merged.append([a, b])
-    gaps = merged
-    return [(round(a, 2), round(b, 2)) for a, b in gaps]
+    gaps += [list(g) for g in subtitle_gaps(jid)]
+    return _merge_gaps(gaps, join=1.5, longest=120)
 
 
 def fill_skipped(jid):
@@ -1387,6 +1498,7 @@ def fill_skipped(jid):
 def _fill_job(jid):
     _step(jid, "filling", "Looking for talking with no captions")
     gaps = skipped_speech(jid)
+    sub_gaps = subtitle_gaps(jid)
     if not gaps:
         update(jid, busy=False, state="ready", label="", progress=None)
         log(jid, "No skipped talking found: every stretch of speech has captions.", "done")
@@ -1396,7 +1508,8 @@ def _fill_job(jid):
     added = 0
     for i, (a, b) in enumerate(gaps):
         _step(jid, "filling", f"Listening again to {_mmss(a)}–{_mmss(b)} ({i + 1} of {len(gaps)})")
-        _, new, _ = _review_work(jid, a, b, "", state="filling")
+        _, new, _ = _review_work(jid, a, b, "", state="filling",
+                                 why=SUBS_WHY if any(x < b and a < y for x, y in sub_gaps) else "")
         added += new
     _auto_voices(jid)
     update(jid, busy=False, state="ready", label="", progress=None)
