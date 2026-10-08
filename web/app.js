@@ -504,9 +504,21 @@ $("#export").onclick = async () => {
 
 /* ---------------------------------------------------------- settings: models, themes, fonts */
 
+// Safari only lets a page use fonts built into macOS, not ones you installed; the free caption
+// fonts are handed to the page by the app instead (loaded only when something uses them).
+let fontFacesAdded = false;
+function addFontFaces(faces) {
+  if (fontFacesAdded || !faces.length) return;
+  fontFacesAdded = true;
+  const css = faces.map(f => `@font-face { font-family: "${f.family}"; src: url("/api/fonts/${encodeURIComponent(f.file)}") format("truetype");` +
+    ` font-weight: ${f.weight}; font-display: swap; }`).join("\n");
+  const el = document.createElement("style"); el.textContent = css; document.head.append(el);
+}
+
 let settings = null;
 async function loadSettings() {
   settings = await api("GET", "/api/settings");
+  addFontFaces(settings.font_faces || []);
   const fill = (sel, list) => sel.replaceChildren(...list.map(f => {
     const o = document.createElement("option"); o.value = f.family; o.textContent = f.label;
     o.style.fontFamily = `"${f.family}"`; return o;
@@ -611,7 +623,7 @@ async function saveStyleNow(asDefault = false) {
   $("#styleSaved").textContent = asDefault ? "Saved as your default." : "";
 }
 function setStyle(k, v) { job.style = { ...(job.style || {}), [k]: v }; styleChanged(); }
-$$("[data-st]").forEach(el => el.addEventListener("input", () => {
+$$("[data-st]").forEach(el => el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => {
   const k = el.dataset.st;
   setStyle(k, el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value
     : el.type === "color" && k === "box_color" ? el.value + "A0" : el.value);

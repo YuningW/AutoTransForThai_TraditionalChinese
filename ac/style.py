@@ -62,6 +62,25 @@ ZH_FONTS = [
     ("Chiron Hei HK", "昭源黑體 (clean) · free"), ("Noto Serif TC", "思源宋體 (book) · free"),
     ("Cactus Classical Serif", "仙人掌明體 (old book) · free"),
 ]
+# The free fonts setup installs (family, file in ~/Library/Fonts, weights). Safari won't let a page use
+# fonts the user installed (anti-fingerprinting), so the app serves these to the page itself.
+FREE_FONTS = [
+    ("Huninn", "Huninn-Regular.ttf", "400"),
+    ("LXGW WenKai TC", "LXGWWenKaiTC-Regular.ttf", "400"),
+    ("LXGW WenKai TC", "LXGWWenKaiTC-Bold.ttf", "700"),
+    ("Iansui", "Iansui-Regular.ttf", "400"),
+    ("ChenYuluoyan 2.0", "ChenYuluoyan-2.0-Thin.ttf", "400"),
+    ("Chiron Hei HK", "ChironHeiHK[wght].ttf", "200 900"),
+    ("Noto Serif TC", "NotoSerifTC[wght].ttf", "200 900"),
+    ("Cactus Classical Serif", "CactusClassicalSerif-Regular.ttf", "400"),
+]
+USER_FONTS = Path.home() / "Library" / "Fonts"
+
+
+def free_font_faces():
+    return [{"family": fam, "file": f, "weight": w} for fam, f, w in FREE_FONTS if (USER_FONTS / f).exists()]
+
+
 TH_FONTS = [
     ("Sukhumvit Set", "Sukhumvit (clean)"), ("Thonburi", "Thonburi"), ("Ayuthaya", "Ayuthaya (classic)"),
     ("Krungthep", "Krungthep (bold)"), ("Silom", "Silom (rounded)"), ("Sathu", "Sathu (serif)"),
@@ -177,6 +196,10 @@ class Renderer:
     def render(self, out, w, h, blocks):
         job = json.dumps({"out": str(out), "w": int(w), "h": int(h), "blocks": blocks}, ensure_ascii=False)
         with self.lock:
+            fonts_now = USER_FONTS.stat().st_mtime if USER_FONTS.exists() else 0
+            if self.proc and self.proc.poll() is None and fonts_now != getattr(self, "fonts_seen", fonts_now):
+                self.proc.kill()                 # fonts were added: a fresh renderer sees them
+            self.fonts_seen = fonts_now
             if not self.proc or self.proc.poll() is not None:
                 self.proc = subprocess.Popen([str(self._binary())], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                              text=True, bufsize=1)

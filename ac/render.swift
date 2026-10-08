@@ -197,6 +197,12 @@ if CommandLine.arguments.count > 1 && CommandLine.arguments[1] == "fonts" {
     exit(0)
 }
 setvbuf(stdout, nil, _IOLBF, 0)
+// fonts in ~/Library/Fonts, registered for this process so they draw even right after being installed
+let userFonts = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Fonts")
+for f in (try? FileManager.default.contentsOfDirectory(at: userFonts, includingPropertiesForKeys: nil)) ?? []
+    where ["ttf", "otf", "ttc"].contains(f.pathExtension.lowercased()) {
+    CTFontManagerRegisterFontsForURL(f as CFURL, .process, nil)
+}
 while let line = readLine() {
     autoreleasepool {
         do {

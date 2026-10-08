@@ -6,7 +6,7 @@ import threading
 import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -323,6 +323,16 @@ def remove_touch(jid: str, tid: str):
 
 # ---------------------------------------------------------------- settings: models and default style
 
+@app.get("/api/fonts/{name}")
+def font_file(name: str):
+    """One of the free fonts (only those), for the page's @font-face: Safari won't use installed fonts."""
+    known = {f for _, f, _ in style.FREE_FONTS}
+    if name not in known or not (style.USER_FONTS / name).exists():
+        raise HTTPException(404, "Not one of the free fonts.")
+    return FileResponse(style.USER_FONTS / name, media_type="font/ttf",
+                        headers={"Cache-Control": "max-age=604800"})
+
+
 @app.get("/api/settings")
 def get_settings():
     s = paths.load_settings()
@@ -336,7 +346,7 @@ def get_settings():
         "claude_models": [{"key": k, **v} for k, v in models.CLAUDE.items()],
         "style": style.merged(s.get("style")), "style_default": style.DEFAULT,
         "themes": [{"key": k, "label": v["label"], "style": style.merged({"theme": k})} for k, v in style.THEMES.items()],
-        "fonts": _fonts(),
+        "fonts": _fonts(), "font_faces": style.free_font_faces(),
     }
 
 
