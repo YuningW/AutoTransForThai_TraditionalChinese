@@ -40,6 +40,10 @@ THEMES = {
                     "outline": 0.1, "outline_color": "#3A2A1A"},
     "cute": {"label": "娃娃 Cute", "zh_font": "Wawati TC", "color": "#FFFFFF", "th_color": "#FFFFFF",
              "outline": 0.12, "outline_color": "#5B8DEF", "shadow": 0.0},
+    "huninn": {"label": "粉圓 Round", "zh_font": "Huninn", "color": "#FFFFFF", "th_color": "#FFFFFF",
+               "outline": 0.13, "outline_color": "#4A3B5C", "shadow": 0.0},
+    "wenkai": {"label": "文楷 Brush", "zh_font": "LXGW WenKai TC", "bold": True, "color": "#FFFDF5",
+               "th_color": "#FFFDF5", "outline": 0.09, "outline_color": "#2B2420", "shadow": 0.06},
     "night": {"label": "夜空 Night glow", "color": "#E8F0FF", "th_color": "#E8F0FF", "outline": 0.05,
               "outline_color": "#1D2550", "shadow": 0.22},
 }
@@ -52,6 +56,11 @@ ZH_FONTS = [
     ("Kaiti TC", "楷體 (brush)"), ("BiauKaiTC", "標楷體"), ("Songti TC", "宋體 (book)"),
     ("Weibei TC", "魏碑 (bold brush)"), ("Libian TC", "隸變 (clerical)"), ("Baoli TC", "報隸"),
     ("LingWai TC", "凌慧體 (calligraphy)"), ("Xingkai TC", "行楷 (running script)"),
+    # free, open-source (SIL OFL) fonts: installed in ~/Library/Fonts
+    ("Huninn", "粉圓 (round, cute) · free"), ("LXGW WenKai TC", "霞鶩文楷 (brush handwriting) · free"),
+    ("Iansui", "芫荽 (casual handwriting) · free"), ("ChenYuluoyan 2.0", "辰宇落雁體 (thin handwriting) · free"),
+    ("Chiron Hei HK", "昭源黑體 (clean) · free"), ("Noto Serif TC", "思源宋體 (book) · free"),
+    ("Cactus Classical Serif", "仙人掌明體 (old book) · free"),
 ]
 TH_FONTS = [
     ("Sukhumvit Set", "Sukhumvit (clean)"), ("Thonburi", "Thonburi"), ("Ayuthaya", "Ayuthaya (classic)"),

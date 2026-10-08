@@ -24,6 +24,15 @@ func font(_ family: String?, _ size: CGFloat, _ bold: Bool) -> NSFont {
     if let f = family, let nf = fm.font(withFamily: f, traits: bold ? .boldFontMask : [], weight: bold ? 9 : 5, size: size) {
         return nf
     }
+    // Many free fonts don't call their regular weight "5" (or are variable fonts): take the member of
+    // the family whose weight is closest to what's wanted, by its PostScript name.
+    if let f = family, let members = fm.availableMembers(ofFontFamily: f), !members.isEmpty {
+        let want = bold ? 9 : 5
+        let best = members.min { a, b in
+            abs(((a[2] as? NSNumber)?.intValue ?? 5) - want) < abs(((b[2] as? NSNumber)?.intValue ?? 5) - want)
+        }
+        if let ps = best?[0] as? String, let nf = NSFont(name: ps, size: size) { return nf }
+    }
     if let f = family, let nf = NSFont(name: f, size: size) { return nf }
     return bold ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size)
 }
