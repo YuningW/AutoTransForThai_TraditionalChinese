@@ -618,6 +618,7 @@ $("#styleReset").onclick = () => { job.style = {}; styleChanged(true); };
 /* ---------------------------------------------------------- people (caption colour per person) */
 
 const PERSON_COLOURS = ["#FFE14D", "#9FD8FF", "#FFB3D1", "#B8F5A4", "#FFC48A", "#D7B8FF"];
+const PERSON_DOTS = ["#FFFFFF", "#FFE14D", "#FFC48A", "#FF8A80", "#FFB3D1", "#F48FB1", "#D7B8FF", "#9FD8FF", "#80DEEA", "#B8F5A4", "#C5E1A5", "#BCAAA4"];
 // Edits look the person up by id each time: the list is replaced by the server's copy after every
 // save, so holding on to the object from when the boxes were drawn would edit a stale copy.
 const personById = id => (job?.speakers || []).find(p => p.id === id);
@@ -629,10 +630,21 @@ function renderPeople() {
     const n = document.createElement("input"); n.className = "field"; n.value = p.name; n.placeholder = `Person ${i + 1} (e.g. Milk)`;
     n.setAttribute("aria-label", "Name");
     const x = document.createElement("button"); x.type = "button"; x.className = "ghost"; x.textContent = "Remove";
-    c.addEventListener("input", () => { const q = personById(p.id); if (q) { q.color = c.value; peopleChanged(); } });
+    const setColour = col => { const q = personById(p.id); if (q) { q.color = col; c.value = hex6(col); dots.querySelectorAll("button").forEach(d => d.setAttribute("aria-pressed", String(d.dataset.c === col.toUpperCase()))); peopleChanged(); } };
+    c.addEventListener("input", () => setColour(c.value.toUpperCase()));
+    c.addEventListener("change", () => setColour(c.value.toUpperCase()));
+    c.title = "Any colour";
+    // one click: ready-made colours that read well on video
+    const dots = document.createElement("div"); dots.className = "dots";
+    dots.append(...PERSON_DOTS.map(col => {
+      const d = document.createElement("button"); d.type = "button"; d.dataset.c = col; d.style.background = col;
+      d.setAttribute("aria-label", `Use ${col}`); d.setAttribute("aria-pressed", String(col === (p.color || "").toUpperCase()));
+      d.onclick = () => setColour(col);
+      return d;
+    }));
     n.addEventListener("input", () => { const q = personById(p.id); if (q) { q.name = n.value.trim(); peopleChanged(); } });
     x.onclick = () => { job.speakers = (job.speakers || []).filter(q => q.id !== p.id); peopleChanged(true); renderPeople(); };
-    li.append(c, n, x); return li;
+    li.append(c, n, x, dots); return li;
   }));
 }
 let peopleTimer = null;

@@ -326,7 +326,8 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 /* ---------------------------------------------------------- people */
 .people h4 { margin: 0 0 6px; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
 .people-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.people-list li { display: flex; gap: 8px; align-items: center; }
+.people-list li { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding-bottom: 6px; border-bottom: 1px solid var(--rule); }
+.people-list li .field { flex: 1; min-width: 8em; }
 .people-list .field { padding: 5px 9px; font-size: 14px; }
 .people-list .ghost { font-size: 13px; padding: 4px 6px; }
 .who { align-self: flex-start; font: inherit; font-size: 12.5px; color: var(--ink-2); background: var(--paper);
@@ -359,3 +360,8 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .status-line .stop { margin-left: auto; color: var(--flag); border: 1px solid var(--flag); padding: 3px 12px; font-size: 13px; }
 .status-line .stop:hover { background: var(--flag-soft); }
 .status-line .stop:disabled { opacity: .5; }
+
+.people-list input[type=color] { width: 34px; height: 30px; }
+.dots { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding-left: 42px; }
+.dots button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(0,0,0,.25); padding: 0; }
+.dots button[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 2px; }

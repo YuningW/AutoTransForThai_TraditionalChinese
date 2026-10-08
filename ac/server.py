@@ -27,7 +27,12 @@ async def local_only(request: Request, call_next):
         return JSONResponse({"error": "Open the app at http://127.0.0.1:%d" % PORT}, 403)
     if request.method not in ("GET", "HEAD") and request.headers.get("x-ac") != "1":
         return JSONResponse({"error": "Requests must come from the AutoCaption page."}, 403)
-    return await call_next(request)
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        # the page's own files: always check for a newer copy (Safari otherwise keeps running
+        # yesterday's app.js after an update, even across reloads)
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.exception_handler(jobs.JobError)
