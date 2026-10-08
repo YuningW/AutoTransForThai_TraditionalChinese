@@ -879,6 +879,7 @@ function drawTouches(time, force) {
       img.src = `/api/logos/${t.image}`; img.alt = "";
       Object.assign(img.style, { left: `${frame.left + t.x * frame.w}px`, top: `${frame.top + t.y * frame.h}px`,
         width: `${(t.w || 0.15) * frame.w}px`, opacity: t.opacity ?? 1 });
+      Object.assign(img.style, standoutCss(t));
       img.onpointerdown = e => dragTouch(e, t, img);
       return img;
     }
@@ -1016,6 +1017,25 @@ $("#teDone").onclick = () => selectTouch(null);
 
 /* ---------------------------------------------------------- your text and logo */
 
+// the same looks as the renderer (style.py touch_block): outline, soft shadow, badge, circle
+function standoutCss(t) {
+  const wpx = (t.w || 0.15) * frame.w, edge = t.edge ?? 0.012, c = t.edge_color || "#000000";
+  const r = Math.max(1, edge * wpx);
+  if (t.standout === "outline")
+    return { filter: [[r, 0], [-r, 0], [0, r], [0, -r]].map(([x, y]) => `drop-shadow(${x}px ${y}px 0 ${c})`).join(" ") };
+  if (t.standout === "shadow") return { filter: `drop-shadow(0 0 ${edge * 2.5 * wpx}px ${c}) drop-shadow(0 0 ${edge * 2.5 * wpx}px ${c})` };
+  if (t.standout === "badge" || t.standout === "circle")
+    return { background: t.plate_color || "#FFFFFFD9", padding: `${0.12 * wpx}px`,
+             borderRadius: t.standout === "circle" ? "50%" : `${0.25 * wpx}px`, boxSizing: "content-box" };
+  return {};
+}
+let logoList = [];
+const logoTone = id => (logoList.find(l => l.id === id) || {}).tone || "light";
+// a logo that contrasts with itself: dark edges for a light logo, light ones for a dark logo
+function contrastFor(id) {
+  return logoTone(id) === "light" ? { edge_color: "#1F1F1F", plate_color: "#1D2550CC" } : { edge_color: "#FFFFFF", plate_color: "#FFFFFFD9" };
+}
+
 function renderBrandList() {
   const items = touches.filter(isBrand);
   $("#brandCount").textContent = items.length || "";
@@ -1034,11 +1054,13 @@ function renderBrandList() {
 async function renderSavedLogos() {
   let list = [];
   try { list = await api("GET", "/api/logos"); } catch { /* */ }
+  logoList = list;
   $("#savedLogos").replaceChildren(...list.map(l => {
     const b = document.createElement("span"); b.className = "saved-logo";
     const use = document.createElement("button"); use.type = "button"; use.title = `Add ${l.name}`;
     const img = document.createElement("img"); img.src = `/api/logos/${l.id}`; img.alt = l.name; use.append(img);
-    use.onclick = () => addBrand({ kind: "image", image: l.id, text: "", x: 0.1, y: 0.09, w: 0.14, opacity: 0.9, whole: true });
+    use.onclick = () => addBrand({ kind: "image", image: l.id, text: "", x: 0.1, y: 0.09, w: 0.14, opacity: 0.95, whole: true,
+                                    standout: "outline", edge: 0.012, ...contrastFor(l.id) });
     const x = document.createElement("button"); x.type = "button"; x.className = "x"; x.textContent = "×"; x.title = "Forget this logo";
     x.onclick = async () => { if (confirm("Forget this logo? Videos already saved keep it.")) { await api("DELETE", `/api/logos/${l.id}`); renderSavedLogos(); } };
     b.append(use, x); return b;
@@ -1061,14 +1083,25 @@ $("#logoFile").addEventListener("change", async () => {
   const form = new FormData(); form.append("file", f);
   try {
     const l = await api("POST", "/api/logos", form);
-    renderSavedLogos();
-    addBrand({ kind: "image", image: l.id, text: "", x: 0.1, y: 0.09, w: 0.14, opacity: 0.9, whole: true });
+    await renderSavedLogos();
+    addBrand({ kind: "image", image: l.id, text: "", x: 0.1, y: 0.09, w: 0.14, opacity: 0.95, whole: true,
+               standout: "outline", edge: 0.012, ...contrastFor(l.id) });
   } catch (ex) { alert(ex.message); }
 });
 
 function fillBrandEditor(t) {
   const img = t.kind === "image";
   $$(".be-text", $("#brandEdit")).forEach(el => { el.hidden = img; });
+  $$(".be-image", $("#brandEdit")).forEach(el => { el.hidden = !img; });
+  if (img) {
+    const how = t.standout || "none";
+    $$("input[name=be-standout]").forEach(r => { r.checked = r.value === how; });
+    $$(".be-edge").forEach(el => { el.hidden = !(how === "outline" || how === "shadow"); });
+    $$(".be-plate").forEach(el => { el.hidden = !(how === "badge" || how === "circle"); });
+    $("#beEdgeColor").value = hex6(t.edge_color || "#000000"); $("#beEdge").value = t.edge ?? 0.012;
+    const pc = t.plate_color || "#FFFFFFD9";
+    $("#bePlateColor").value = hex6(pc); $("#bePlateOp").value = pc.length === 9 ? (parseInt(pc.slice(7), 16) / 255).toFixed(2) : 1;
+  }
   $("#beText").hidden = img;
   if (!$("#beFont").options.length && settings) {
     const all = [...settings.fonts.zh, ...settings.fonts.th];
@@ -1107,6 +1140,17 @@ $("#beDur").addEventListener("input", () => { const t = bt(); if (t) { $("#beDur
 $("#beStartHere").onclick = () => { const t = bt(); if (t) { const d = t.end - t.start; patchTouch(t, { start: video.currentTime, end: video.currentTime + d }); } };
 $("#beDelete").onclick = () => { const t = bt(); if (t) removeTouch(t); };
 $("#beDone").onclick = () => selectTouch(null);
+$$("input[name=be-standout]").forEach(r => r.addEventListener("change", () => {
+  const t = bt(); if (!t) return;
+  const ch = { standout: r.value };
+  if (!t.edge_color || !t.plate_color) Object.assign(ch, contrastFor(t.image));
+  patchTouch(t, ch); fillBrandEditor(t);
+}));
+$("#beEdgeColor").addEventListener("input", () => { const t = bt(); if (t) patchTouch(t, { edge_color: $("#beEdgeColor").value }, true); });
+$("#beEdge").addEventListener("input", () => { const t = bt(); if (t) patchTouch(t, { edge: +$("#beEdge").value }, true); });
+const plateColour = () => $("#bePlateColor").value + Math.round(+$("#bePlateOp").value * 255).toString(16).padStart(2, "0").toUpperCase();
+$("#bePlateColor").addEventListener("input", () => { const t = bt(); if (t) patchTouch(t, { plate_color: plateColour() }, true); });
+$("#bePlateOp").addEventListener("input", () => { const t = bt(); if (t) patchTouch(t, { plate_color: plateColour() }, true); });
 // corners: measured from the item as drawn, so it sits fully inside the picture with a small margin
 $$("#brandEdit [data-corner]").forEach(b => b.addEventListener("click", () => {
   const t = bt(); if (!t) return;

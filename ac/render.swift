@@ -96,8 +96,47 @@ func draw(_ job: [String: Any]) throws {
                 var x = CGFloat((b["x"] as? Double) ?? 0.5) * CGFloat(W) - w / 2
                 var y = CGFloat((b["y"] as? Double) ?? 0.5) * CGFloat(H) - h / 2
                 x = max(0, min(x, CGFloat(W) - w)); y = max(0, min(y, CGFloat(H) - h))
-                img.draw(in: CGRect(x: x, y: y, width: w, height: h), from: .zero, operation: .sourceOver, fraction: 1,
-                         respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high.rawValue])
+                let rect = CGRect(x: x, y: y, width: w, height: h)
+                let hints: [NSImageRep.HintKey: Any] = [.interpolation: NSImageInterpolation.high.rawValue]
+                // badge: the logo on a rounded (or round) backing
+                if let plate = b["plate"] as? [String: Any] {
+                    let pad = CGFloat((plate["pad"] as? Double) ?? 0.12) * w
+                    var r = rect.insetBy(dx: -pad, dy: -pad)
+                    if (plate["shape"] as? String) == "circle" {
+                        let d = max(r.width, r.height); r = CGRect(x: r.midX - d / 2, y: r.midY - d / 2, width: d, height: d)
+                    }
+                    let rad = (plate["shape"] as? String) == "circle" ? r.width / 2 : min(r.width, r.height) * 0.22
+                    color(plate["color"] as? String, NSColor(white: 1, alpha: 0.85)).setFill()
+                    NSBezierPath(roundedRect: r, xRadius: rad, yRadius: rad).fill()
+                }
+                // outline: the logo's shape in a contrasting colour, spread a little in every direction
+                if let halo = b["halo"] as? [String: Any] {
+                    let width = max(1, CGFloat((halo["width"] as? Double) ?? 0.012) * w)
+                    let tint = color(halo["color"] as? String, .black)
+                    let sil = NSImage(size: img.size, flipped: false) { r in
+                        img.draw(in: r); tint.set(); r.fill(using: .sourceIn); return true
+                    }
+                    let steps = 24
+                    for i in 0..<steps {
+                        let a = CGFloat(i) / CGFloat(steps) * 2 * .pi
+                        for k in [0.5, 1.0] as [CGFloat] {
+                            sil.draw(in: rect.offsetBy(dx: cos(a) * width * k, dy: sin(a) * width * k), from: .zero,
+                                     operation: .sourceOver, fraction: 1, respectFlipped: true, hints: hints)
+                        }
+                    }
+                }
+                // soft shadow
+                let blur = CGFloat((b["shadow"] as? Double) ?? 0) * w
+                NSGraphicsContext.saveGraphicsState()
+                if blur > 0 {
+                    let sh = NSShadow(); sh.shadowBlurRadius = blur; sh.shadowOffset = NSSize(width: 0, height: -blur * 0.2)
+                    sh.shadowColor = color(b["shadow_color"] as? String, NSColor(white: 0, alpha: 0.85)); sh.set()
+                }
+                img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: hints)
+                if blur > 0 {   // twice, so the glow is strong enough to read on busy pictures
+                    img.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: hints)
+                }
+                NSGraphicsContext.restoreGraphicsState()
             }
             continue
         }

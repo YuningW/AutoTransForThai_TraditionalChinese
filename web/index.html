@@ -220,6 +220,22 @@
             <label><input type="color" id="beOutlineColor"> Outline</label>
             <label><input type="checkbox" id="beBold"> Bold</label>
           </div>
+          <div class="be-image standout">
+            <span class="muted small">Stand out on any picture</span>
+            <div class="seg" role="radiogroup" aria-label="Stand out">
+              <label><input type="radio" name="be-standout" value="none"> As it is</label>
+              <label><input type="radio" name="be-standout" value="outline"> Outline</label>
+              <label><input type="radio" name="be-standout" value="shadow"> Soft shadow</label>
+              <label><input type="radio" name="be-standout" value="badge"> Badge</label>
+              <label><input type="radio" name="be-standout" value="circle"> Circle</label>
+            </div>
+            <div class="colors">
+              <label class="be-edge"><input type="color" id="beEdgeColor"> Outline/shadow colour</label>
+              <label class="be-edge">Thickness <input type="range" id="beEdge" min="0.004" max="0.04" step="0.002"></label>
+              <label class="be-plate"><input type="color" id="bePlateColor"> Badge colour</label>
+              <label class="be-plate">Badge see-through <input type="range" id="bePlateOp" min="0.3" max="1" step="0.05"></label>
+            </div>
+          </div>
           <div class="corners" role="group" aria-label="Place it">
             <span class="muted small">Place it</span>
             <button type="button" data-corner="tl">↖ Top left</button>

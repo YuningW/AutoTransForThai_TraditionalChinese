@@ -120,8 +120,18 @@ def touch_block(t, w, h, style):
                   if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif", ".tif", ".tiff")), None)
         if not f:
             return None
-        return {"image": str(f), "x": float(t.get("x", 0.1)), "y": float(t.get("y", 0.1)),
-                "w": float(t.get("w") or 0.15), "opacity": opacity}
+        blk = {"image": str(f), "x": float(t.get("x", 0.1)), "y": float(t.get("y", 0.1)),
+               "w": float(t.get("w") or 0.15), "opacity": opacity}
+        # making it stand out on any picture: outline, soft shadow, or a badge behind it
+        how, edge = t.get("standout") or "none", t.get("edge_color") or "#000000"
+        if how == "outline":
+            blk["halo"] = {"color": edge, "width": float(t.get("edge") or 0.012)}
+        elif how == "shadow":
+            blk["shadow"], blk["shadow_color"] = float(t.get("edge") or 0.012) * 2.5, edge + "D9" if len(edge) == 7 else edge
+        elif how in ("badge", "circle"):
+            blk["plate"] = {"color": t.get("plate_color") or "#FFFFFFD9", "pad": 0.12,
+                            "shape": "circle" if how == "circle" else "round"}
+        return blk
     px = base_px(w, h, style) * float(t.get("size") or 1.3)
     if t.get("kind") == "text":                # your own text: a title, a credit, your name
         return {"x": float(t.get("x", 0.85)), "y": float(t.get("y", 0.08)), "anchor": "center", "maxw": 0.9, "gap": 0,

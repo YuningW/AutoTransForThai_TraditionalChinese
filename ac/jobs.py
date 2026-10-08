@@ -947,8 +947,11 @@ def logos():
     for f in sorted(paths.LOGOS.glob("*.*"), key=lambda f: f.stat().st_mtime, reverse=True):
         if f.suffix.lower() in LOGO_EXT:
             meta = paths.LOGOS / (f.stem + ".json")
-            name = json.loads(meta.read_text()).get("name") if meta.exists() else f.name
-            out.append({"id": f.stem, "name": name, "file": f.name})
+            info = json.loads(meta.read_text()) if meta.exists() else {}
+            if "tone" not in info:
+                info["tone"] = _tone(f)
+                meta.write_text(json.dumps({"name": info.get("name") or f.stem, **info}, ensure_ascii=False))
+            out.append({"id": f.stem, "name": info.get("name") or f.name, "file": f.name, "tone": info["tone"]})
     return out
 
 
@@ -961,8 +964,24 @@ def add_logo(filename, data):
     paths.LOGOS.mkdir(parents=True, exist_ok=True)
     lid = uuid.uuid4().hex[:8]
     (paths.LOGOS / f"{lid}{ext}").write_bytes(data)
-    (paths.LOGOS / f"{lid}.json").write_text(json.dumps({"name": Path(filename).stem}, ensure_ascii=False))
-    return {"id": lid, "name": Path(filename).stem, "file": f"{lid}{ext}"}
+    tone = _tone(paths.LOGOS / f"{lid}{ext}")
+    (paths.LOGOS / f"{lid}.json").write_text(json.dumps({"name": Path(filename).stem, "tone": tone}, ensure_ascii=False))
+    return {"id": lid, "name": Path(filename).stem, "file": f"{lid}{ext}", "tone": tone}
+
+
+def _tone(f):
+    """"light" or "dark": how bright the logo's visible part is (its see-through part doesn't count)."""
+    try:
+        from PIL import Image
+        im = Image.open(f).convert("RGBA")
+        im.thumbnail((200, 200))
+        px = [(r, g, b) for r, g, b, a in im.getdata() if a > 128]
+        if not px:
+            return "light"
+        lum = sum(0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in px) / len(px)
+        return "light" if lum > 128 else "dark"
+    except Exception:
+        return "light"
 
 
 def remove_logo(lid):
@@ -1000,13 +1019,13 @@ def _save_touches(jid, ts):
 
 
 TOUCH_FIELDS = {"start", "end", "text", "x", "y", "size", "kind", "color", "outline_color", "font", "pending",
-                "image", "w", "opacity", "whole", "bold", "outline"}
+                "image", "w", "opacity", "whole", "bold", "outline", "standout", "edge", "edge_color", "plate_color"}
 
 
 def _clean_touch(t):
     t = {k: v for k, v in t.items() if k in TOUCH_FIELDS}
     for k, lo, hi in (("x", 0.0, 1.0), ("y", 0.0, 1.0), ("size", 0.3, 4.0), ("w", 0.03, 1.0), ("opacity", 0.05, 1.0),
-                      ("outline", 0.0, 0.3)):
+                      ("outline", 0.0, 0.3), ("edge", 0.0, 0.06)):
         if k in t:
             t[k] = max(lo, min(hi, float(t[k])))
     if "start" in t:
