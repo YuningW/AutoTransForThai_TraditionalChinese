@@ -29,6 +29,7 @@ _gpu = threading.Semaphore(1)        # one Whisper / Demucs run at a time
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".mts", ".ts", ".flv", ".wmv", ".3gp"}
 PICTURE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif"}
 TEXT_EXT = {".srt", ".txt", ".vtt", ".ass"}
+THIN_LETTERS_PER_SECOND = 4.0         # captions this sparse over talking: words were lost
 RELISTEN_MAX = 40                     # lines the self-check may listen to again per run
 UNSURE = 0.55                         # Whisper confidence below this gets a second listen
 
@@ -1213,13 +1214,31 @@ def skipped_speech(jid):
 
     def covered(a, b):
         return sum(max(0.0, min(b, l["end"]) - max(a, l["start"])) for l in ls) / (b - a)
+
+    def letters_per_second(a, b):
+        # captions over this stretch, each counted by how much of it falls inside
+        n = sum(captions.visible_len(l["th"]) * max(0.0, min(b, l["end"]) - max(a, l["start"])) / max(0.1, l["end"] - l["start"])
+                for l in ls)
+        return n / (b - a)
     gaps = []
     for a, b in parts:
-        if b - a > 1.5 and covered(a, b) < 0.35:
-            if gaps and a - gaps[-1][1] < 1.5 and b - gaps[-1][0] < 120:
-                gaps[-1][1] = b
-            else:
-                gaps.append([a, b])
+        # no captions, or far too few words for this much talking (a line stretched over speech that
+        # was lost: Thai speech is 8-14 letters a second, a thin line covering it gives under 4)
+        if b - a > 1.5 and (covered(a, b) < 0.35 or (b - a > 4 and letters_per_second(a, b) < THIN_LETTERS_PER_SECOND)):
+            gaps.append([a, b])
+    # one line stretched over a lot of talking but holding few words
+    talking = lambda a, b: sum(max(0.0, min(b, e) - max(a, s)) for s, e in parts) / max(0.1, b - a)
+    for l in ls:
+        dur = l["end"] - l["start"]
+        if dur > 5 and captions.visible_len(l["th"]) / dur < THIN_LETTERS_PER_SECOND and talking(l["start"], l["end"]) > 0.6:
+            gaps.append([l["start"], l["end"]])
+    merged = []
+    for a, b in sorted(gaps):
+        if merged and a - merged[-1][1] < 1.5 and b - merged[-1][0] < 120:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    gaps = merged
     return [(round(a, 2), round(b, 2)) for a, b in gaps]
 
 
