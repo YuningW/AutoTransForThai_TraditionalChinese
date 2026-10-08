@@ -1175,7 +1175,9 @@ def _review_work(jid, start, end, note, state="reviewing"):
 
     _step(jid, state, f"Claude is rewriting {_mmss(start)}–{_mmss(end)}")
     ls = lines(jid)
-    inside = [l for l in ls if l["end"] > start and l["start"] < end]
+    # a line belongs to the stretch when most of it is inside: one that only touches the edge
+    # (its words weren't in what was listened to) stays as it is
+    inside = [l for l in ls if min(end, l["end"]) - max(start, l["start"]) > 0.5 * (l["end"] - l["start"])]
     keep = [l for l in inside if locked(l)]
     r = brain.rebuild(load(jid), ls, start, end, inside, keep, attempts, note)
     next_id = max((l["id"] for l in ls), default=0) + 1
