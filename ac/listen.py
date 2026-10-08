@@ -83,7 +83,15 @@ def _junk(seg, text):
     return False
 
 
+def takes_hint(model):
+    """Only OpenAI's own Whisper models use a hint well. Thai-tuned ones weren't trained with one: given
+    the learned word "แฮชแท็ก" as a hint, Pathumma invented a whole different sentence for clear speech."""
+    from . import models
+    return not str(model).startswith(str(models.CACHE))
+
+
 def _decode(piece, offset, end, model, hint, temps, language="th"):
+    hint = hint if takes_hint(model) else ""
     import mlx_whisper
     # A stuck model repeats itself until the token limit (224), then retries: on a 3-second piece that is
     # minutes of wasted work. Nobody says more than ~15 tokens a second, so cap it by the piece's length.

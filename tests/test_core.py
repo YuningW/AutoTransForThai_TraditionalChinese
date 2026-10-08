@@ -116,6 +116,13 @@ class Junk(unittest.TestCase):
         self.assertFalse(listen._junk({"compression_ratio": 2.0, "avg_logprob": -0.2}, "น่ารัก น่ารัก"))   # said twice: fine
 
 
+class Hints(unittest.TestCase):
+    def test_only_openai_whisper_gets_the_hint(self):
+        from ac import models
+        self.assertTrue(listen.takes_hint("mlx-community/whisper-large-v3-mlx"))
+        self.assertFalse(listen.takes_hint(str(models.CACHE / "pathumma-large-v3")))
+
+
 class Memory(unittest.TestCase):
     def setUp(self):
         Path(os.environ["AC_WORK"], "memory.json").unlink(missing_ok=True)
