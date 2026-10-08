@@ -128,6 +128,13 @@ class Memory(unittest.TestCase):
         self.assertNotIn("Use 妳", memory.prompt_text("th"))
         self.assertIn("มิ้ลค์", memory.whisper_hint())
 
+    def test_renaming_someone_keeps_one_person(self):
+        memory.remember_people([{"id": "a1", "name": "Love", "color": "#FFE14D"}])
+        memory.remember_people([{"id": "b2", "name": "Love", "color": "#9FD8FF"}])   # added again in another video
+        memory.remember_people([{"id": "b2", "name": "P'Love", "color": "#9FD8FF"}])  # then renamed there
+        people = memory.load()["people"]
+        self.assertEqual([(p["name"], p["color"]) for p in people], [("P'Love", "#9FD8FF")])
+
     def test_remove(self):
         m = memory.add("rules", text="Keep particles")
         rid = m["rules"][0]["id"]

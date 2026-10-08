@@ -618,37 +618,45 @@ $("#styleReset").onclick = () => { job.style = {}; styleChanged(true); };
 /* ---------------------------------------------------------- people (caption colour per person) */
 
 const PERSON_COLOURS = ["#FFE14D", "#9FD8FF", "#FFB3D1", "#B8F5A4", "#FFC48A", "#D7B8FF"];
+// Edits look the person up by id each time: the list is replaced by the server's copy after every
+// save, so holding on to the object from when the boxes were drawn would edit a stale copy.
+const personById = id => (job?.speakers || []).find(p => p.id === id);
 function renderPeople() {
   const people = job?.speakers || [];
   $("#peopleList").replaceChildren(...people.map((p, i) => {
-    const li = document.createElement("li");
+    const li = document.createElement("li"); li.dataset.id = p.id;
     const c = document.createElement("input"); c.type = "color"; c.value = hex6(p.color); c.setAttribute("aria-label", "Colour");
     const n = document.createElement("input"); n.className = "field"; n.value = p.name; n.placeholder = `Person ${i + 1} (e.g. Milk)`;
+    n.setAttribute("aria-label", "Name");
     const x = document.createElement("button"); x.type = "button"; x.className = "ghost"; x.textContent = "Remove";
-    c.oninput = () => { p.color = c.value; savePeople(true); };
-    n.onchange = () => { p.name = n.value.trim(); savePeople(); };
-    x.onclick = () => { job.speakers = people.filter(q => q !== p); savePeople(); };
+    c.addEventListener("input", () => { const q = personById(p.id); if (q) { q.color = c.value; peopleChanged(); } });
+    n.addEventListener("input", () => { const q = personById(p.id); if (q) { q.name = n.value.trim(); peopleChanged(); } });
+    x.onclick = () => { job.speakers = (job.speakers || []).filter(q => q.id !== p.id); peopleChanged(true); renderPeople(); };
     li.append(c, n, x); return li;
   }));
 }
 let peopleTimer = null;
-function savePeople(later) {
-  renderPeople(); current = undefined; tick();
+// Show the change everywhere at once; save a moment later (typing and dragging the colour don't
+// send a request per keystroke, and the boxes are never redrawn under your cursor).
+function peopleChanged(now) {
+  current = undefined; tick();
   $$(".line").forEach(li => paintWho(li, lines.find(l => l.id === +li.dataset.id)));
+  renderBulk();
   clearTimeout(peopleTimer);
-  const send = async () => {
-    try {
-      const j = await api("POST", `/api/jobs/${job.id}/speakers`, { speakers: job.speakers || [] });
-      job.speakers = j.speakers;
-      if (j.lines_rev !== linesRev) { lines = await api("GET", `/api/jobs/${job.id}/lines`); linesRev = j.lines_rev; renderLines(); }
-    } catch (ex) { alert(ex.message); }
-  };
-  if (later) peopleTimer = setTimeout(send, 400); else send();
+  peopleTimer = setTimeout(sendPeople, now ? 0 : 500);
+}
+async function sendPeople() {
+  const sent = JSON.stringify(job.speakers || []);
+  try {
+    const j = await api("POST", `/api/jobs/${job.id}/speakers`, { speakers: job.speakers || [] });
+    if (JSON.stringify(job.speakers || []) === sent) job.speakers = j.speakers;   // unless you changed more meanwhile
+    if (j.lines_rev !== linesRev) { lines = await api("GET", `/api/jobs/${job.id}/lines`); linesRev = j.lines_rev; renderLines(); }
+  } catch (ex) { alert(ex.message); }
 }
 $("#addPerson").onclick = () => {
   const people = job.speakers || [];
   people.push({ id: Math.random().toString(36).slice(2, 8), name: "", color: PERSON_COLOURS[people.length % PERSON_COLOURS.length] });
-  job.speakers = people; savePeople();
+  job.speakers = people; renderPeople(); peopleChanged(true);
   setTimeout(() => $("#peopleList li:last-child .field")?.focus(), 50);
 };
 

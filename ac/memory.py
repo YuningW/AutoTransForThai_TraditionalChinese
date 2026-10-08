@@ -107,17 +107,30 @@ def remove(kind, eid):
 
 
 def remember_people(people):
-    """Your usual people and their caption colours, so new videos start with them (voiceprints kept)."""
+    """Your usual people and their caption colours, so new videos start with them (voiceprints kept).
+    Matched by id first, so renaming someone in a video renames them here too."""
     with _lock:
         m = load()
-        known = {p["name"]: p for p in m["people"] if p.get("name")}
         for p in people or []:
             name = (p.get("name") or "").strip()
-            if name:
-                old = known.get(name, {})
-                known[name] = {**old, "id": old.get("id") or p.get("id") or _new_id(), "name": name,
-                               "color": p.get("color") or old.get("color")}
-        m["people"] = list(known.values())[-KEEP_PEOPLE:]
+            if not name:
+                continue
+            pid = p.get("id")
+            old = next((q for q in m["people"] if pid and pid in [q.get("id"), *(q.get("ids") or [])]), None) \
+                or next((q for q in m["people"] if q.get("name") == name), None)
+            if old:
+                old.update(name=name, color=p.get("color") or old.get("color"), id=old.get("id") or pid or _new_id())
+                if pid and pid != old["id"] and pid not in (old.get("ids") or []):
+                    old["ids"] = (old.get("ids") or []) + [pid]    # the same person under another video's id
+            else:
+                m["people"].append({"id": pid or _new_id(), "name": name, "color": p.get("color")})
+        # one entry per name (a rename can make two the same: keep the one with a voice)
+        seen, keep = set(), []
+        for q in sorted(m["people"], key=lambda q: -int(q.get("voice_n") or 0)):
+            if q.get("name") not in seen:
+                seen.add(q.get("name"))
+                keep.append(q)
+        m["people"] = keep[-KEEP_PEOPLE:]
         _save(m)
 
 
@@ -146,8 +159,9 @@ def remembered_voices():
         if p.get("voice"):
             v = (p["voice"], int(p.get("voice_n") or 0))
             out[p["name"]] = v
-            if p.get("id"):
-                out["id:" + p["id"]] = v
+            for i in [p.get("id"), *(p.get("ids") or [])]:
+                if i:
+                    out["id:" + i] = v
     return out
 
 
