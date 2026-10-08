@@ -57,17 +57,18 @@ class LinkIn(BaseModel):
     about: str = ""
     clean_voice: bool = False
     fast: bool = False
+    video_subs: bool = True
 
 
 @app.post("/api/jobs")
 def new_job(body: LinkIn):
-    return jobs.create_from_link(body.url, body.about, body.clean_voice, body.fast)
+    return jobs.create_from_link(body.url, body.about, body.clean_voice, body.fast, body.video_subs)
 
 
 @app.post("/api/jobs/upload")
 def upload_job(file: UploadFile = File(...), about: str = Form(""), clean_voice: bool = Form(False),
-               fast: bool = Form(False)):
-    return jobs.create_from_upload(file.filename, file.file, about, clean_voice, fast)
+               fast: bool = Form(False), video_subs: bool = Form(True)):
+    return jobs.create_from_upload(file.filename, file.file, about, clean_voice, fast, video_subs)
 
 
 @app.get("/api/jobs")
@@ -254,6 +255,12 @@ class RangeIn(BaseModel):
     note: str = ""
 
 
+@app.post("/api/jobs/{jid}/video-subs")
+def video_subs(jid: str):
+    jobs.find_video_subs(jid)
+    return jobs.load(jid)
+
+
 @app.post("/api/jobs/{jid}/fill-skipped")
 def fill_skipped(jid: str):
     jobs.fill_skipped(jid)
@@ -323,7 +330,7 @@ def get_settings():
         "listen_model": models.listen_key(), "claude_model": models.claude_model(),
         "claude_effort": s.get("claude_effort") or "auto",
         "efforts": [{"key": k, **v} for k, v in models.EFFORTS.items()],
-        "clean_voice": bool(s.get("clean_voice")), "fast": bool(s.get("fast")),
+        "clean_voice": bool(s.get("clean_voice")), "fast": bool(s.get("fast")), "video_subs": s.get("video_subs", True),
         "listen_models": [{"key": k, **{x: v[x] for x in ("label", "about")}, "ready": models.is_ready(k)}
                           for k, v in models.LISTEN.items()],
         "claude_models": [{"key": k, **v} for k, v in models.CLAUDE.items()],

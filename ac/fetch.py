@@ -85,13 +85,29 @@ def download(url, job_dir, on_progress):
             raise FetchError("That link is a playlist with nothing playable in it.")
         info = entries[0]
     files = [f for f in sorted(Path(job_dir).glob("source.*"))
-             if f.suffix.lower() not in (".part", ".ytdl", ".jpg", ".webp", ".png")]
+             if f.suffix.lower() not in (".part", ".ytdl", ".jpg", ".webp", ".png", ".srt", ".vtt")]
     if not files:
         raise FetchError("The download finished but no video file was written.")
+    _captions(url, job_dir, headers)
     summary = {"url": url, "title": info.get("title") or "", "duration": info.get("duration") or 0,
                "uploader": info.get("uploader") or info.get("channel") or "",
                "description": (info.get("description") or "")[:1500]}
     return summary, files[0]
+
+
+def _captions(url, job_dir, headers):
+    """The video's own captions (written by people, not the site's automatic ones), kept as help.
+    Sites often refuse caption downloads (429); that never stops the video."""
+    import yt_dlp
+    opts = {"skip_download": True, "writesubtitles": True, "noplaylist": True, "http_headers": headers,
+            "subtitleslangs": ["th", "th-TH", "en", "en-US", "en-GB", "zh-Hant", "zh-TW", "zh-HK", "zh", "zh-Hans", "zh-CN"],
+            "subtitlesformat": "srt/vtt/best", "postprocessors": [{"key": "FFmpegSubtitlesConvertor", "format": "srt"}],
+            "outtmpl": str(Path(job_dir) / "source.%(ext)s"), "quiet": True, "no_warnings": True, "noprogress": True}
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.extract_info(url, download=True)
+    except Exception:
+        pass
 
 
 def _retryable(msg):
@@ -102,3 +118,14 @@ def _retryable(msg):
 def _short(msg):
     msg = re.sub(r"\x1b\[[0-9;]*m", "", msg).replace("ERROR: ", "")
     return msg.strip().splitlines()[0][:240]
+
+
+def caption_files(job_dir):
+    """Caption tracks downloaded with the video: {"th"|"en"|"zh": path}."""
+    out = {}
+    for f in sorted(Path(job_dir).glob("source.*.srt")):
+        lang = f.name.split(".")[-2].lower()
+        key = "th" if lang.startswith("th") else "zh" if lang.startswith("zh") else "en" if lang.startswith("en") else None
+        if key and key not in out:
+            out[key] = f
+    return out

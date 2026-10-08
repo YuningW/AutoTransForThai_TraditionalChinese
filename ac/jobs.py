@@ -22,7 +22,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import brain, captions, fetch, media, memory, models, paths, procs, style, voices
+from . import brain, captions, fetch, media, memory, models, paths, procs, style, voices, vsubs
 
 _locks = {}
 _gpu = threading.Semaphore(1)        # one Whisper / Demucs run at a time
@@ -191,13 +191,14 @@ def _step(jid, state, label, progress=None):
 
 # ---------------------------------------------------------------- new jobs
 
-def _new_job(title, about="", clean_voice=False, fast=False, **fields):
-    paths.save_settings({"clean_voice": bool(clean_voice), "fast": bool(fast)})     # remembered for next time
+def _new_job(title, about="", clean_voice=False, fast=False, video_subs=True, **fields):
+    paths.save_settings({"clean_voice": bool(clean_voice), "fast": bool(fast), "video_subs": bool(video_subs)})
     jid = uuid.uuid4().hex[:12]
     (paths.JOBS / jid / "helpers").mkdir(parents=True)
     job = {"id": jid, "title": title, "about": (about or "").strip(), "created": time.time(), "updated": time.time(),
            "state": "fetching", "busy": True, "label": "Starting", "progress": None, "error": None,
-           "options": {"clean_voice": bool(clean_voice), "fast": bool(fast), "listen_model": models.listen_key(),
+           "options": {"clean_voice": bool(clean_voice), "fast": bool(fast), "video_subs": bool(video_subs),
+                       "listen_model": models.listen_key(),
                        "claude_model": models.claude_model()},
            "style": paths.load_settings().get("style") or {},
            "speakers": [dict(p) for p in memory.load().get("people") or []], "info": {}, "media": {}, "helpers": [],
@@ -206,7 +207,7 @@ def _new_job(title, about="", clean_voice=False, fast=False, **fields):
     return load(jid)
 
 
-def create_from_link(url, about="", clean_voice=False, fast=False):
+def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=True):
     url = fetch.clean_url(url)
     key = fetch.video_key(url)
     for f in paths.JOBS.glob("*/job.json"):
@@ -216,17 +217,17 @@ def create_from_link(url, about="", clean_voice=False, fast=False):
             continue
         if j.get("key") == key and j.get("source") and not j.get("error"):
             return load(j["id"])                     # same video again: open the earlier job
-    job = _new_job(url, about, clean_voice, fast, key=key, info={"url": url})
+    job = _new_job(url, about, clean_voice, fast, video_subs, key=key, info={"url": url})
     _run(job["id"], _fetch_then_make, url)
     return job
 
 
-def create_from_upload(filename, stream, about="", clean_voice=False, fast=False):
+def create_from_upload(filename, stream, about="", clean_voice=False, fast=False, video_subs=True):
     ext = Path(filename or "video.mp4").suffix.lower()
     if ext not in VIDEO_EXT:
         raise JobError("That doesn't look like a video file (" + (ext or "no extension") + ").")
     title = Path(filename).stem
-    job = _new_job(title, about, clean_voice, fast, info={"title": title, "file": filename})
+    job = _new_job(title, about, clean_voice, fast, video_subs, info={"title": title, "file": filename})
     dst = job_dir(job["id"]) / ("source" + ext)
     with open(dst, "wb") as f:
         shutil.copyfileobj(stream, f, 4 * 1024 * 1024)
@@ -260,6 +261,11 @@ def _make(jid):
     media.extract_audio(src, d / "audio.wav")
     log(jid, f"Video ready: {_mmss(info['duration'])} long.")
 
+    reader = None
+    if job["options"].get("video_subs", True):
+        reader = threading.Thread(target=_video_subs_quietly, args=(jid,), daemon=True)
+        reader.start()
+
     hear = d / "audio.wav"
     if job["options"].get("clean_voice"):
         _isolate_voice(jid)
@@ -273,6 +279,9 @@ def _make(jid):
     save_lines(jid, ls)
     log(jid, f"Heard {len(ls)} lines; {sum(1 for l in ls if l['conf'] < UNSURE)} of them it wasn't sure about.")
 
+    if reader:
+        _step(jid, "reading", "Finishing reading the video's own subtitles")
+        reader.join()
     _read_helpers(jid)
     _polish_and_translate(jid)
     _self_check(jid)
@@ -386,6 +395,59 @@ def add_helper(jid, kind, label, files, text):
         job["helpers"].append(h)
         save(job)
     return h
+
+
+def _add_found_helper(jid, h):
+    """A helper the tool found itself (the video's own captions or burned-in subtitles)."""
+    with _lock(jid):
+        job = load(jid)
+        if any(x.get("label") == h["label"] for x in job["helpers"]):
+            return False                                     # found before
+        job["helpers"].append({"id": uuid.uuid4().hex[:8], "pictures": [], "read": True, "used": False,
+                               "added": time.time(), "found": True, **h})
+        save(job)
+    return True
+
+
+def _video_subs(jid, on_progress=None):
+    """Caption tracks + subtitles burned into the picture -> helpers. Returns what it found."""
+    d = job_dir(jid)
+    job = load(jid)
+    found = []
+    tracks = {k: captions.parse_srt(f.read_text(encoding="utf-8", errors="replace"))
+              for k, f in fetch.caption_files(d).items()}
+    tracks.update({k: v for k, v in vsubs.tracks_in_file(d / job["source"], d).items() if k not in tracks})
+    for lang, cues in tracks.items():
+        if cues and _add_found_helper(jid, vsubs.helper_for(lang, cues, "The video's own captions")):
+            found.append(f"{vsubs.LABELS[lang]} captions ({len(cues)} lines)")
+    burned = vsubs.read_picture(d / job["source"], (job.get("media") or {}).get("duration"), on_progress)
+    for lang, cues in burned.items():
+        if _add_found_helper(jid, vsubs.helper_for(lang, cues, "Subtitles in the picture")):
+            found.append(f"{vsubs.LABELS[lang]} subtitles in the picture ({len(cues)} lines)")
+    return found
+
+
+def _video_subs_quietly(jid):
+    """While it listens: never stops the run, says what it found."""
+    try:
+        procs.current.jid = jid
+        found = _video_subs(jid)
+        log(jid, "Found subtitles the video already has, used as help: " + "; ".join(found) + "." if found
+            else "The video has no subtitles of its own to use as help.")
+    except Exception as e:
+        log(jid, f"Couldn't read the video's own subtitles ({e}).", "warn")
+
+
+def find_video_subs(jid):
+    _begin(jid, "reading", "Reading the subtitles in the video")
+    _run(jid, _find_subs_job)
+
+
+def _find_subs_job(jid):
+    found = _video_subs(jid, lambda p: update(jid, progress=round(p, 3)))
+    update(jid, busy=False, state="ready", label="", progress=None)
+    log(jid, ("Found: " + "; ".join(found) + ". Press “Redo the captions with this help” to use it.") if found
+        else "This video has no subtitles of its own (no caption tracks, and nothing readable in the picture).", "done")
 
 
 def remove_helper(jid, hid):

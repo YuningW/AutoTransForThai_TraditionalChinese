@@ -121,16 +121,16 @@ $("#newForm").addEventListener("submit", async e => {
   e.preventDefault();
   const err = $("#formError"); err.textContent = "";
   const go = $("#go"); go.disabled = true;
-  const about = $("#about").value.trim(), clean = $("#cleanVoice").checked, fast = $("#fast").checked;
+  const about = $("#about").value.trim(), clean = $("#cleanVoice").checked, fast = $("#fast").checked, vsubs = $("#videoSubs").checked;
   try {
     let job;
     if (pending.video) {
       const f = new FormData();
-      f.append("file", pending.video); f.append("about", about); f.append("clean_voice", clean); f.append("fast", fast);
+      f.append("file", pending.video); f.append("about", about); f.append("clean_voice", clean); f.append("fast", fast); f.append("video_subs", vsubs);
       job = await uploadVideo(f, p => { go.textContent = `Copying the video… ${Math.round(p * 100)}%`; });
     } else {
       go.textContent = "Starting…";
-      job = await api("POST", "/api/jobs", { url: $("#link").value.trim(), about, clean_voice: clean, fast });
+      job = await api("POST", "/api/jobs", { url: $("#link").value.trim(), about, clean_voice: clean, fast, video_subs: vsubs });
     }
     await sendHelpers(job.id);
     resetForm();
@@ -275,6 +275,7 @@ function renderJob() {
     li.append(s, x); return li;
   }));
   $("#redoAll").hidden = !hs.some(h => !h.used) || !!job.busy || !(job.counts && job.counts.lines);
+  $("#findVideoSubs").disabled = !!job.busy || !job.media?.duration;
 
   // activity
   $("#log").replaceChildren(...(job.activity || []).slice().reverse().map(a => {
@@ -464,6 +465,9 @@ function updateFixbar() {
 $("#fixNow").onclick = async () => {
   try { await api("POST", `/api/jobs/${job.id}/fix`); refresh(job.id); } catch (ex) { alert(ex.message); }
 };
+$("#findVideoSubs").onclick = async () => {
+  try { await api("POST", `/api/jobs/${job.id}/video-subs`); refresh(job.id); } catch (ex) { alert(ex.message); }
+};
 $("#redoAll").onclick = async () => {
   try { await api("POST", `/api/jobs/${job.id}/redo`, { what: "all" }); refresh(job.id); } catch (ex) { alert(ex.message); }
 };
@@ -523,6 +527,7 @@ async function loadSettings() {
   renderModels();
   if (!$("#startView").hidden && !pending.video && !$("#link").value) {
     $("#cleanVoice").checked = !!settings.clean_voice; $("#fast").checked = !!settings.fast;
+    $("#videoSubs").checked = settings.video_subs !== false;
   }
 }
 
