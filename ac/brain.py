@@ -423,6 +423,8 @@ Write the captions for the whole stretch from scratch: original-language text (T
 Traditional Chinese (Taiwan usage, no 。 at line ends). Take start/end times from the transcript segments (you may \
 split a segment's time in proportion to its text); keep each line short enough to read (about 34 Thai letters, \
 under 6 seconds). Lines marked "keep" were written by the user: don't repeat or change them, write around them.
+When two people talk at the same time, write each person's words as a line of its own (their times may overlap); \
+don't merge two speakers into one line.
 unsure: true on any line where you had to guess (a name, a title, words none of the transcripts agree on), \
 so the user checks it. explain: one plain sentence for the user about what changed.
 lessons: only what the user's note itself says that applies to future videos (types name / word / style), else \

@@ -310,6 +310,7 @@ class RangeIn(BaseModel):
     start: float
     end: float
     note: str = ""
+    timing_only: bool = False     # just line up the timing there (no listening again, no Claude)
 
 
 @app.post("/api/jobs/{jid}/video-subs")
@@ -326,7 +327,7 @@ def fill_skipped(jid: str):
 
 @app.post("/api/jobs/{jid}/review")
 def review(jid: str, body: RangeIn):
-    jobs.review_range(jid, body.start, body.end, body.note)
+    jobs.review_range(jid, body.start, body.end, body.note, body.timing_only)
     return jobs.load(jid)
 
 

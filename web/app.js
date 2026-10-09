@@ -1661,6 +1661,7 @@ function renderRange() {
   const f = range.from, t = range.to;
   $("#rangeT").textContent = `${f === null ? "–" : fmtTime(f)}  to  ${t === null ? "–" : fmtTime(t)}`;
   $("#rangeGo").disabled = f === null || t === null || t - f < 0.5 || !!job?.busy;
+  $("#rangeGo").textContent = timingOnly() ? "Line up the timing here" : "Listen again and fix";
   $$(".line").forEach(li => {
     const l = lines.find(x => x.id === +li.dataset.id);
     li.classList.toggle("in-range", !$("#rangeBox").hidden && f !== null && t !== null && l && l.end > f && l.start < t);
@@ -1673,7 +1674,7 @@ $("#markRange").onclick = () => {
 };
 $("#rangeFrom").onclick = () => { range.from = video.currentTime; if (range.to !== null && range.to < range.from) range.to = null; renderRange(); };
 $("#rangeTo").onclick = () => { range.to = video.currentTime; if (range.from !== null && range.to < range.from) [range.from, range.to] = [range.to, range.from]; renderRange(); };
-$("#rangeCancel").onclick = () => { $("#rangeBox").hidden = true; range.from = range.to = null; renderRange(); };
+$("#rangeCancel").onclick = () => { $("#rangeBox").hidden = true; range.from = range.to = null; fixPicked.clear(); renderReasons(); renderRange(); };
 $("#rangePlay").onclick = () => {
   if (range.from === null) return;
   video.currentTime = range.from; video.play();
@@ -1683,13 +1684,52 @@ $("#rangePlay").onclick = () => {
 $("#fillSkipped").onclick = async () => {
   try { await api("POST", `/api/jobs/${job.id}/fill-skipped`); refresh(job.id); } catch (ex) { alert(ex.message); }
 };
+// What's wrong, in one tap: the reasons that come up again and again. Each becomes part of the note Claude reads;
+// "timing" alone only lines the stretch up with the speech (no listening again, no Claude).
+const FIX_REASONS = [
+  ["overlap", "Two people talk at once", "Two people talk over each other here: listen again and give each person their own line."],
+  ["timing", "Timing doesn't match", "The captions here don't line up with when it's said."],
+  ["skipped", "Words were skipped", "Some talking here has no captions: listen again and fill in what's missing."],
+  ["music", "Music drowns them out", "Background music or noise covers the voices here: rely on the voice with the music removed."],
+  ["english", "They speak English", "They speak English here: keep the English as said, and translate it."],
+  ["misheard", "Words misheard", "Some words or names here are misheard: listen again carefully."],
+  ["translation", "Translation is off", "The Chinese here doesn't match what they say: translate it again."],
+];
+const fixPicked = new Set();
+function myNotes() { try { return JSON.parse(localStorage.getItem("ac-fix-notes") || "{}"); } catch { return {}; } }
+function renderReasons() {
+  $("#fixReasons").replaceChildren(...FIX_REASONS.map(([k, label, note]) => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = note;
+    b.setAttribute("aria-pressed", String(fixPicked.has(k)));
+    b.onclick = () => { fixPicked.has(k) ? fixPicked.delete(k) : fixPicked.add(k); renderReasons(); renderRange(); };
+    return b;
+  }));
+  // the notes you typed most often, one tap to use again
+  const mine = Object.entries(myNotes()).sort((a, b) => b[1].n - a[1].n || b[1].at - a[1].at).slice(0, 5);
+  $("#fixMine").replaceChildren(...mine.map(([text]) => {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = text; b.title = text;
+    b.onclick = () => { const i = $("#rangeNote"); i.value = i.value.trim() ? `${i.value.trim()}; ${text}` : text; renderRange(); };
+    return b;
+  }));
+}
+function timingOnly() { return fixPicked.size === 1 && fixPicked.has("timing") && !$("#rangeNote").value.trim(); }
+function fixNote() {
+  return [...FIX_REASONS.filter(([k]) => fixPicked.has(k)).map(([, , n]) => n), $("#rangeNote").value.trim()].filter(Boolean).join(" ");
+}
+$("#rangeNote").addEventListener("input", () => renderRange());
 $("#rangeGo").onclick = async () => {
+  const typed = $("#rangeNote").value.trim();
   try {
-    await api("POST", `/api/jobs/${job.id}/review`, { start: range.from, end: range.to, note: $("#rangeNote").value.trim() });
-    $("#rangeBox").hidden = true; $("#rangeNote").value = ""; range.from = range.to = null; renderRange();
+    await api("POST", `/api/jobs/${job.id}/review`, { start: range.from, end: range.to, note: fixNote(), timing_only: timingOnly() });
+    if (typed) {                     // remembered on this Mac, so it's one tap next time
+      const m = myNotes(); m[typed] = { n: (m[typed]?.n || 0) + 1, at: Date.now() };
+      try { localStorage.setItem("ac-fix-notes", JSON.stringify(Object.fromEntries(Object.entries(m).sort((a, b) => b[1].at - a[1].at).slice(0, 30)))); } catch { /* fine */ }
+    }
+    $("#rangeBox").hidden = true; $("#rangeNote").value = ""; fixPicked.clear(); range.from = range.to = null; renderRange(); renderReasons();
     refresh(job.id);
   } catch (ex) { alert(ex.message); }
 };
+renderReasons();
 
 /* ============================================================ memory */
 

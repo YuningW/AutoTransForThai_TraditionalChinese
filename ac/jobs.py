@@ -1519,18 +1519,43 @@ def delete_line(jid, lid):
 
 # ---------------------------------------------------------------- a stretch of the video, with your note
 
-def review_range(jid, start, end, note):
+def review_range(jid, start, end, note, timing_only=False):
     start, end = max(0.0, float(start)), float(end)
     if end - start < 0.5:
         raise JobError("Mark a stretch of at least half a second (From here / To here).")
     if end - start > 180:
         raise JobError("Mark at most 3 minutes at a time.")
+    if timing_only:                           # the words are right, only the timing is off: no listening, no Claude
+        _begin(jid, "timing", f"Lining up {_mmss(start)}–{_mmss(end)} with when it's said")
+        _run(jid, _retime_range_job, start, end)
+        return
     _begin(jid, "reviewing", f"Listening again to {_mmss(start)}–{_mmss(end)}")
     _run(jid, _review_job, start, end, (note or "").strip())
 
 
+def _in_range(ls, start, end):
+    return [l for l in ls if min(end, l["end"]) - max(start, l["start"]) > 0.5 * (l["end"] - l["start"])]
+
+
+def _retime_range_job(jid, start, end):
+    with _lock(jid):
+        ls = lines(jid)
+        ids = {l["id"] for l in _in_range(ls, start, end)}
+        for l in ls:
+            if l["id"] in ids:
+                l.pop("timed", None)          # you asked for these to be lined up again, even ones you timed
+        save_lines(jid, ls)
+    moved = _retime(jid, quiet=False, only=ids)
+    update(jid, busy=False, state="ready", label="", progress=None)
+    log(jid, f"Lined up {_mmss(start)}–{_mmss(end)} with when it's said: {moved} of {len(ids)} lines moved.", "done")
+
+
 def _review_job(jid, start, end, note):
+    before = {l["id"] for l in lines(jid)}
     gone, new, explain = _review_work(jid, start, end, note)
+    fresh = {l["id"] for l in lines(jid)} - before
+    if fresh:
+        _retime(jid, only=fresh)              # the new lines start and end with their own words
     update(jid, busy=False, state="ready", label="", progress=None)
     log(jid, f"Rebuilt {_mmss(start)}–{_mmss(end)}: {gone} old lines → {new} new. " + explain, "done")
 
@@ -1656,12 +1681,13 @@ def _merge_gaps(gaps, join, longest):
     return [(round(a, 2), round(b, 2)) for a, b in merged]
 
 
-def _retime(jid, quiet=True):
+def _retime(jid, quiet=True, only=None):
     """Every line's timing from where its own letters are heard (ac/align.py), not shared out by length.
     Lines you timed yourself stay where you put them. Never stops the run (quiet) unless asked."""
     d = job_dir(jid)
     ls = lines(jid)
-    todo = [l for l in ls if l.get("timed") != "you" and (l.get("th") or "").strip() and l.get("kind") != "sound"]
+    todo = [l for l in ls if l.get("timed") != "you" and (l.get("th") or "").strip() and l.get("kind") != "sound"
+            and (only is None or l["id"] in only)]
     if not todo:
         return 0
     try:
@@ -1700,7 +1726,8 @@ def _retime(jid, quiet=True):
             if x["end"] > y["start"] and not talked_over and x.get("timed") != "you":
                 x["end"] = round(max(x["start"] + 0.3, y["start"] - 0.02), 3)
         save_lines(jid, ls)
-    log(jid, f"Lined up the timing of {moved} captions with when they're actually said.")
+    if only is None:
+        log(jid, f"Lined up the timing of {moved} captions with when they're actually said.")
     return moved
 
 

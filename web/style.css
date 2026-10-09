@@ -373,6 +373,12 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .find-row select.field { flex: 0 0 auto; }
 .line.match { box-shadow: inset 4px 0 0 #f5b400; }
 .line.match-on { background: color-mix(in srgb, #f5b400 14%, var(--sheet)); }
+.reasons { display: flex; flex-wrap: wrap; gap: 6px; }
+.reasons:empty { display: none; }
+.reasons button { border: 1px solid var(--rule); background: var(--sheet); border-radius: 16px; padding: 4px 11px; font-size: 13px; color: var(--ink-2); }
+.reasons button[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--sheet); }
+.reasons.mine::before { content: "Yours:"; font-size: 12px; color: var(--ink-3); align-self: center; }
+.reasons.mine button { border-style: dashed; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .range-box { background: var(--sheet); border: 2px solid var(--caption); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .range-help { margin: 0; font-size: 13.5px; color: var(--ink-2); }
 .range-ends, .range-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
