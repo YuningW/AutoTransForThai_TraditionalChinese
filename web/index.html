@@ -90,13 +90,19 @@
         <canvas id="tlWave"></canvas>
         <div class="tl-ticks" id="tlTicks"></div>
         <div class="tl-lines" id="tlLines"></div>
-        <div class="tl-part" id="tlPart" hidden></div>
+        <div class="tl-parts" id="tlParts"></div>
         <div class="tl-head" id="tlHead"></div>
       </div>
       <div class="tl-bar">
         <span class="muted">Drag a caption to move it; pull its edges to change its timing. Scroll to move along, ⌘-scroll or pinch to zoom.</span>
         <span class="tl-zoom"><button type="button" class="keys-btn" id="keysBtn">Shortcuts</button><button type="button" id="tlOut" aria-label="Show more time">−</button><button type="button" id="tlIn" aria-label="Show less time">+</button></span>
       </div>
+    </div>
+    <div class="pv-bar" id="pvBar" role="status" hidden>
+      <span id="pvText"></span>
+      <button class="ghost" type="button" id="pvPrev" aria-label="Previous part">⏮</button>
+      <button class="ghost" type="button" id="pvNext" aria-label="Next part">⏭</button>
+      <button class="secondary" type="button" id="pvStop">Stop preview</button>
     </div>
     <div class="view-opts">
       <span class="muted">On the video:</span>
@@ -327,6 +333,7 @@
           <div class="who-picks" id="whoPicks"></div>
           <span class="muted" id="whoLen"></span>
         </div>
+        <button class="secondary" type="button" id="pvGo" hidden>▶ Preview what will be saved</button>
         <div class="part-box" id="partBox" hidden>
           <div class="range-ends">
             <button class="secondary" type="button" id="partFrom">From here</button>
@@ -337,7 +344,6 @@
           </div>
           <div class="range-ends">
             <button class="ghost" type="button" id="partTicked" title="From the first ticked line to the last">Use the ticked lines</button>
-            <button class="ghost" type="button" id="partPlay">Play it</button>
             <span class="muted" id="partLen"></span>
           </div>
         </div>

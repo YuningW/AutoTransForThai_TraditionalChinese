@@ -673,6 +673,8 @@ function savedSeconds() {
 }
 function showSizes() {
   if (!job) return;
+  $("#pvGo").hidden = !(partOn() || peopleOn());
+  if (pv.on) stopPreview();
   const sec = savedSeconds(), vertical = shapeNow().vertical;
   const px = vertical ? 1080 * 1920 : (job.media?.width || 1920) * (job.media?.height || 1080);
   // original quality: measured about 6.7 Mbit/s for 1080p (h264_videotoolbox -q:v 65), by the number of pixels
@@ -716,12 +718,48 @@ $("#partTicked").onclick = () => {
   if (!ticked.length) { alert("Tick lines in the list first (Shift-click ticks a range)."); return; }
   part.start = ticked[0].start; part.end = ticked[ticked.length - 1].end; showPart();
 };
-$("#partPlay").onclick = () => {
-  if (part.start == null) return;
-  video.currentTime = part.start; video.play();
-  const stop = () => { if (video.currentTime >= part.end) { video.pause(); video.removeEventListener("timeupdate", stop); } };
-  video.addEventListener("timeupdate", stop);
-};
+/* preview: play just what will be saved, part after part, skipping the rest */
+function savedSpans() {               // null when the whole video is saved
+  if (peopleOn()) return peopleSpans();
+  if (partOn() && part.start != null && part.end != null && part.end > part.start) return [[part.start, part.end]];
+  return null;
+}
+const pv = { on: false, spans: [], i: 0, jumping: false };
+function startPreview(from = 0) {
+  const spans = savedSpans();
+  if (!spans || !spans.length) { alert(peopleOn() ? "Tick the people to keep first." : "Choose the part first: From here and To here."); return; }
+  Object.assign(pv, { on: true, spans, i: Math.min(from, spans.length - 1) });
+  previewJump();
+  video.play();
+}
+function previewJump() { pv.jumping = true; video.currentTime = pv.spans[pv.i][0]; showPreview(); }
+function stopPreview(pause = true) {
+  if (!pv.on) return;
+  pv.on = false; $("#pvBar").hidden = true;
+  if (pause) video.pause();
+}
+function showPreview() {
+  $("#pvBar").hidden = !pv.on;
+  if (!pv.on) return;
+  const [a] = pv.spans[pv.i], t = Math.max(a, video.currentTime);
+  const before = pv.spans.slice(0, pv.i).reduce((s, [x, y]) => s + y - x, 0), all = pv.spans.reduce((s, [x, y]) => s + y - x, 0);
+  $("#pvText").textContent = `Preview${pv.spans.length > 1 ? `: part ${pv.i + 1} of ${pv.spans.length}` : ""} · ${fmtTime(before + t - a).replace(/\.\d$/, "")} of ${fmtTime(all).replace(/\.\d$/, "")}`;
+}
+function previewTick(t) {             // called on every frame while it plays
+  if (!pv.on || pv.jumping) return;
+  const [a, b] = pv.spans[pv.i];
+  if (t >= b - 0.03) {
+    if (++pv.i >= pv.spans.length) { stopPreview(); video.currentTime = b; return; }
+    previewJump();
+  } else if (t < a - 0.6 || t > b + 0.6) stopPreview(false);   // you moved somewhere else: the preview ends
+  else showPreview();
+}
+video.addEventListener("seeked", () => { pv.jumping = false; });
+$("#pvGo").onclick = () => startPreview();
+$("#pvStop").onclick = () => stopPreview();
+$("#pvNext").onclick = () => { if (pv.on && pv.i < pv.spans.length - 1) { pv.i++; previewJump(); } };
+$("#pvPrev").onclick = () => { if (pv.on) { pv.i = Math.max(0, video.currentTime - pv.spans[pv.i][0] > 1.5 ? pv.i : pv.i - 1); previewJump(); } };
+addEventListener("keydown", e => { if (e.key === "Escape" && pv.on) stopPreview(); });
 ["partStart", "partEnd"].forEach(id => $("#" + id).addEventListener("change", e => {
   const t = parseTime(e.target.value);
   if (t == null) { showPart(); return; }
@@ -1030,6 +1068,7 @@ function linesAt(t) {
 }
 function tick() {
   const t = video.currentTime;
+  previewTick(t);
   $$(".now-t").forEach(x => { x.textContent = fmtTime(t); });
   const on = lines.length ? linesAt(t) : [];
   const key = on.map(x => x.id).join(",");
@@ -1716,10 +1755,17 @@ function drawTimeline(t, force) {
   tlClamp();
   const W = tlWidth(), pps = W / tl.span;
   $("#tlHead").style.left = `${(t - tl.from) * pps}px`;
-  const pb = $("#tlPart"), showP = partOn() && part.start != null && part.end != null;
-  pb.hidden = !showP;
-  if (showP) Object.assign(pb.style, { left: `${(part.start - tl.from) * pps}px`, width: `${Math.max(2, (part.end - part.start) * pps)}px` });
-  const key = `${tl.from.toFixed(2)}|${tl.span}|${W}|${linesRev}|${current}|${tl.drag ? Math.random() : ""}|${part.start}|${part.end}`;
+  const spans = savedSpans() || [];       // what will be saved, shaded
+  const pkey = spans.map(s => s.join("-")).join(",");
+  if (pkey + pps + tl.from !== tl.partKey) {
+    tl.partKey = pkey + pps + tl.from;
+    $("#tlParts").replaceChildren(...spans.filter(([a, b]) => b > tl.from && a < tl.from + tl.span).map(([a, b]) => {
+      const el = document.createElement("div"); el.className = "tl-part";
+      Object.assign(el.style, { left: `${(a - tl.from) * pps}px`, width: `${Math.max(2, (b - a) * pps)}px` });
+      return el;
+    }));
+  }
+  const key = `${tl.from.toFixed(2)}|${tl.span}|${W}|${linesRev}|${current}|${tl.drag ? Math.random() : ""}`;
   if (key === tlLastKey && !force) return;
   tlLastKey = key;
   drawWave(W, pps);

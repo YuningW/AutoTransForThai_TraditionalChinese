@@ -145,6 +145,10 @@ textarea.field { resize: vertical; }
 .tl-line .h { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
 .tl-line .h.l { left: 0; } .tl-line .h.r { right: 0; }
 .tl-line .h:hover { background: color-mix(in srgb, var(--c, #6b7bd6) 50%, transparent); }
+.tl-parts { position: absolute; inset: 0; pointer-events: none; }
+.pv-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, #2f80ed 12%, var(--sheet)); border: 1px solid color-mix(in srgb, #2f80ed 40%, var(--rule)); font-size: 14px; }
+.pv-bar[hidden] { display: none; }
+.pv-bar #pvText { flex: 1; }
 .tl-part { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, #2f80ed 14%, transparent); border-left: 2px solid #2f80ed; border-right: 2px solid #2f80ed; pointer-events: none; }
 .part-box { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); }
 .who-picks { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; }

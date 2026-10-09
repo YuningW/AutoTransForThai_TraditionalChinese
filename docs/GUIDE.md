@@ -77,7 +77,7 @@ Your usual people are remembered for new videos.
 - **Just a part**: mark it with **From here** and **To here**, type the times, or press **Use the ticked lines**. It's shaded on the timeline; **Play it** to check.
 - **Only when these people talk**: tick Milk, Love… and it keeps every stretch where they talk, joined into one video (a moment before and after each line; lines close together stay as one stretch). Their lines need to be marked as theirs first.
 
-The SRT files and the video then cover only what you chose, timed from 0:00.
+The SRT files and the video then cover only what you chose, timed from 0:00. **▶ Preview what will be saved** plays exactly those parts one after another, skipping the rest (⏮ ⏭ move between parts; Esc or **Stop preview** ends it), and the timeline shades every part.
 
 **Size**: **Original quality**, **Smaller, 720p** (about a third of the size, captions still sharp), or **Smallest, 480p** (for chats and quick checks). Each shows roughly how big the file will be for what you're saving.
 
