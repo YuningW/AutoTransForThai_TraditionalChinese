@@ -359,6 +359,7 @@
         <span><i class="dot unsure"></i>it wasn't sure</span>
         <span><i class="dot fixed"></i>it fixed this</span>
         <span><i class="dot edited"></i>you typed this</span>
+        <button type="button" class="too-fast-all" id="tooFast" hidden title="Lines with more than 9 Chinese characters a second, or on screen for under 0.7 s. Click to go to the next one."></button>
       </div>
       <label class="follow"><input type="checkbox" id="follow" checked> Follow the video</label>
     </div>
@@ -448,6 +449,7 @@
     <div class="left">
       <input type="checkbox" class="pick" aria-label="Select this line">
       <button class="time" type="button"></button>
+      <span class="speed" hidden></span>
     </div>
     <div class="texts">
       <select class="who" aria-label="Who is talking"></select>

@@ -322,6 +322,7 @@ function renderLines() {
   ol.replaceChildren(...lines.map(l => lineEl(l, open.has(l.id), looks.has(l.id))));
   if (!$("#findBox").hidden && $("#findText").value) find.hits.forEach(l => $(`.line[data-id="${l.id}"]`)?.classList.add("match"));
   updateFixbar();
+  updateTooFast();
   for (const id of [...picked]) if (!lines.some(l => l.id === id)) picked.delete(id);
   renderBulk();
   current = null; tick();
@@ -337,6 +338,9 @@ function lineEl(l, flagOpen, lookOpen) {
   li.classList.toggle("flagged", !!l.flag);
   li.classList.add(l.kind || "speech");
   $(".time", li).textContent = fmtTime(l.start);
+  const sp = readSpeed(l);
+  $(".speed", li).hidden = !sp;
+  if (sp) { $(".speed", li).textContent = sp.label; $(".speed", li).title = sp.why; }
   $(".time", li).title = `${fmtTime(l.start)} – ${fmtTime(l.end)}. Play from here`;
   paintWho(li, l);
   $(".th", li).textContent = l.th;
@@ -404,6 +408,32 @@ function setLook(l, changes, now = true) {
   if (now) patch(l, { look });
 }
 
+// Too fast to read: Netflix's limit for Traditional Chinese is 9 characters a second; and a line needs time on screen
+const MAX_CPS = 9, MIN_SECONDS = 0.7;
+function readSpeed(l) {
+  const zh = (l.zh || "").replace(/[\s，。、！？：；…（）「」『』,.!?:;()"'~～-]/g, "")
+    .replace(/[A-Za-z0-9]+/g, w => "x".repeat(Math.ceil(w.length / 2)));      // a Latin word reads faster than as many 字
+  const dur = l.end - l.start;
+  if (!zh || l.kind === "sound" || (l.look && l.look.show === "none")) return null;
+  if (dur < MIN_SECONDS && zh.length >= 3) return { label: `${dur.toFixed(1)} s`, why: `Only ${dur.toFixed(1)} s on screen: too short to read. Make it longer on the timeline, or join it with the next line (M).` };
+  const cps = zh.length / dur;
+  if (cps > MAX_CPS) return { label: `${cps.toFixed(0)}字/秒`, why: `${zh.length} characters in ${dur.toFixed(1)} s is ${cps.toFixed(1)} a second; most people read up to ${MAX_CPS}. Make it longer on the timeline, or shorten the Chinese.` };
+  return null;
+}
+let fastAt = -1;
+function updateTooFast() {
+  const n = lines.filter(readSpeed).length, b = $("#tooFast");
+  b.hidden = !n;
+  b.textContent = `${n} too fast to read`;
+}
+$("#tooFast").onclick = () => {
+  const fast = lines.filter(readSpeed);
+  if (!fast.length) return;
+  const t = video.currentTime, next = fast.find(l => l.start > t + 0.05) || fast[0];
+  video.currentTime = next.start + 0.01;
+  $(`.line[data-id="${next.id}"]`)?.scrollIntoView({ block: "center" });
+};
+
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
 function lineOf(el) { const li = el.closest(".line"); return li && lines.find(l => l.id === +li.dataset.id); }
 
@@ -414,7 +444,7 @@ async function patch(l, changes) {
     linesRev = -1;           // the server bumped its revision; the next poll picks it up
     const li = $(`.line[data-id="${l.id}"]`);
     if (li && !editing()) li.replaceWith(lineEl(l, !$(".flagbox", li).hidden, !$(".lookbox", li).hidden));
-    updateFixbar();
+    updateFixbar(); updateTooFast();
     if ("look" in changes || "start" in changes || "end" in changes) { current = undefined; tick(); }
   } catch (ex) { alert(ex.message); }
 }
@@ -1567,7 +1597,7 @@ function drawTimeline(t, force) {
     const row = l.start < rowEnd - 0.05 ? 1 : 0;
     if (!row) rowEnd = l.end;
     const el = document.createElement("div");
-    el.className = `tl-line${row ? " row1" : ""}${linesAt(t).includes(l) ? " now" : ""}${tl.drag?.l === l ? " moving" : ""}`;
+    el.className = `tl-line${readSpeed(l) ? " fast" : ""}${row ? " row1" : ""}${linesAt(t).includes(l) ? " now" : ""}${tl.drag?.l === l ? " moving" : ""}`;
     el.dataset.id = l.id;
     el.style.left = `${(l.start - tl.from) * pps}px`;
     el.style.width = `${Math.max(6, (l.end - l.start) * pps)}px`;

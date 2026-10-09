@@ -200,6 +200,10 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .script-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--rule); font-size: 13px; color: var(--ink-2); position: sticky; top: 55px; background: var(--sheet); z-index: 2; border-radius: 12px 12px 0 0; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; }
 .legend span { display: flex; gap: 6px; align-items: center; }
+.too-fast-all, .speed { border: 1px solid #e5484d; color: #c62a2f; background: color-mix(in srgb, #e5484d 10%, var(--sheet)); border-radius: 10px; padding: 1px 8px; font-size: 12px; }
+.speed { display: inline-block; margin-top: 4px; font-size: 11px; padding: 0 6px; white-space: nowrap; }
+.speed[hidden] { display: none; }
+.tl-line.fast { border-color: #e5484d; border-style: dashed; }
 .follow { display: flex; gap: 6px; align-items: center; }
 .empty-lines { padding: 40px 20px; text-align: center; color: var(--ink-3); }
 
@@ -386,7 +390,8 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .twoppl { border: 1px solid var(--rule); background: var(--sheet); border-radius: 16px; padding: 3px 12px; font-size: 13px; }
 
 /* ---------------------------------------------------------- ticking lines */
-.line .left { display: flex; align-items: flex-start; justify-content: flex-end; gap: 6px; }
+.line .left { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: flex-end; gap: 2px 6px; }
+.line .left .speed { flex-basis: auto; margin-left: auto; }
 .line .pick { margin: 5px 0 0; opacity: .35; }
 .line:hover .pick, .line .pick:checked, .line .pick:focus-visible { opacity: 1; }
 .line.picked { background: color-mix(in srgb, var(--edited) 12%, var(--sheet)); }
