@@ -202,7 +202,7 @@ async function refresh(jid) {
     if (job && job.id === j.id) { j.style = job.style; j.speakers = job.speakers; }   // the page owns these while you edit
     job = j;
     renderJob();
-    if (first) { renderStylePanel(); renderPeople(); placeOverlay(); picked.clear(); renderSavedLogos(); }
+    if (first) { renderStylePanel(); renderPeople(); placeOverlay(); picked.clear(); renderSavedLogos(); loadShape(); }
     else if (job.speakers && !document.activeElement?.closest?.("#peopleList")) { /* keep the page's copy */ }
     if ((j.touches_rev || 0) !== touchesRev) await loadTouches();
     if (firstVideo && j.media?.duration) { video.src = `/api/jobs/${jid}/video`; loadWave(jid); }
@@ -567,10 +567,46 @@ $("#export").onclick = async () => {
   const burn = $("input[name=burn]:checked").value;
   try {
     await saveStyleNow();
-    await api("POST", `/api/jobs/${job.id}/export`, { srt: true, burn });
+    await api("POST", `/api/jobs/${job.id}/export`, { srt: true, burn, shape: shapeNow() });
     refresh(job.id);
   } catch (ex) { alert(ex.message); }
 };
+
+// Vertical 9:16: "fill" crops the sides (the frame on the video picks which part stays), "fit" keeps all of it
+let cropPos = 0.5;
+function shapeNow() {
+  const vertical = $("input[name=shape]:checked").value === "vertical";
+  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000 } : {};
+}
+function showShape() {
+  const s = shapeNow();
+  $("#fitRow").hidden = !s.vertical;
+  $("#fitHint").hidden = !s.vertical || s.fit !== "fill";
+  placeCrop();
+}
+function placeCrop() {
+  const s = shapeNow(), g = $("#cropGuide");
+  g.hidden = !(s.vertical && s.fit === "fill") || !frame.w;
+  if (g.hidden) return;
+  Object.assign(g.style, { left: `${frame.left}px`, top: `${frame.top}px`, width: `${frame.w}px`, height: `${frame.h}px` });
+  const w = Math.min(frame.w, frame.h * 9 / 16);
+  Object.assign($("#cropWin").style, { width: `${w}px`, left: `${(frame.w - w) * cropPos}px` });
+}
+function loadShape() {           // what you chose last time for this video
+  const s = job.shape || {};
+  $(`input[name=shape][value="${s.vertical ? "vertical" : "original"}"]`).checked = true;
+  $(`input[name=fit][value="${s.fit === "fit" ? "fit" : "fill"}"]`).checked = true;
+  cropPos = s.pos ?? 0.5;
+  showShape();
+}
+$$("input[name=shape], input[name=fit]").forEach(r => r.addEventListener("change", showShape));
+$("#cropWin").addEventListener("pointerdown", e => {
+  e.preventDefault(); video.pause();
+  const el = $("#cropWin"), x0 = e.clientX, p0 = cropPos, room = frame.w - el.offsetWidth;
+  el.setPointerCapture(e.pointerId);
+  el.onpointermove = ev => { cropPos = room > 0 ? Math.max(0, Math.min(1, p0 + (ev.clientX - x0) / room)) : 0.5; placeCrop(); };
+  el.onpointerup = () => { el.onpointermove = null; };
+});
 
 /* ---------------------------------------------------------- settings: models, themes, fonts */
 
@@ -882,6 +918,7 @@ function placeOverlay() {
     ov.style.top = "auto"; ov.style.bottom = `${box.height - (frame.top + frame.h * y)}px`;
   }
   ov.classList.toggle("draggable", st.position === "custom");
+  placeCrop();
   current = undefined; tick();
 }
 video.addEventListener("loadedmetadata", placeOverlay);

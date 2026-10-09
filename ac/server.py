@@ -191,11 +191,12 @@ def helper_picture(jid: str, name: str):
 class ExportIn(BaseModel):
     srt: bool = True
     burn: str = "zh"          # zh | both | th | none
+    shape: dict | None = None  # {"vertical": true, "fit": "fill" | "fit", "pos": 0..1}
 
 
 @app.post("/api/jobs/{jid}/export")
 def export(jid: str, body: ExportIn):
-    return jobs.export(jid, body.srt, body.burn)
+    return jobs.export(jid, body.srt, body.burn, body.shape)
 
 
 class StyleIn(BaseModel):

@@ -958,7 +958,7 @@ def _safe(name):
     return name.strip(" .-|,") or "captions"
 
 
-def export(jid, srt=True, burn="zh"):
+def export(jid, srt=True, burn="zh", shape=None):
     job = load(jid)
     if job.get("busy"):
         raise JobError("Wait for the current step to finish first.")
@@ -977,11 +977,13 @@ def export(jid, srt=True, burn="zh"):
     update(jid, exports=files, export_folder=str(folder))
     if burn in ("zh", "both", "th"):
         _begin(jid, "burning", "Drawing the captions")
-        _run(jid, _burn_job, burn, folder, base, files)
+        shape = shape or {}
+        update(jid, shape=shape)                 # remembered for this video
+        _run(jid, _burn_job, burn, folder, base, files, shape)
     return load(jid)
 
 
-def _burn_job(jid, which, folder, base, files):
+def _burn_job(jid, which, folder, base, files, shape=None):
     job = load(jid)
     d = job_dir(jid)
     m = job["media"]
@@ -989,15 +991,20 @@ def _burn_job(jid, which, folder, base, files):
     shutil.rmtree(frames_dir, ignore_errors=True)
     dur = m.get("duration") or 0
     kept = [({**t, "start": 0.0, "end": dur} if t.get("whole") else t) for t in touches(jid) if not t.get("pending")]
+    W, H, st, plan = m.get("width") or 1920, m.get("height") or 1080, job.get("style"), None
+    if (shape or {}).get("vertical"):            # 9:16 for Reels, TikTok and Shorts
+        plan = style.vertical_plan(W, H, shape.get("fit", "fill"), shape.get("pos", 0.5))
+        kept = [style.on_vertical(t, plan) for t in kept]
+        W, H, st = plan["w"], plan["h"], style.vertical_style(st)
     still = [t for t in kept if t.get("motion") not in style.MOTIONS]
     moving = [t for t in kept if t.get("motion") in style.MOTIONS]
-    lst = style.frames(lines(jid), still, which, m.get("width") or 1920, m.get("height") or 1080, job.get("style"),
-                       frames_dir, lambda p: update(jid, progress=round(p, 3)), job.get("speakers"))
-    moves = style.sprites(moving, m.get("width") or 1920, m.get("height") or 1080, job.get("style"), frames_dir, dur)
+    lst = style.frames(lines(jid), still, which, W, H, st, frames_dir, lambda p: update(jid, progress=round(p, 3)),
+                       job.get("speakers"))
+    moves = style.sprites(moving, W, H, st, frames_dir, dur)
     update(jid, label="Burning captions into the video", progress=0)
-    label = {"zh": "中文字幕", "both": "中泰字幕", "th": "Thai captions"}[which]
+    label = {"zh": "中文字幕", "both": "中泰字幕", "th": "Thai captions"}[which] + (" 9x16" if plan else "")
     out = folder / f"{base} ({label}).mp4"
-    media.burn(d / job["source"], lst, out, m.get("duration"), lambda p: update(jid, progress=round(p, 3)), moves)
+    media.burn(d / job["source"], lst, out, m.get("duration"), lambda p: update(jid, progress=round(p, 3)), moves, plan)
     shutil.rmtree(frames_dir, ignore_errors=True)
     files = files + [{"kind": f"video-{which}", "path": str(out)}]
     update(jid, busy=False, state="ready", label="", progress=None, exports=files)

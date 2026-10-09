@@ -76,11 +76,23 @@ def browser_copy(src, info, dst):
           "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst)], "Making a playable copy")
 
 
-def burn(src, frames_list, dst, duration, on_progress, sprites=()):
+def burn(src, frames_list, dst, duration, on_progress, sprites=(), vertical=None):
     """Lay the rendered caption frames (style.frames) over the video, then any moving items
-    (style.sprites): each a still picture that ffmpeg moves/turns/squashes on every frame."""
+    (style.sprites): each a still picture that ffmpeg moves/turns/squashes on every frame.
+    vertical: a style.vertical_plan: the picture goes on a 9:16 canvas first (cropped, or on a blurred copy)."""
     inputs = ["-i", str(src), "-f", "concat", "-safe", "0", "-i", str(frames_list)]
-    graph = ["[1:v]format=rgba[c]", "[0:v][c]overlay=eof_action=pass:format=auto[v0]"]
+    graph = ["[1:v]format=rgba[c]"]
+    if vertical:
+        W, H = vertical["w"], vertical["h"]
+        x, y, pw, ph = vertical["pic"]
+        if vertical["fit"] == "fill":
+            graph.append(f"[0:v]scale={pw}:{ph},crop={W}:{H}:{-x}:{-y},setsar=1[base]")
+        else:
+            graph.append(f"[0:v]split[bga][fga];[bga]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+                         f"gblur=sigma=40,eq=brightness=-0.12[bg];[fga]scale={pw}:{ph}[fg];[bg][fg]overlay={x}:{y},setsar=1[base]")
+        graph.append("[base][c]overlay=eof_action=pass:format=auto[v0]")
+    else:
+        graph.append("[0:v][c]overlay=eof_action=pass:format=auto[v0]")
     for i, sp in enumerate(sprites):
         inputs += ["-loop", "1", "-framerate", "30", "-i", sp["png"]]
         pre = "format=rgba" + ("," + sp["pre"] if sp["pre"] else "")

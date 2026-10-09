@@ -172,6 +172,9 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .panel summary { cursor: pointer; padding: 11px 14px; font-weight: 600; }
 .panel-body { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
 .panel-body p { margin: 0; font-size: 13px; }
+.crop-guide { position: absolute; pointer-events: none; }
+.crop-win { position: absolute; top: 0; bottom: 0; box-shadow: 0 0 0 9999px rgba(0,0,0,.55); outline: 2px solid #fff; cursor: ew-resize; pointer-events: auto; touch-action: none; }
+.crop-win span { position: absolute; top: 6px; left: 6px; font: 600 11px/1 system-ui; color: #fff; background: rgba(0,0,0,.5); padding: 3px 5px; border-radius: 4px; }
 .opt-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 14px; }
 .opt-row > span:first-child { min-width: 9em; color: var(--ink-2); }
 .opt-row label { display: flex; gap: 4px; align-items: center; }

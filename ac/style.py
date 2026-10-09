@@ -24,6 +24,7 @@ DEFAULT = {
     "shadow": 0.05,
     "box": False, "box_color": "#000000A0",
     "position": "bottom",          # bottom | top | custom
+    "top_y": 0.05, "bottom_y": 0.94,   # where "top" and "bottom" are (a vertical video moves them clear of the app's buttons)
     "y": 0.94,                     # custom: where the bottom of the captions sits (0 top .. 1 bottom)
     "order": "th_above",           # th_above | zh_above
 }
@@ -242,11 +243,11 @@ def caption_block(line, which, w, h, style, speakers=None):
     zh_px = biggest
     pos, py = place_of(group[0], s)
     if pos == "top":
-        y, anchor = 0.05, "top"
+        y, anchor = float(s.get("top_y", 0.05)), "top"
     elif pos == "custom":
         y, anchor = py, "bottom"
     else:
-        y, anchor = 0.94, "bottom"
+        y, anchor = float(s.get("bottom_y", 0.94)), "bottom"
     box = {"color": s["box_color"], "pad": round(zh_px * 0.32), "radius": round(zh_px * 0.25)} if s["box"] else None
     return {"x": 0.5, "y": y, "anchor": anchor, "maxw": 0.88, "gap": round(zh_px * 0.12), "box": box, "rows": rows}
 
@@ -336,6 +337,45 @@ def available_fonts():
 
 
 # ---------------------------------------------------------------- frames for burning in
+
+# ---------------------------------------------------------------- vertical (9:16) videos
+
+VERTICAL = (1080, 1920)
+
+
+def vertical_plan(src_w, src_h, fit="fill", pos=0.5):
+    """Where the picture goes on a 1080×1920 canvas. fill: it covers the canvas and the sides are cut off, `pos`
+    (0 left … 1 right) choosing which part stays; fit: all of it, in the middle, on a blurred copy of itself."""
+    W, H = VERTICAL
+    pos = min(1.0, max(0.0, float(pos)))
+    scale = max(W / src_w, H / src_h) if fit == "fill" else min(W / src_w, H / src_h)
+    pw, ph = round(src_w * scale / 2) * 2, round(src_h * scale / 2) * 2
+    x = -round((pw - W) * pos) if fit == "fill" else (W - pw) // 2
+    y = -((ph - H) // 2) if fit == "fill" else (H - ph) // 2
+    return {"w": W, "h": H, "fit": "fill" if fit == "fill" else "fit", "pos": pos, "pic": (x, y, pw, ph), "src": (src_w, src_h)}
+
+
+def vertical_style(style):
+    """Captions on a vertical video sit higher: TikTok, Reels and Shorts put their buttons over the bottom."""
+    s = merged(style)
+    s.update(top_y=0.12, bottom_y=0.78)
+    if s["position"] == "custom":
+        s["y"] = min(float(s["y"]), 0.8)
+    return s
+
+
+def on_vertical(t, plan):
+    """An emoji, text or logo placed on the original picture -> the same spot on the vertical canvas (kept inside it)."""
+    x0, y0, pw, ph = plan["pic"]
+    W, H = plan["w"], plan["h"]
+    sw, sh = plan["src"]
+    t = dict(t)
+    t["x"] = min(0.96, max(0.04, (x0 + float(t.get("x", 0.5)) * pw) / W))
+    t["y"] = min(0.96, max(0.04, (y0 + float(t.get("y", 0.5)) * ph) / H))
+    if t.get("kind") == "image":           # same size compared with the short side, as on the original
+        t["w"] = float(t.get("w") or 0.15) * sw / min(sw, sh) * min(W, H) / W
+    return t
+
 
 def timeline(lines, touches, which):
     """[(start, end, [items])]: each stretch where the same captions and touches are on screen."""

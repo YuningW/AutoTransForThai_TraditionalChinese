@@ -80,6 +80,7 @@
       <div class="overlay" id="overlay"><div class="ov-box" id="ovBox"></div></div>
       <div id="ovOwn"></div>
       <div class="touch-layer" id="touchLayer"></div>
+      <div class="crop-guide" id="cropGuide" hidden><div class="crop-win" id="cropWin"><span>9:16</span></div></div>
     </div>
     <div class="timeline" id="timeline">
       <div class="tl-view" id="tlView" aria-label="Timeline: the sound and the captions. Drag a caption to move it, or its edges to change when it starts or ends.">
@@ -311,6 +312,17 @@
           <label><input type="radio" name="burn" value="both"> 中文 + Thai</label>
           <label><input type="radio" name="burn" value="none"> Don't</label>
         </div>
+        <div class="opt-row" id="shapeRow">
+          <span>Shape</span>
+          <label><input type="radio" name="shape" value="original" checked> Same as the video</label>
+          <label><input type="radio" name="shape" value="vertical"> Vertical 9:16 <small class="muted">(Reels, TikTok, Shorts)</small></label>
+        </div>
+        <div class="opt-row" id="fitRow" hidden>
+          <span></span>
+          <label><input type="radio" name="fit" value="fill" checked> Fill the screen, cut the sides</label>
+          <label><input type="radio" name="fit" value="fit"> Whole picture, blurred behind</label>
+        </div>
+        <p class="muted" id="fitHint" hidden>Drag the frame on the video to choose which part stays. Captions sit higher, clear of the app's buttons.</p>
         <p class="muted">Uses the caption style above, the emoji and notes you kept, and your text and logo. SRT files (Thai, Chinese, both) are always saved too. They go to <span id="outDir">~/Movies/AutoCaption</span>.</p>
         <button class="primary" id="export" type="button">Save</button>
         <ul class="exports" id="exports"></ul>
