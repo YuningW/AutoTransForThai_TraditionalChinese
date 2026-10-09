@@ -320,6 +320,7 @@ function renderLines() {
   const open = new Set($$(".line .flagbox:not([hidden])", ol).map(b => +b.closest(".line").dataset.id));
   const looks = new Set($$(".line .lookbox:not([hidden])", ol).map(b => +b.closest(".line").dataset.id));
   ol.replaceChildren(...lines.map(l => lineEl(l, open.has(l.id), looks.has(l.id))));
+  if (!$("#findBox").hidden && $("#findText").value) find.hits.forEach(l => $(`.line[data-id="${l.id}"]`)?.classList.add("match"));
   updateFixbar();
   for (const id of [...picked]) if (!lines.some(l => l.id === id)) picked.delete(id);
   renderBulk();
@@ -1616,6 +1617,50 @@ $("#tlView").addEventListener("wheel", e => {
 $("#tlIn").onclick = () => { const mid = tl.from + tl.span / 2; tl.span /= 1.6; tl.from = mid - tl.span / 2; tlClamp(); drawTimeline(video.currentTime, true); };
 $("#tlOut").onclick = () => { const mid = tl.from + tl.span / 2; tl.span *= 1.6; tl.from = mid - tl.span / 2; tlClamp(); drawTimeline(video.currentTime, true); };
 new ResizeObserver(() => drawTimeline(video.currentTime, true)).observe($("#tlView"));
+
+/* ============================================================ find and replace */
+
+const find = { hits: [], at: -1 };
+function findMatches() {
+  const q = $("#findText").value.trim().toLowerCase(), where = $("#findWhere").value;
+  $$(".line.match").forEach(li => li.classList.remove("match", "match-on"));
+  find.hits = []; find.at = -1;
+  if (q) {
+    const keys = where === "both" ? ["th", "zh"] : [where];
+    let n = 0;
+    for (const l of lines) {
+      const c = keys.reduce((s, k) => s + ((l[k] || "").toLowerCase().split(q).length - 1), 0);
+      if (c) { find.hits.push(l); n += c; $(`.line[data-id="${l.id}"]`)?.classList.add("match"); }
+    }
+    $("#findCount").textContent = n ? `${n} match${n === 1 ? "" : "es"} in ${find.hits.length} line${find.hits.length === 1 ? "" : "s"}` : "Not found.";
+  } else $("#findCount").textContent = "Type something to find.";
+  $("#findGo").disabled = !find.hits.length;
+}
+function findStep(d) {
+  if (!find.hits.length) return;
+  find.at = (find.at + d + find.hits.length) % find.hits.length;
+  const l = find.hits[find.at];
+  $$(".line.match-on").forEach(li => li.classList.remove("match-on"));
+  const li = $(`.line[data-id="${l.id}"]`);
+  li?.classList.add("match-on"); li?.scrollIntoView({ block: "center" });
+  video.currentTime = l.start + 0.01;
+}
+$("#findOpen").onclick = () => { $("#findBox").hidden = false; $("#findText").focus(); findMatches(); };
+$("#findClose").onclick = () => { $("#findBox").hidden = true; $("#findText").value = ""; findMatches(); };
+["input", "change"].forEach(ev => { $("#findText").addEventListener(ev, findMatches); $("#findWhere").addEventListener(ev, findMatches); });
+$("#findNext").onclick = () => findStep(1);
+$("#findPrev").onclick = () => findStep(-1);
+$("#findText").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); } });
+$("#findGo").onclick = async () => {
+  const find_ = $("#findText").value.trim(), repl = $("#replText").value.trim();
+  try {
+    const r = await api("POST", `/api/jobs/${job.id}/replace`, { find: find_, replace: repl, where: $("#findWhere").value, remember: $("#findRemember").checked });
+    await reloadLines();
+    findMatches();
+    $("#findCount").textContent = `Replaced ${r.count} in ${r.lines} line${r.lines === 1 ? "" : "s"}.` + (r.learned ? " Remembered for next time." : "");
+    if (r.learned) loadMemoryCount();
+  } catch (ex) { alert(ex.message); }
+};
 
 /* ============================================================ splitting, joining, keyboard */
 

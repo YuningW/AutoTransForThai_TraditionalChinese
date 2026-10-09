@@ -1326,6 +1326,39 @@ def _guess_job(jid):
     log(jid, f"Guessed who says {n} lines (dashed chips). Correct any that are wrong.", "done")
 
 
+def replace_text(jid, find, repl, where="zh", remember=False):
+    """Find and replace in every line (Chinese, Thai or both); letters match whatever their case.
+    remember: keep it as a rule for future videos too."""
+    find, repl = (find or "").strip(), (repl or "").strip()
+    if not find:
+        raise JobError("Type what to find.")
+    keys = {"zh": ("zh",), "th": ("th",), "both": ("th", "zh")}.get(where)
+    if not keys:
+        raise JobError("Choose Chinese, Thai or both.")
+    pat = re.compile(re.escape(find), re.IGNORECASE)
+    n_lines = n = 0
+    with _lock(jid):
+        ls = lines(jid)
+        for l in ls:
+            hit = False
+            for k in keys:
+                new, c = pat.subn(lambda m: repl, l.get(k) or "")
+                if c:
+                    l.setdefault(k + "_before", l.get(k, ""))
+                    l[k], n, hit = new, n + c, True
+            if hit:
+                l["status"] = "edited"
+                n_lines += 1
+        if n:
+            save_lines(jid, ls)
+    learned = None
+    if remember and n:
+        lang = {"zh": "Chinese", "th": "Thai", "both": "the captions"}[where]
+        learned = f"In {lang}, write “{repl}”, not “{find}”." if repl else f"In {lang}, leave out “{find}”."
+        memory.add("rules", text=learned, source=load(jid).get("title", ""))
+    return {"count": n, "lines": n_lines, "learned": learned}
+
+
 def cut_line(jid, lid, at):
     """One line into two at a moment in it; the Thai and Chinese are cut at about the same place."""
     with _lock(jid):

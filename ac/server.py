@@ -220,6 +220,18 @@ def add_line(jid: str, body: NewLineIn):
     return jobs.add_line(jid, body.start, body.end, body.th, body.zh)
 
 
+class ReplaceIn(BaseModel):
+    find: str
+    replace: str = ""
+    where: str = "zh"
+    remember: bool = False
+
+
+@app.post("/api/jobs/{jid}/replace")
+def replace_text(jid: str, body: ReplaceIn):
+    return jobs.replace_text(jid, body.find, body.replace, body.where, body.remember)
+
+
 class CutIn(BaseModel):
     at: float
 

@@ -27,6 +27,7 @@ The captions sit next to the video and follow it as it plays. Click a line's tim
 - **+ Caption at…**: type a caption yourself at the current moment.
 - **Timeline** (under the video): the sound wave with every caption as a block. Drag a block to move it, pull its edges to change when it starts or ends, click to jump there. Scroll to move along; ⌘-scroll or pinch to zoom.
 - **Split and join**: **S** splits the line at the playhead (the Thai and Chinese are cut at about the same place, never inside a Thai word); **M** joins it with the next line. Both are also under **Aa**.
+- **Find and replace**: change a word everywhere at once, for example a name written wrong in 30 lines, in the Chinese, the Thai or both. Tick **Remember it for future videos** to keep it as a rule.
 - **Keyboard**: Space plays and pauses, ←/→ move a second (Shift: 5), ↑/↓ go to the previous or next line, **[** and **]** set where the line starts and ends, Enter edits it, F flags it. Press **?** for the full list.
 - **Try again**: if something stopped half-way (for example Claude's usage limit), it carries on from that step.
 

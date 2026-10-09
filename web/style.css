@@ -301,6 +301,11 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .tools .secondary { font-size: 14px; padding: 6px 12px; }
 .now-t { font-variant-numeric: tabular-nums; }
 .secondary:disabled { opacity: .45; cursor: default; }
+.find-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.find-row .field { flex: 1 1 140px; min-width: 0; }
+.find-row select.field { flex: 0 0 auto; }
+.line.match { box-shadow: inset 4px 0 0 #f5b400; }
+.line.match-on { background: color-mix(in srgb, #f5b400 14%, var(--sheet)); }
 .range-box { background: var(--sheet); border: 2px solid var(--caption); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .range-help { margin: 0; font-size: 13.5px; color: var(--ink-2); }
 .range-ends, .range-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
