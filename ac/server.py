@@ -242,6 +242,12 @@ def cut_line(jid: str, lid: int, body: CutIn):
     return jobs.cut_line(jid, lid, body.at)
 
 
+@app.post("/api/jobs/{jid}/retime")
+def retime(jid: str):
+    jobs.retime(jid)
+    return jobs.load(jid)
+
+
 @app.post("/api/jobs/{jid}/lines/{lid}/join")
 def join_line(jid: str, lid: int):
     return jobs.join_line(jid, lid)

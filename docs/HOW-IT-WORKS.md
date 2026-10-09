@@ -16,7 +16,8 @@ Claude reads text and pictures, not sound. Here, Whisper does the listening on y
 6. **Translate** into Traditional Chinese (Taiwan usage).
 7. **Self-check**: Claude reviews everything. Doubtful lines are listened to again with the best model and fixed.
 8. **Fill in** talking the video's subtitles show but the captions missed (only when that option is on).
-9. **Colour** lines by remembered voices.
+9. **Line up the timing**: a Thai speech model (wav2vec2) finds where each line's own letters are spoken (forced alignment), so every line starts and ends with its words. Lines you timed yourself are left alone.
+10. **Colour** lines by remembered voices.
 
 Captions are always timed to the audio. Subtitles from elsewhere only help with the words and meaning.
 
@@ -29,6 +30,7 @@ Captions are always timed to the audio. Subtitles from elsewhere only help with 
 | `ac/relisten.py` | Listens again to short clips of unsure or flagged lines |
 | `ac/voice.py` | Demucs takes the music away from the voices |
 | `ac/voices.py` | Speaker voiceprints (SpeechBrain ECAPA) for colouring people |
+| `ac/align.py` | Forced alignment: each line's timing from where its letters are heard |
 | `ac/captions.py` | Cuts lines (never inside a Thai word) and writes SRT |
 | `ac/brain.py` | All Claude prompts (through `claude -p`), and a count of the tokens each video uses |
 | `ac/memory.py` | What it has learned (`work/memory.json`) |

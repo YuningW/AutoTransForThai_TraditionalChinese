@@ -241,6 +241,7 @@ function renderJob() {
   const noVideo = !job.media?.duration;
   ["#addLineHere", "#addTouchHere", "#markRange"].forEach(s => { $(s).disabled = noVideo; });
   $("#fillSkipped").disabled = noVideo || !!job.busy || !(job.counts && job.counts.lines);
+  $("#retime").disabled = noVideo || !!job.busy || !(job.counts && job.counts.lines);
   $("#suggestTouches").disabled = !!job.busy || !(job.counts && job.counts.lines);
   if (!$("#rangeBox").hidden) renderRange();
   const music = !!job.options?.clean_voice, done = job.state === "ready" && !job.busy && job.counts?.lines;
@@ -1712,6 +1713,9 @@ function findStep(d) {
   li?.classList.add("match-on"); li?.scrollIntoView({ block: "center" });
   video.currentTime = l.start + 0.01;
 }
+$("#retime").onclick = async () => {
+  try { await api("POST", `/api/jobs/${job.id}/retime`); refresh(job.id); } catch (ex) { alert(ex.message); }
+};
 $("#findOpen").onclick = () => { $("#findBox").hidden = false; $("#findText").focus(); findMatches(); };
 $("#findClose").onclick = () => { $("#findBox").hidden = true; $("#findText").value = ""; findMatches(); };
 ["input", "change"].forEach(ev => { $("#findText").addEventListener(ev, findMatches); $("#findWhere").addEventListener(ev, findMatches); });

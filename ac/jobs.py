@@ -169,7 +169,7 @@ def _after_stop(jid):
         (". Everything finished before that is kept." if has_lines else "."), "warn")
 
 
-STATE_DOING = {"filling": "filling in skipped talking", "fetching": "downloading", "preparing": "reading the video", "cleaning": "removing the music",
+STATE_DOING = {"timing": "lining up the timing", "filling": "filling in skipped talking", "fetching": "downloading", "preparing": "reading the video", "cleaning": "removing the music",
                "listening": "listening", "reading": "reading your screenshots", "tidying": "tidying the Thai",
                "translating": "translating", "checking": "checking its work", "fixing": "fixing your flags",
                "reviewing": "fixing a stretch", "burning": "saving the video", "touches": "picking emoji",
@@ -293,6 +293,7 @@ def _make(jid):
 def _finish(jid):
     _self_check(jid)
     _fill_from_subtitles(jid)
+    _retime(jid)
     _auto_voices(jid)
     update(jid, busy=False, state="ready", label="", progress=None)
     log(jid, "Captions are ready for you to check." + _usage_note(jid), "done")
@@ -796,6 +797,7 @@ def edit_line(jid, lid, changes):
         for k in ("start", "end"):
             if k in changes and changes[k] is not None:
                 l[k] = round(max(0.0, float(changes[k])), 3)
+                l["timed"] = "you"                  # lining up the timing later leaves it alone
         if "speaker" in changes:
             l["speaker"] = changes["speaker"] or None
             l.pop("speaker_guess", None)
@@ -858,6 +860,7 @@ def _redo_job(jid, what):
         save_lines(jid, ls)
     _self_check(jid)
     _fill_from_subtitles(jid)
+    _retime(jid)
     update(jid, busy=False, state="ready", label="", progress=None)
     log(jid, "Redone with your helpers and everything it has learned.", "done")
 
@@ -896,6 +899,7 @@ def _listen_again_job(jid):
     _polish_and_translate(jid)
     _self_check(jid)
     _fill_from_subtitles(jid)
+    _retime(jid)
     _auto_voices(jid)
     update(jid, busy=False, state="ready", label="", progress=None)
     log(jid, "Captions are ready for you to check.", "done")
@@ -1380,8 +1384,8 @@ def cut_line(jid, lid, at):
         th1, th2 = captions.split_text(l.get("th", ""), frac, thai=True)
         zh1, zh2 = captions.split_text(l.get("zh", ""), frac)
         keep = {k: v for k, v in l.items() if k not in ("explain", "feedback", "th_before", "zh_before", "heard", "attempts", "flag", "note")}
-        first = {**keep, "end": round(at, 3), "th": th1, "zh": zh1, "status": "edited"}
-        second = {**keep, "id": max(x["id"] for x in ls) + 1, "start": round(at, 3), "th": th2, "zh": zh2, "status": "edited"}
+        first = {**keep, "end": round(at, 3), "th": th1, "zh": zh1, "status": "edited", "timed": "you"}
+        second = {**keep, "id": max(x["id"] for x in ls) + 1, "start": round(at, 3), "th": th2, "zh": zh2, "status": "edited", "timed": "you"}
         i = ls.index(l)
         ls[i:i + 1] = [first, second]
         save_lines(jid, ls)
@@ -1555,6 +1559,66 @@ def _merge_gaps(gaps, join, longest):
         else:
             merged.append([a, b])
     return [(round(a, 2), round(b, 2)) for a, b in merged]
+
+
+def _retime(jid, quiet=True):
+    """Every line's timing from where its own letters are heard (ac/align.py), not shared out by length.
+    Lines you timed yourself stay where you put them. Never stops the run (quiet) unless asked."""
+    d = job_dir(jid)
+    ls = lines(jid)
+    todo = [l for l in ls if l.get("timed") != "you" and (l.get("th") or "").strip() and l.get("kind") != "sound"]
+    if not todo:
+        return 0
+    try:
+        (d / "align_in.json").write_text(json.dumps(todo, ensure_ascii=False))
+        _step(jid, load(jid)["state"], "Lining up each caption with when it's said", 0)
+        with _gpu:
+            _sub(jid, ["ac.align", str(d / "audio.wav"), str(d / "align_in.json"), str(d / "align_out.json")],
+                 "Lining up each caption with when it's said")
+        found = {int(k): v for k, v in json.loads((d / "align_out.json").read_text()).items()}
+    except procs.Stopped:
+        raise
+    except Exception as e:
+        if not quiet:
+            raise
+        log(jid, f"Couldn't line up the timing this time ({e}); the captions keep their times.", "warn")
+        return 0
+    finally:
+        for f in ("align_in.json", "align_out.json"):
+            (d / f).unlink(missing_ok=True)
+    with _lock(jid):
+        ls = lines(jid)                       # fresh: you may have edited meanwhile
+        was = {l["id"]: (l["start"], l["end"]) for l in ls}
+        moved = 0
+        for l in ls:
+            if l["id"] in found and l.get("timed") != "you":
+                a, b = found[l["id"]][0], found[l["id"]][1]
+                if abs(a - l["start"]) > 0.05 or abs(b - l["end"]) > 0.05:
+                    moved += 1
+                l["start"], l["end"] = max(0.0, a), b
+        ls = captions.fix_timing(ls)          # short lines stay up long enough to read…
+        ls.sort(key=lambda l: (l["start"], l["end"]))
+        # …but a line's tail may not run into the next line, unless the two overlapped before (people talking at once)
+        for x, y in zip(ls, ls[1:]):
+            wx, wy = was.get(x["id"]), was.get(y["id"])
+            talked_over = wx and wy and wx[1] > wy[0] + 0.3
+            if x["end"] > y["start"] and not talked_over and x.get("timed") != "you":
+                x["end"] = round(max(x["start"] + 0.3, y["start"] - 0.02), 3)
+        save_lines(jid, ls)
+    log(jid, f"Lined up the timing of {moved} captions with when they're actually said.")
+    return moved
+
+
+def retime(jid):
+    """The button: line up every caption's timing with the speech (lines you timed yourself stay)."""
+    _begin(jid, "timing", "Lining up each caption with when it's said")
+    _run(jid, _retime_job)
+
+
+def _retime_job(jid):
+    _retime(jid, quiet=False)
+    update(jid, busy=False, state="ready", label="", progress=None)
+    log(jid, "Timing lined up. Lines you timed yourself were left as they were.", "done")
 
 
 def _check_refs(job):

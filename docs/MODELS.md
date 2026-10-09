@@ -29,6 +29,17 @@ One video is a small test, so treat the differences as a hint, not a ranking. Th
 - **A 4-minute interview** listens in about 80 seconds and takes about 7 minutes in all: listening, then Claude tidying and translating (about 2 minutes), then the self-check (about 4 minutes).
 - **A 16-minute video** takes roughly 15–20 minutes from start to finished captions.
 
+## Timing
+
+The Thai-tuned listening models say when a piece of speech (up to about 12 seconds) starts and ends, but not when each word in it is said. So lines cut from one piece used to share its time by text length, and could be a second or more off, up to 5 seconds on long pieces. Now every line is lined up with its own words using [airesearch/wav2vec2-large-xlsr-53-th](https://huggingface.co/airesearch/wav2vec2-large-xlsr-53-th) (about 1.2 GB, downloaded once). On a 6-minute interview, against its human-made Thai subtitles:
+
+| | Typical error | Over 1 s off | Over 2 s off |
+| --- | --- | --- | --- |
+| Before | 0.47 s | 14 of 53 | 5 |
+| Lined up | **0.19 s** | **8** | **1** |
+
+An hour of video takes about a minute and a half.
+
 ## Help from the video's own subtitles
 
 On the same interview, using its subtitles as help raised the match from 91.1% to 97.1%, and missed lines fell from 5 to 2.
