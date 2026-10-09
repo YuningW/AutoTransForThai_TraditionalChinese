@@ -120,6 +120,16 @@ def burn(src, frames_list, dst, duration, on_progress, sprites=(), vertical=None
         raise MediaError("Burning the captions failed: " + err.strip()[-300:])
 
 
+def join(clips, dst):
+    """Videos saved the same way, one after the other (no re-encoding)."""
+    lst = Path(dst).with_suffix(".join.txt")
+    lst.write_text("".join(f"file '{c}'\n" for c in clips))          # the job's own folder: no quotes in these paths
+    try:
+        _run(["-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", "-movflags", "+faststart", str(dst)], "Joining the parts")
+    finally:
+        lst.unlink(missing_ok=True)
+
+
 def contact_sheets(src, folder, every):
     """Small frames every `every` seconds, 4×4 to a sheet, each labelled with its time, so Claude can see the video."""
     folder = Path(folder)

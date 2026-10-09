@@ -72,6 +72,13 @@ Your usual people are remembered for new videos.
 
 **Save** writes SRT files (Thai, Chinese, and both) and, if you like, a copy of the video with captions, emoji, notes, text and logo burned in. They go to `~/Movies/AutoCaption/<video title>/`.
 
+**What to save**:
+- **The whole video**.
+- **Just a part**: mark it with **From here** and **To here**, type the times, or press **Use the ticked lines**. It's shaded on the timeline; **Play it** to check.
+- **Only when these people talk**: tick Milk, Love… and it keeps every stretch where they talk, joined into one video (a moment before and after each line; lines close together stay as one stretch). Their lines need to be marked as theirs first.
+
+The SRT files and the video then cover only what you chose, timed from 0:00.
+
 **Shape → Vertical 9:16** makes a 1080×1920 copy for Reels, TikTok and Shorts:
 - **Fill the screen, cut the sides**: drag the frame on the video to choose which part stays.
 - **Whole picture, blurred behind**: keeps all of it, in the middle.

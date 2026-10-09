@@ -972,15 +972,42 @@ def _clip(items, a, b):
     return out
 
 
-def _part(job, part):
-    """(start, end) of the part to save, or None for the whole video."""
+PEOPLE_PAD = (0.3, 0.5)      # a person's part starts a little before their line and ends a little after
+PEOPLE_JOIN = 1.5            # their parts closer than this are kept as one (no jump cut)
+
+
+def _spans(job, ls, part):
+    """The stretches to save: None for the whole video, else [(start, end)]. part: {"start", "end"} for one
+    part, or {"people": [ids]} for every stretch where those people talk (joined into one video)."""
     if not part:
         return None
     dur = (job.get("media") or {}).get("duration") or 1e9
+    if part.get("people"):
+        who = set(part["people"])
+        mine = sorted((l for l in ls if l.get("speaker") in who and l.get("kind") != "sound"), key=lambda l: l["start"])
+        if not mine:
+            raise JobError("None of the lines are marked as said by them yet. Pick who says each line first (the chip on a line, or tick lines and assign).")
+        spans = []
+        for l in mine:
+            a, b = max(0.0, l["start"] - PEOPLE_PAD[0]), min(dur, l["end"] + PEOPLE_PAD[1])
+            if spans and a - spans[-1][1] < PEOPLE_JOIN:
+                spans[-1][1] = max(spans[-1][1], b)
+            else:
+                spans.append([a, b])
+        return [(round(a, 3), round(b, 3)) for a, b in spans]
     a, b = max(0.0, float(part.get("start", 0))), min(dur, float(part.get("end", 0)))
     if b - a < 0.5:
         raise JobError("Choose a part at least half a second long (From here / To here).")
-    return round(a, 3), round(b, 3)
+    return [(round(a, 3), round(b, 3))]
+
+
+def _joined(items, spans):
+    """Lines or touches in the stretches, each stretch moved to follow the one before (as in the saved video)."""
+    out, at = [], 0.0
+    for a, b in spans:
+        out += [{**x, "start": round(x["start"] + at, 3), "end": round(x["end"] + at, 3)} for x in _clip(items, a, b)]
+        at += b - a
+    return out
 
 
 def export(jid, srt=True, burn="zh", shape=None, part=None):
@@ -990,58 +1017,77 @@ def export(jid, srt=True, burn="zh", shape=None, part=None):
     ls = lines(jid)
     if not ls:
         raise JobError("There are no captions yet.")
-    span = _part(job, part)
+    spans = _spans(job, ls, part)
     folder = paths.OUT / _safe(job.get("title"))
     folder.mkdir(parents=True, exist_ok=True)
     base = _safe(job.get("title"))
-    if span:                                  # just a part: its own files, timed from the start of the part
-        ls = _clip(ls, *span)
+    if spans:                                 # just part of it: its own files, timed from the start of what's saved
+        ls = _joined(ls, spans)
         if not ls:
             raise JobError("There are no captions in that part.")
-        base = f"{base} {_mmss(span[0]).replace(':', '.')}-{_mmss(span[1]).replace(':', '.')}"
+        if part.get("people"):
+            names = [p.get("name") or "?" for p in job.get("speakers") or [] if p["id"] in part["people"]]
+            base = f"{base} ({' + '.join(names)} only)"
+        else:
+            base = f"{base} {_mmss(spans[0][0]).replace(':', '.')}-{_mmss(spans[0][1]).replace(':', '.')}"
     files = []
     if srt:
         for which, suffix in (("th", "th"), ("zh", "zh-TW"), ("both", "zh-TW+th")):
             p = folder / f"{base}.{suffix}.srt"
             p.write_text(captions.srt(ls, which), encoding="utf-8")
             files.append({"kind": f"srt-{which}", "path": str(p)})
-    update(jid, exports=files, export_folder=str(folder), part={"start": span[0], "end": span[1]} if span else None)
+    remember = None if not spans else {"people": part["people"]} if part.get("people") else \
+        {"start": spans[0][0], "end": spans[0][1]}
+    update(jid, exports=files, export_folder=str(folder), part=remember)
     if burn in ("zh", "both", "th"):
         _begin(jid, "burning", "Drawing the captions")
         shape = shape or {}
         update(jid, shape=shape)                 # remembered for this video
-        _run(jid, _burn_job, burn, folder, base, files, shape, span)
+        _run(jid, _burn_job, burn, folder, base, files, shape, spans)
     return load(jid)
 
 
-def _burn_job(jid, which, folder, base, files, shape=None, span=None):
+def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
     job = load(jid)
     d = job_dir(jid)
     m = job["media"]
-    frames_dir = d / "frames"
-    shutil.rmtree(frames_dir, ignore_errors=True)
+    work = d / "frames"
+    shutil.rmtree(work, ignore_errors=True)
     full = m.get("duration") or 0
-    a, b = span or (0.0, full)
-    dur = b - a
-    kept = [({**t, "start": 0.0, "end": full} if t.get("whole") else t) for t in touches(jid) if not t.get("pending")]
-    ls = lines(jid)
-    if span:
-        kept, ls = _clip(kept, a, b), _clip(ls, a, b)
-    W, H, st, plan = m.get("width") or 1920, m.get("height") or 1080, job.get("style"), None
+    spans = spans or [(0.0, full)]
+    all_touches = [({**t, "start": 0.0, "end": full} if t.get("whole") else t) for t in touches(jid) if not t.get("pending")]
+    all_lines = lines(jid)
+    W0, H0 = m.get("width") or 1920, m.get("height") or 1080
+    W, H, st, plan = W0, H0, job.get("style"), None
     if (shape or {}).get("vertical"):            # 9:16 for Reels, TikTok and Shorts
-        plan = style.vertical_plan(W, H, shape.get("fit", "fill"), shape.get("pos", 0.5))
-        kept = [style.on_vertical(t, plan) for t in kept]
+        plan = style.vertical_plan(W0, H0, shape.get("fit", "fill"), shape.get("pos", 0.5))
+        all_touches = [style.on_vertical(t, plan) for t in all_touches]
         W, H, st = plan["w"], plan["h"], style.vertical_style(st)
-    still = [t for t in kept if t.get("motion") not in style.MOTIONS]
-    moving = [t for t in kept if t.get("motion") in style.MOTIONS]
-    lst = style.frames(ls, still, which, W, H, st, frames_dir, lambda p: update(jid, progress=round(p, 3)),
-                       job.get("speakers"))
-    moves = style.sprites(moving, W, H, st, frames_dir, dur)
-    update(jid, label="Burning captions into the video", progress=0)
     label = {"zh": "中文字幕", "both": "中泰字幕", "th": "Thai captions"}[which] + (" 9x16" if plan else "")
     out = folder / f"{base} ({label}).mp4"
-    media.burn(d / job["source"], lst, out, dur, lambda p: update(jid, progress=round(p, 3)), moves, plan, start=a)
-    shutil.rmtree(frames_dir, ignore_errors=True)
+    total = sum(b - a for a, b in spans) or 1
+    pieces, done = [], 0.0
+    for i, (a, b) in enumerate(spans):           # each stretch on its own, then joined
+        frames_dir = work / f"{i:04d}"
+        whole = len(spans) == 1 and a == 0 and b >= full
+        kept = all_touches if whole else _clip(all_touches, a, b)
+        ls = all_lines if whole else _clip(all_lines, a, b)
+        still = [t for t in kept if t.get("motion") not in style.MOTIONS]
+        moving = [t for t in kept if t.get("motion") in style.MOTIONS]
+        share = (b - a) / total
+        lst = style.frames(ls, still, which, W, H, st, frames_dir,
+                           lambda p: update(jid, progress=round(done + share * 0.3 * p, 3)), job.get("speakers"))
+        moves = style.sprites(moving, W, H, st, frames_dir, b - a)
+        update(jid, label="Burning captions into the video" + (f" (part {i + 1} of {len(spans)})" if len(spans) > 1 else ""))
+        dst = out if len(spans) == 1 else work / f"{i:04d}.mp4"
+        media.burn(d / job["source"], lst, dst, b - a, lambda p: update(jid, progress=round(done + share * (0.3 + 0.7 * p), 3)),
+                   moves, plan, start=a)
+        pieces.append(dst)
+        done += share
+    if len(pieces) > 1:
+        update(jid, label="Joining the parts", progress=None)
+        media.join(pieces, out)
+    shutil.rmtree(work, ignore_errors=True)
     files = files + [{"kind": f"video-{which}", "path": str(out)}]
     update(jid, busy=False, state="ready", label="", progress=None, exports=files)
     log(jid, f"Saved the captioned video to {str(out).replace(str(Path.home()), '~')}.", "done")

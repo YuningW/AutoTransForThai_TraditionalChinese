@@ -239,3 +239,15 @@ class OwnFonts(unittest.TestCase):
         self.assertEqual(rows({"start": 0, "end": 1, "zh": "嗨"}), "PingFang TC")
         self.assertEqual(rows({"start": 0, "end": 1, "zh": "嗨", "speaker": "m"}), "Huninn")
         self.assertEqual(rows({"start": 0, "end": 1, "zh": "嗨", "speaker": "m", "look": {"font": "Iansui"}}), "Iansui")
+
+
+class SaveParts(unittest.TestCase):
+    def test_only_milk_parts_joined(self):
+        from ac import jobs
+        job = {"media": {"duration": 60}}
+        ls = [{"start": 1, "end": 3, "speaker": "m", "th": "a"}, {"start": 3.5, "end": 5, "speaker": "l", "th": "b"},
+              {"start": 5.2, "end": 7, "speaker": "m", "th": "c"}, {"start": 30, "end": 32, "speaker": "m", "th": "d"}]
+        spans = jobs._spans(job, ls, {"people": ["m"]})
+        self.assertEqual(spans, [(0.7, 7.5), (29.7, 32.5)])           # 1-3 and 5.2-7 are close: one stretch
+        out = jobs._joined(ls, spans)
+        self.assertEqual([(x["th"], x["start"]) for x in out], [("a", 0.3), ("b", 2.8), ("c", 4.5), ("d", 7.1)])

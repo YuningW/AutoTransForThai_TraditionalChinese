@@ -624,7 +624,39 @@ function parseTime(s) {               // "1:23.4", "83.4", "1:02:03"
   return bits.reduce((t, x) => t * 60 + x, 0);
 }
 function partOn() { return $("input[name=part]:checked").value === "part"; }
+function peopleOn() { return $("input[name=part]:checked").value === "people"; }
+const whoPicked = new Set();
+// the stretches where the ticked people talk, as the app will cut them (jobs.py _spans)
+function peopleSpans() {
+  const mine = lines.filter(l => whoPicked.has(l.speaker) && l.kind !== "sound").sort((a, b) => a.start - b.start), out = [];
+  for (const l of mine) {
+    const a = Math.max(0, l.start - 0.3), b = l.end + 0.5;
+    if (out.length && a - out[out.length - 1][1] < 1.5) out[out.length - 1][1] = Math.max(out[out.length - 1][1], b);
+    else out.push([a, b]);
+  }
+  return out;
+}
+function showPeoplePick() {
+  $("#peopleBox").hidden = !peopleOn();
+  if (!peopleOn()) return;
+  const people = (job.speakers || []).filter(p => p.name);
+  if (!people.length) { $("#whoPicks").textContent = "Add people first (Caption style → People) and pick who says each line."; $("#whoLen").textContent = ""; return; }
+  $("#whoPicks").replaceChildren(...people.map(p => {
+    const lab = document.createElement("label"), box = document.createElement("input"), dot = document.createElement("i");
+    box.type = "checkbox"; box.checked = whoPicked.has(p.id); dot.style.background = p.color;
+    const n = lines.filter(l => l.speaker === p.id).length;
+    box.onchange = () => { box.checked ? whoPicked.add(p.id) : whoPicked.delete(p.id); showPeoplePick(); };
+    lab.append(box, dot, `${p.name} (${n} line${n === 1 ? "" : "s"})`);
+    return lab;
+  }));
+  const sp = peopleSpans(), len = sp.reduce((s, [a, b]) => s + b - a, 0);
+  $("#whoLen").textContent = sp.length ? `${sp.length} stretch${sp.length === 1 ? "" : "es"}, ${fmtTime(len).replace(/\.\d$/, "")} in all, joined into one video.` : "Tick who to keep.";
+}
 function partNow() {                  // null: the whole video; false: not ready (says why)
+  if (peopleOn()) {
+    if (!whoPicked.size || !peopleSpans().length) { alert("Tick the people to keep. Their lines need to be marked as theirs (the chip on each line)."); return false; }
+    return { people: [...whoPicked] };
+  }
   if (!partOn()) return null;
   if (part.start == null || part.end == null || part.end - part.start < 0.5) {
     alert("Choose the part to save: From here and To here (at least half a second)."); return false;
@@ -645,6 +677,7 @@ function setPart(k, v) {
   if (part.start != null && part.end != null && part.end < part.start) [part.start, part.end] = [part.end, part.start];
   showPart();
 }
+$$("input[name=part]").forEach(r => r.addEventListener("change", showPeoplePick));
 $$("input[name=part]").forEach(r => r.addEventListener("change", () => {
   if (partOn() && part.start == null) {            // a start: the ticked lines, or a minute from the playhead
     const ticked = lines.filter(l => picked.has(l.id));
@@ -698,9 +731,10 @@ function loadShape() {           // what you chose last time for this video
   $(`input[name=fit][value="${s.fit === "fit" ? "fit" : "fill"}"]`).checked = true;
   cropPos = s.pos ?? 0.5;
   showShape();
-  part.start = job.part?.start ?? null; part.end = job.part?.end ?? null;     // the part you saved last time
-  $(`input[name=part][value="${job.part ? "part" : "all"}"]`).checked = true;
-  showPart();
+  part.start = job.part?.start ?? null; part.end = job.part?.end ?? null;     // what you saved last time
+  whoPicked.clear(); (job.part?.people || []).forEach(id => whoPicked.add(id));
+  $(`input[name=part][value="${job.part?.people ? "people" : job.part ? "part" : "all"}"]`).checked = true;
+  showPart(); showPeoplePick();
 }
 $$("input[name=shape], input[name=fit]").forEach(r => r.addEventListener("change", showShape));
 $("#cropWin").addEventListener("pointerdown", e => {
