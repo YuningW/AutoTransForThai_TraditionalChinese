@@ -129,6 +129,7 @@
         <summary class="secondary">More</summary>
         <div class="more-list">
           <button type="button" id="fillSkipped"><b>Find skipped talking</b><small>Talking with no captions: listen again and fill it in</small></button>
+          <button type="button" id="weakSpots"><b>Show the weak spots</b><small>The stretches most likely wrong, to check and fix one by one</small></button>
           <button type="button" id="retime"><b>Line up the timing</b><small>Every caption to when its words are said (yours stay put)</small></button>
           <button type="button" id="againBtn" hidden><b id="againLabel"></b><small id="againText"></small></button>
           <button type="button" id="keysBtn2"><b>Keyboard shortcuts</b><small>Space, ←/→, S split, M join, ? for all</small></button>
@@ -154,6 +155,10 @@
         <button class="primary" type="button" id="findGo" disabled>Replace all</button>
         <button class="ghost" type="button" id="findClose">Close</button>
       </div>
+    </div>
+    <div class="range-box weak-box" id="weakBox" hidden>
+      <div class="weak-head"><b>Weak spots</b><span class="muted" id="weakSum"></span><button class="ghost" type="button" id="weakClose">Close</button></div>
+      <ol class="cut-list weak-list" id="weakList"></ol>
     </div>
     <div class="range-box" id="rangeBox" hidden>
       <p class="range-help">Mark a part it got wrong or skipped (English talking, two people at once…). It listens to just that part again, several ways, and rewrites those lines using your note.</p>

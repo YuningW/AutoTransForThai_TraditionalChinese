@@ -69,17 +69,19 @@ class LinkIn(BaseModel):
     fast: bool = False
     video_subs: bool = True
     subs_check: bool = False
+    careful: bool = False
 
 
 @app.post("/api/jobs")
 def new_job(body: LinkIn):
-    return jobs.create_from_link(body.url, body.about, body.clean_voice, body.fast, body.video_subs, body.subs_check)
+    return jobs.create_from_link(body.url, body.about, body.clean_voice, body.fast, body.video_subs, body.subs_check, body.careful)
 
 
 @app.post("/api/jobs/upload")
 def upload_job(file: UploadFile = File(...), about: str = Form(""), clean_voice: bool = Form(False),
-               fast: bool = Form(False), video_subs: bool = Form(True), subs_check: bool = Form(False)):
-    return jobs.create_from_upload(file.filename, file.file, about, clean_voice, fast, video_subs, subs_check)
+               fast: bool = Form(False), video_subs: bool = Form(True), subs_check: bool = Form(False),
+               careful: bool = Form(False)):
+    return jobs.create_from_upload(file.filename, file.file, about, clean_voice, fast, video_subs, subs_check, careful)
 
 
 @app.get("/api/jobs")
@@ -253,6 +255,17 @@ def cut_line(jid: str, lid: int, body: CutIn):
     return jobs.cut_line(jid, lid, body.at)
 
 
+@app.get("/api/jobs/{jid}/weak-spots")
+def weak_spots(jid: str):
+    return [{"start": a, "end": b, "why": why} for a, b, why in jobs.weak_spots(jid)]
+
+
+@app.post("/api/jobs/{jid}/weak-spots")
+def fix_weak_spots(jid: str):
+    jobs.fix_weak_spots(jid)
+    return jobs.load(jid)
+
+
 @app.post("/api/jobs/{jid}/retime")
 def retime(jid: str):
     jobs.retime(jid)
@@ -402,7 +415,7 @@ def get_settings():
         "listen_model": models.listen_key(), "claude_model": models.claude_model(),
         "claude_effort": s.get("claude_effort") or "auto",
         "efforts": [{"key": k, **v} for k, v in models.EFFORTS.items()],
-        "clean_voice": bool(s.get("clean_voice")), "fast": bool(s.get("fast")), "video_subs": s.get("video_subs", True), "subs_check": bool(s.get("subs_check")),
+        "clean_voice": bool(s.get("clean_voice")), "fast": bool(s.get("fast")), "video_subs": s.get("video_subs", True), "subs_check": bool(s.get("subs_check")), "careful": bool(s.get("careful")),
         "listen_models": [{"key": k, **{x: v[x] for x in ("label", "about")}, "ready": models.is_ready(k)}
                           for k, v in models.LISTEN.items()],
         "claude_models": [{"key": k, **v} for k, v in models.CLAUDE.items()],

@@ -192,16 +192,16 @@ def _step(jid, state, label, progress=None):
 
 # ---------------------------------------------------------------- new jobs
 
-def _new_job(title, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, **fields):
+def _new_job(title, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False, **fields):
     subs_check = bool(subs_check and video_subs)
     paths.save_settings({"clean_voice": bool(clean_voice), "fast": bool(fast), "video_subs": bool(video_subs),
-                         "subs_check": subs_check})
+                         "subs_check": subs_check, "careful": bool(careful)})
     jid = uuid.uuid4().hex[:12]
     (paths.JOBS / jid / "helpers").mkdir(parents=True)
     job = {"id": jid, "title": title, "about": (about or "").strip(), "created": time.time(), "updated": time.time(),
            "state": "fetching", "busy": True, "label": "Starting", "progress": None, "error": None,
            "options": {"clean_voice": bool(clean_voice), "fast": bool(fast), "video_subs": bool(video_subs), "subs_check": subs_check,
-                       "listen_model": models.listen_key(),
+                       "careful": bool(careful), "listen_model": models.listen_key(),
                        "claude_model": models.claude_model()},
            "style": paths.load_settings().get("style") or {},
            "speakers": [dict(p) for p in memory.load().get("people") or []], "info": {}, "media": {}, "helpers": [],
@@ -210,7 +210,7 @@ def _new_job(title, about="", clean_voice=False, fast=False, video_subs=True, su
     return load(jid)
 
 
-def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False):
+def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False):
     url = fetch.clean_url(url)
     key = fetch.video_key(url)
     for f in paths.JOBS.glob("*/job.json"):
@@ -220,17 +220,17 @@ def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=Tr
             continue
         if j.get("key") == key and j.get("source") and not j.get("error"):
             return load(j["id"])                     # same video again: open the earlier job
-    job = _new_job(url, about, clean_voice, fast, video_subs, subs_check, key=key, info={"url": url})
+    job = _new_job(url, about, clean_voice, fast, video_subs, subs_check, careful, key=key, info={"url": url})
     _run(job["id"], _fetch_then_make, url)
     return job
 
 
-def create_from_upload(filename, stream, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False):
+def create_from_upload(filename, stream, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False):
     ext = Path(filename or "video.mp4").suffix.lower()
     if ext not in VIDEO_EXT:
         raise JobError("That doesn't look like a video file (" + (ext or "no extension") + ").")
     title = Path(filename).stem
-    job = _new_job(title, about, clean_voice, fast, video_subs, subs_check, info={"title": title, "file": filename})
+    job = _new_job(title, about, clean_voice, fast, video_subs, subs_check, careful, info={"title": title, "file": filename})
     dst = job_dir(job["id"]) / ("source" + ext)
     with open(dst, "wb") as f:
         shutil.copyfileobj(stream, f, 4 * 1024 * 1024)
@@ -291,6 +291,8 @@ def _make(jid):
 
 
 def _finish(jid):
+    if load(jid)["options"].get("careful"):
+        _careful(jid)
     _self_check(jid)
     _fill_from_subtitles(jid)
     _retime(jid)
@@ -629,7 +631,7 @@ def _relisten(jid, targets):
     job = load(jid)
     ls = lines(jid)
     idx = {l["id"]: i for i, l in enumerate(ls)}
-    hint_base = memory.whisper_hint()
+    hint_base = ""            # no learned-word hint on short clips: over music Whisper just repeats it
     best = models.mlx_path(models.listen_key())          # short clips: the best model, even on Quicker listening
     plan, windows = [], []
     for t in targets:
@@ -1571,7 +1573,7 @@ def _review_work(jid, start, end, note, state="reviewing", why=""):
     media.cut_wav(d / "audio.wav", clip, a, b)
     main = models.mlx_path(models.listen_key())          # short clips: always the best model, even on Quicker listening
     other = "mlx-community/whisper-large-v3-mlx" if "large-v3-mlx" not in main else "mlx-community/whisper-large-v3-turbo"
-    hint = memory.whisper_hint()
+    hint = ""                 # (see _relisten: a learned-word hint on a short clip gets repeated, not heard)
     plan = [{"how": "listened again (Thai)", "wav": str(clip), "model": main, "language": "th"},
             {"how": "listened again, any language", "wav": str(clip), "model": main, "language": None},
             {"how": "another model, any language", "wav": str(clip), "model": other, "language": None}]
@@ -1611,6 +1613,15 @@ def _review_work(jid, start, end, note, state="reviewing", why=""):
                     # your note made these; a guessed line stays open to the self-check and redo
                     **({} if guess else {"feedback": note or ""})})
         next_id += 1
+    from difflib import SequenceMatcher
+    staying = [l for l in ls if l not in inside or locked(l)]
+    squash = lambda t: re.sub(r"\s+", "", t or "")
+
+    def repeats(x):                            # a kept line already says this, at about the same time
+        return any(o["start"] < x["end"] + 0.5 and o["end"] > x["start"] - 0.5 and squash(x["th"]) and
+                   SequenceMatcher(None, squash(x["th"]), squash(o.get("th"))).ratio() > 0.6 for o in staying)
+    dropped = [x for x in new if repeats(x)]
+    new = [x for x in new if x not in dropped]
     gone = {l["id"] for l in inside if not locked(l)}
     ls = [l for l in ls if l["id"] not in gone] + new
     save_lines(jid, captions.fix_timing(ls))
@@ -1741,6 +1752,103 @@ def _retime_job(jid):
     _retime(jid, quiet=False)
     update(jid, busy=False, state="ready", label="", progress=None)
     log(jid, "Timing lined up. Lines you timed yourself were left as they were.", "done")
+
+
+# ---------------------------------------------------------------- careful: the weak spots, fixed like Fix a stretch
+
+CAREFUL_PER_HOUR = 15         # how many stretches a careful pass rebuilds per hour of video (at least 3)
+CAREFUL_MIN_SCORE = 2.0       # a stretch needs at least this much evidence (two signs) to be worth it
+
+
+def weak_spots(jid, limit=None):
+    """The stretches most likely to be wrong: [(start, end, why)], worst first. Signs per line (not lines you typed):
+    the listening wasn't sure, Claude thinks it's misheard, two people talk at once, too fast to read, or a long
+    line holding few words for the talking under it."""
+    job = load(jid)
+    ls = sorted(lines(jid), key=lambda l: l["start"])
+    dur = (job.get("media") or {}).get("duration") or (ls[-1]["end"] if ls else 0)
+    marks = []
+    for i, l in enumerate(ls):
+        if locked(l) or l.get("kind") == "sound":
+            continue
+        signs = []
+        if l.get("status") == "auto" and l.get("conf", 1) < UNSURE:
+            signs.append("words it wasn't sure of")
+        if l.get("suspect"):
+            signs.append("words that look misheard")
+        if any(o is not l and not locked(o) and o["start"] < l["end"] - 0.3 and o["end"] > l["start"] + 0.3
+               for o in ls[max(0, i - 3):i + 4]):          # (a talk-over you split yourself is already handled)
+            signs.append("two people talking at once")
+        zh = re.sub(r"[\s，。、！？：；…（）「」,.!?:;()]", "", l.get("zh") or "")
+        d = max(0.05, l["end"] - l["start"])
+        if zh and len(zh) / d > 9:
+            signs.append("lines too fast to read")
+        if d > 5 and captions.visible_len(l.get("th") or "") / d < THIN_LETTERS_PER_SECOND:
+            signs.append("talking with too few words")
+        if signs:
+            marks.append((l["start"], l["end"], signs))
+    spans = []                                 # nearby doubtful lines make one stretch (up to a minute)
+    for a, b, signs in marks:
+        if spans and a - spans[-1][1] < 4 and b - spans[-1][0] < 60:
+            spans[-1][1] = max(spans[-1][1], b)
+            spans[-1][2] += signs
+        else:
+            spans.append([a, b, list(signs)])
+    scored = []
+    for a, b, signs in spans:
+        score = len(signs) - 0.5 * signs.count("lines too fast to read")
+        if score >= CAREFUL_MIN_SCORE:
+            kinds = sorted(set(signs), key=signs.index)
+            prev = max((l["end"] for l in ls if l["end"] <= a + 0.01), default=0.0)
+            nxt = min((l["start"] for l in ls if l["start"] >= b - 0.01), default=dur or b + 0.8)
+            scored.append((score, max(0.0, prev, a - 0.8), min(nxt, b + 0.8), ", ".join(kinds)))
+    scored.sort(key=lambda x: -x[0])
+    n = limit or max(3, round(CAREFUL_PER_HOUR * (dur or 0) / 3600))
+    return [(round(a, 2), round(b, 2), why) for _, a, b, why in sorted(scored[:n], key=lambda x: x[1])]
+
+
+def _careful(jid, quiet=True):
+    """Fix a stretch, done for you on the weak spots. Never stops the run (quiet) unless asked. The timing is lined up
+    first: the spots are cut by time, and lines a second or two late would send it listening in the wrong place."""
+    _retime(jid)
+    spots = weak_spots(jid)
+    if not spots:
+        log(jid, "Careful pass: no weak spots stood out.")
+        return 0
+    log(jid, f"Careful pass: listening again to {len(spots)} weak spot{'s' if len(spots) > 1 else ''}: "
+             + "; ".join(f"{_mmss(a)}–{_mmss(b)} ({why})" for a, b, why in spots[:8]) + ("…" if len(spots) > 8 else ""))
+    before = {l["id"] for l in lines(jid)}
+    done = 0
+    for i, (a, b, why) in enumerate(spots):
+        _step(jid, load(jid)["state"], f"Careful pass: fixing weak spot {i + 1} of {len(spots)} ({_mmss(a)}–{_mmss(b)})")
+        try:
+            _review_work(jid, a, b, "", state=load(jid)["state"], why=f"the first pass looked doubtful here ({why})")
+            done += 1
+        except procs.Stopped:
+            raise
+        except Exception as e:
+            if not quiet:
+                raise
+            log(jid, f"Couldn't fix {_mmss(a)}–{_mmss(b)} ({e}).", "warn")
+    fresh = {l["id"] for l in lines(jid)} - before
+    if fresh:
+        _retime(jid, only=fresh)
+    log(jid, f"Careful pass: rebuilt {done} weak spot{'s' if done != 1 else ''}.")
+    return done
+
+
+def fix_weak_spots(jid):
+    """The button (More → Fix the weak spots): the careful pass on a finished video."""
+    if not weak_spots(jid):
+        raise JobError("No weak spots stand out: no stretches with several doubtful lines.")
+    _begin(jid, "checking", "Finding the weak spots")
+    _run(jid, _weak_spots_job)
+
+
+def _weak_spots_job(jid):
+    n = _careful(jid, quiet=True)
+    update(jid, busy=False, state="ready", label="", progress=None)
+    log(jid, f"Fixed {n} weak spot{'s' if n != 1 else ''}. They're marked as fixed: check them.", "done")
 
 
 def _check_refs(job):

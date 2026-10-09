@@ -260,3 +260,20 @@ class EditedParts(unittest.TestCase):
         self.assertEqual(jobs._spans(job, [], {"spans": [[30, 33], [1, 4], [3.5, 6], [50, 50.1]]}), [(1.0, 6.0), (30.0, 33.0)])
         with self.assertRaises(jobs.JobError):
             jobs._spans(job, [], {"spans": [[5, 5.1]]})
+
+
+class WeakSpots(unittest.TestCase):
+    def test_doubtful_lines_close_together_make_a_spot(self):
+        from ac import jobs
+        ls = [{"id": 1, "start": 10, "end": 12, "th": "ก", "zh": "嗨", "status": "auto", "conf": 0.3},
+              {"id": 2, "start": 12.5, "end": 14, "th": "ข", "zh": "好", "status": "auto", "conf": 0.9, "suspect": True},
+              {"id": 3, "start": 40, "end": 42, "th": "ค", "zh": "對", "status": "auto", "conf": 0.3},          # alone: not enough
+              {"id": 4, "start": 60, "end": 62, "th": "ง", "zh": "是", "status": "edited", "conf": 0.1, "suspect": True}]  # yours
+        old = jobs.load, jobs.lines
+        jobs.load, jobs.lines = (lambda jid: {"media": {"duration": 120}}), (lambda jid: ls)
+        try:
+            spots = jobs.weak_spots("x")
+        finally:
+            jobs.load, jobs.lines = old
+        self.assertEqual([(a, b) for a, b, _ in spots], [(9.2, 14.8)])
+        self.assertIn("wasn't sure", spots[0][2])

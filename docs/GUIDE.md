@@ -27,6 +27,7 @@ The captions sit next to the video and follow it as it plays. Click a line's tim
 
 - **Flag a line** (⚑): pick what's wrong (words, translation, timing, or other), write a few words, then press **Fix flagged lines**.
 - **Fix a stretch…**: mark **From here** and **To here**, tap what's wrong (two people at once, timing, skipped words, music, English, misheard words, translation) and add a note if you like; your own notes come back as one-tap choices. **Timing doesn't match** on its own only lines the stretch up with the speech (seconds, no Claude). Otherwise it listens to just that part again several ways (Thai, any language, another model, with the music removed) and rewrites those lines.
+- **Show the weak spots** (under More): the stretches most likely wrong (doubtful words, people talking over each other, long lines with few words), in time order. **Play** one; if it's wrong, **Fix this…** opens Fix a stretch on it with the reasons ticked. On older videos, run **Line up the timing** first so the spots are where the words really are.
 - **Find skipped talking**: finds talking that has no captions (using the voices, and the video's own subtitles if any) and fills it in.
 - **+ Caption at…**: type a caption yourself at the current moment.
 - **Timeline** (under the video): the sound wave with every caption as a block. Drag a block to move it, pull its edges to change when it starts or ends, click to jump there. Scroll to move along; ⌘-scroll or pinch to zoom.

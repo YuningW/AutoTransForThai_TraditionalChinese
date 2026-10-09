@@ -373,6 +373,10 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .find-row select.field { flex: 0 0 auto; }
 .line.match { box-shadow: inset 4px 0 0 #f5b400; }
 .line.match-on { background: color-mix(in srgb, #f5b400 14%, var(--sheet)); }
+.weak-head { display: flex; align-items: baseline; gap: 10px; }
+.weak-head .muted { flex: 1; font-size: 13px; }
+.weak-list li { grid-template-columns: auto 1fr auto auto; }
+.weak-list .cut-text { white-space: normal; }
 .reasons { display: flex; flex-wrap: wrap; gap: 6px; }
 .reasons:empty { display: none; }
 .reasons button { border: 1px solid var(--rule); background: var(--sheet); border-radius: 16px; padding: 4px 11px; font-size: 13px; color: var(--ink-2); }

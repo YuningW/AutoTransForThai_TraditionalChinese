@@ -242,6 +242,7 @@ function renderJob() {
   ["#addLineHere", "#addTouchHere", "#markRange"].forEach(s => { $(s).disabled = noVideo; });
   $("#fillSkipped").disabled = noVideo || !!job.busy || !(job.counts && job.counts.lines);
   $("#retime").disabled = noVideo || !!job.busy || !(job.counts && job.counts.lines);
+  $("#weakSpots").disabled = noVideo || !!job.busy || !(job.counts && job.counts.lines);
   $("#suggestTouches").disabled = !!job.busy || !(job.counts && job.counts.lines);
   if (!$("#rangeBox").hidden) renderRange();
   const music = !!job.options?.clean_voice, done = job.state === "ready" && !job.busy && job.counts?.lines;
@@ -1986,6 +1987,35 @@ function findStep(d) {
   li?.classList.add("match-on"); li?.scrollIntoView({ block: "center" });
   video.currentTime = l.start + 0.01;
 }
+// Weak spots: the stretches most likely wrong (doubtful words, people talking over each other…), listed so you
+// can check each and fix it with Fix a stretch, its reasons already ticked. You judge; it just finds them.
+const WEAK_REASON = { "two people talking at once": "overlap", "words that look misheard": "misheard",
+  "words it wasn't sure of": "misheard", "talking with too few words": "skipped" };
+async function showWeakSpots() {
+  try {
+    const spots = await api("GET", `/api/jobs/${job.id}/weak-spots`);
+    $("#weakSum").textContent = spots.length ? `${spots.length} found, in time order. Play one; if it's wrong, Fix this… opens Fix a stretch with the reasons ticked.` : "None stand out: no stretches with several doubtful lines.";
+    $("#weakList").replaceChildren(...spots.map(s => {
+      const li = document.createElement("li");
+      const t = document.createElement("span"); t.className = "cut-t"; t.textContent = `${fmtTime(s.start).replace(/\.\d$/, "")}–${fmtTime(s.end).replace(/\.\d$/, "")}`;
+      const why = document.createElement("span"); why.className = "cut-text"; why.textContent = s.why;
+      const play = document.createElement("button"); play.type = "button"; play.textContent = "Play";
+      play.onclick = () => { stopPreview(false); pv.on = true; pv.spans = [[s.start, s.end]]; pv.i = 0; previewJump(); video.play(); };
+      const fix = document.createElement("button"); fix.type = "button"; fix.textContent = "Fix this…";
+      fix.onclick = () => {
+        range.from = s.start; range.to = s.end; fixPicked.clear();
+        s.why.split(", ").forEach(w => WEAK_REASON[w] && fixPicked.add(WEAK_REASON[w]));
+        $("#rangeBox").hidden = false; renderReasons(); renderRange();
+        video.currentTime = s.start; $("#rangeBox").scrollIntoView({ block: "nearest" });
+      };
+      li.append(t, why, play, fix);
+      return li;
+    }));
+    $("#weakBox").hidden = false;
+  } catch (ex) { alert(ex.message); }
+}
+$("#weakSpots").onclick = showWeakSpots;
+$("#weakClose").onclick = () => { $("#weakBox").hidden = true; };
 $("#retime").onclick = async () => {
   try { await api("POST", `/api/jobs/${job.id}/retime`); refresh(job.id); } catch (ex) { alert(ex.message); }
 };
