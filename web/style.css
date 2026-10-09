@@ -153,6 +153,17 @@ textarea.field { resize: vertical; }
 .pv-bar #pvText { flex: 1; }
 .tl-part { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, #2f80ed 14%, transparent); border-left: 2px solid #2f80ed; border-right: 2px solid #2f80ed; pointer-events: none; }
 .part-box { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 8px; background: var(--paper); }
+.cut-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); }
+.cut-list:empty { display: none; }
+.cut-list li { display: grid; grid-template-columns: auto auto 1fr auto auto auto; gap: 6px; align-items: center; padding: 5px 8px; border-bottom: 1px solid var(--rule); font-size: 13px; }
+.cut-list li:last-child { border-bottom: 0; }
+.cut-list li.off { opacity: .45; }
+.cut-list li.off .cut-text { text-decoration: line-through; }
+.cut-list .cut-t { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.cut-list .cut-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ink-2); }
+.cut-list .nudge { display: flex; gap: 3px; align-items: center; font-size: 11px; color: var(--ink-3); }
+.cut-list button { border: 1px solid var(--rule); background: var(--paper); border-radius: 5px; padding: 1px 6px; font-size: 12px; color: var(--ink-2); }
+.cut-list li.playing { background: color-mix(in srgb, #2f80ed 10%, var(--sheet)); }
 .who-picks { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; }
 .who-picks label { display: flex; gap: 6px; align-items: center; }
 .who-picks i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }

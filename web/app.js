@@ -324,6 +324,7 @@ function renderLines() {
   if (!$("#findBox").hidden && $("#findText").value) find.hits.forEach(l => $(`.line[data-id="${l.id}"]`)?.classList.add("match"));
   updateFixbar();
   updateTooFast();
+  if (peopleOn() && !pv.on) showPeoplePick();       // the list of parts follows the captions
   for (const id of [...picked]) if (!lines.some(l => l.id === id)) picked.delete(id);
   renderBulk();
   current = null; tick();
@@ -626,8 +627,46 @@ function parseTime(s) {               // "1:23.4", "83.4", "1:02:03"
 function partOn() { return $("input[name=part]:checked").value === "part"; }
 function peopleOn() { return $("input[name=part]:checked").value === "people"; }
 const whoPicked = new Set();
-// the stretches where the ticked people talk, as the app will cut them (jobs.py _spans)
+// the stretches where the ticked people talk, as the app would cut them (jobs.py _spans); you can then drop
+// some or nudge their ends in the list (cuts), and that edited list is what's previewed and saved
+const cuts = { key: "", list: [] };
 function peopleSpans() {
+  const raw = rawPeopleSpans(), key = raw.map(s => s.join("-")).join(",");
+  if (key !== cuts.key) {
+    cuts.key = key;
+    const kept = raw.length ? cuts.restore : null;      // the parts as you left them last time
+    if (kept) cuts.restore = null;
+    cuts.list = raw.map(([a, b]) => {
+      const k = kept && kept.find(([x, y]) => x < b && y > a);
+      return kept ? (k ? { a: k[0], b: k[1], keep: true } : { a, b, keep: false }) : { a, b, keep: true };
+    });
+  }
+  return cuts.list.filter(c => c.keep && c.b - c.a >= 0.3).map(c => [c.a, c.b]);
+}
+function renderCuts() {
+  const full = video.duration || job?.media?.duration || 1e9;
+  $("#cutList").replaceChildren(...cuts.list.map((c, i) => {
+    const li = document.createElement("li"); li.classList.toggle("off", !c.keep); li.dataset.i = i;
+    const keep = document.createElement("input"); keep.type = "checkbox"; keep.checked = c.keep; keep.setAttribute("aria-label", `Keep part ${i + 1}`);
+    keep.onchange = () => { c.keep = keep.checked; showPeoplePick(); };
+    const play = document.createElement("button"); play.type = "button"; play.textContent = "Play"; play.title = "Play this part";
+    play.onclick = () => { stopPreview(false); pv.on = true; pv.spans = [[c.a, c.b]]; pv.i = 0; previewJump(); video.play(); };
+    const t = document.createElement("span"); t.className = "cut-t";
+    t.textContent = `${i + 1}. ${fmtTime(c.a)}–${fmtTime(c.b)}`;
+    const said = lines.filter(l => l.end > c.a && l.start < c.b).map(l => l.zh || l.th).join(" ");
+    const tx = document.createElement("span"); tx.className = "cut-text"; tx.textContent = said; tx.title = said;
+    const nudge = (label, title, f) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.onclick = () => { f(); showPeoplePick(); }; return b; };
+    const st = document.createElement("span"); st.className = "nudge";
+    st.append("start", nudge("−", "Start half a second earlier", () => { c.a = Math.max(0, c.a - 0.5); }),
+              nudge("+", "Start half a second later", () => { c.a = Math.min(c.b - 0.3, c.a + 0.5); }));
+    const en = document.createElement("span"); en.className = "nudge";
+    en.append("end", nudge("−", "End half a second earlier", () => { c.b = Math.max(c.a + 0.3, c.b - 0.5); }),
+              nudge("+", "End half a second later", () => { c.b = Math.min(full, c.b + 0.5); }));
+    li.append(keep, t, tx, st, en, play);
+    return li;
+  }));
+}
+function rawPeopleSpans() {
   const mine = lines.filter(l => whoPicked.has(l.speaker) && l.kind !== "sound").sort((a, b) => a.start - b.start), out = [];
   for (const l of mine) {
     const a = Math.max(0, l.start - 0.3), b = l.end + 0.5;
@@ -651,12 +690,16 @@ function showPeoplePick() {
     return lab;
   }));
   const sp = peopleSpans(), len = sp.reduce((s, [a, b]) => s + b - a, 0);
-  $("#whoLen").textContent = sp.length ? `${sp.length} stretch${sp.length === 1 ? "" : "es"}, ${fmtTime(len).replace(/\.\d$/, "")} in all, joined into one video.` : "Tick who to keep.";
+  const dropped = cuts.list.filter(c => !c.keep).length;
+  $("#whoLen").textContent = sp.length ? `${sp.length} part${sp.length === 1 ? "" : "s"}, ${fmtTime(len).replace(/\.\d$/, "")} in all, joined into one video` +
+    (dropped ? ` (${dropped} left out)` : "") + ". Untick a part to leave it out; − + move its start or end by half a second." : "Tick who to keep.";
+  renderCuts();
+  drawTimeline(video.currentTime, true);
 }
 function partNow() {                  // null: the whole video; false: not ready (says why)
   if (peopleOn()) {
-    if (!whoPicked.size || !peopleSpans().length) { alert("Tick the people to keep. Their lines need to be marked as theirs (the chip on each line)."); return false; }
-    return { people: [...whoPicked] };
+    if (!whoPicked.size || !peopleSpans().length) { alert("Tick the people to keep (and at least one part). Their lines need to be marked as theirs (the chip on each line)."); return false; }
+    return { people: [...whoPicked], spans: peopleSpans().map(([a, b]) => [Math.round(a * 1000) / 1000, Math.round(b * 1000) / 1000]) };
   }
   if (!partOn()) return null;
   if (part.start == null || part.end == null || part.end - part.start < 0.5) {
@@ -770,8 +813,8 @@ addEventListener("keydown", e => { if (e.key === "Escape" && pv.on) stopPreview(
 let cropPos = 0.5;
 function shapeNow() {
   const vertical = $("input[name=shape]:checked").value === "vertical";
-  const size = $("input[name=vsize]:checked").value;
-  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size } : { size };
+  const size = $("input[name=vsize]:checked").value, fade = $("#fadeJoins").checked;
+  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size, fade } : { size, fade };
 }
 function showShape() {
   const s = shapeNow();
@@ -793,10 +836,12 @@ function loadShape() {           // what you chose last time for this video
   $(`input[name=shape][value="${s.vertical ? "vertical" : "original"}"]`).checked = true;
   $(`input[name=fit][value="${s.fit === "fit" ? "fit" : "fill"}"]`).checked = true;
   cropPos = s.pos ?? 0.5;
+  $("#fadeJoins").checked = s.fade !== false;
   $(`input[name=vsize][value="${["720", "480"].includes(s.size) ? s.size : "full"}"]`).checked = true;
   showShape();
   part.start = job.part?.start ?? null; part.end = job.part?.end ?? null;     // what you saved last time
   whoPicked.clear(); (job.part?.people || []).forEach(id => whoPicked.add(id));
+  cuts.key = ""; cuts.list = []; cuts.restore = job.part?.spans || null;   // dropped parts stay out, nudged ends stay moved
   $(`input[name=part][value="${job.part?.people ? "people" : job.part ? "part" : "all"}"]`).checked = true;
   showPart(); showPeoplePick();
 }

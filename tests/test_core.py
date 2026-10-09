@@ -251,3 +251,12 @@ class SaveParts(unittest.TestCase):
         self.assertEqual(spans, [(0.7, 7.5), (29.7, 32.5)])           # 1-3 and 5.2-7 are close: one stretch
         out = jobs._joined(ls, spans)
         self.assertEqual([(x["th"], x["start"]) for x in out], [("a", 0.3), ("b", 2.8), ("c", 4.5), ("d", 7.1)])
+
+
+class EditedParts(unittest.TestCase):
+    def test_spans_from_the_page(self):
+        from ac import jobs
+        job = {"media": {"duration": 60}}
+        self.assertEqual(jobs._spans(job, [], {"spans": [[30, 33], [1, 4], [3.5, 6], [50, 50.1]]}), [(1.0, 6.0), (30.0, 33.0)])
+        with self.assertRaises(jobs.JobError):
+            jobs._spans(job, [], {"spans": [[5, 5.1]]})

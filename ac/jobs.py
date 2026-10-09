@@ -982,6 +982,18 @@ def _spans(job, ls, part):
     if not part:
         return None
     dur = (job.get("media") or {}).get("duration") or 1e9
+    if part.get("spans"):                     # the list of parts as you left it on the page (some dropped or nudged)
+        spans = []
+        for a, b in sorted((max(0.0, float(a)), min(dur, float(b))) for a, b in part["spans"]):
+            if b - a < 0.3:
+                continue
+            if spans and a <= spans[-1][1]:
+                spans[-1][1] = max(spans[-1][1], b)
+            else:
+                spans.append([a, b])
+        if not spans:
+            raise JobError("Every part was left out: keep at least one.")
+        return [(round(a, 3), round(b, 3)) for a, b in spans]
     if part.get("people"):
         who = set(part["people"])
         mine = sorted((l for l in ls if l.get("speaker") in who and l.get("kind") != "sound"), key=lambda l: l["start"])
@@ -1036,8 +1048,8 @@ def export(jid, srt=True, burn="zh", shape=None, part=None):
             p = folder / f"{base}.{suffix}.srt"
             p.write_text(captions.srt(ls, which), encoding="utf-8")
             files.append({"kind": f"srt-{which}", "path": str(p)})
-    remember = None if not spans else {"people": part["people"]} if part.get("people") else \
-        {"start": spans[0][0], "end": spans[0][1]}
+    remember = None if not spans else {"people": part["people"], "spans": [list(s) for s in spans]} \
+        if part.get("people") else {"start": spans[0][0], "end": spans[0][1]}
     update(jid, exports=files, export_folder=str(folder), part=remember)
     if burn in ("zh", "both", "th"):
         _begin(jid, "burning", "Drawing the captions")
@@ -1048,6 +1060,7 @@ def export(jid, srt=True, burn="zh", shape=None, part=None):
 
 
 def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
+    fade = (shape or {}).get("fade", True) and spans and len(spans) > 1      # smooth joins between parts
     job = load(jid)
     d = job_dir(jid)
     m = job["media"]
@@ -1083,7 +1096,8 @@ def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
         update(jid, label="Burning captions into the video" + (f" (part {i + 1} of {len(spans)})" if len(spans) > 1 else ""))
         dst = out if len(spans) == 1 else work / f"{i:04d}.mp4"
         media.burn(d / job["source"], lst, dst, b - a, lambda p: update(jid, progress=round(done + share * (0.3 + 0.7 * p), 3)),
-                   moves, plan, start=a, size=(shape or {}).get("size", "full"), canvas=(W, H))
+                   moves, plan, start=a, size=(shape or {}).get("size", "full"), canvas=(W, H),
+                   fade=(fade and i > 0, fade and i < len(spans) - 1))
         pieces.append(dst)
         done += share
     if len(pieces) > 1:
