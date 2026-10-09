@@ -79,6 +79,8 @@ Your usual people are remembered for new videos.
 
 The SRT files and the video then cover only what you chose, timed from 0:00.
 
+**Size**: **Original quality**, **Smaller, 720p** (about a third of the size, captions still sharp), or **Smallest, 480p** (for chats and quick checks). Each shows roughly how big the file will be for what you're saving.
+
 **Shape → Vertical 9:16** makes a 1080×1920 copy for Reels, TikTok and Shorts:
 - **Fill the screen, cut the sides**: drag the frame on the video to choose which part stays.
 - **Whole picture, blurred behind**: keeps all of it, in the middle.

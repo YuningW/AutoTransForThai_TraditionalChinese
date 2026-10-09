@@ -76,11 +76,26 @@ def browser_copy(src, info, dst):
           "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst)], "Making a playable copy")
 
 
-def burn(src, frames_list, dst, duration, on_progress, sprites=(), vertical=None, start=0.0):
+# Smaller files: the picture's short side and the video bitrate (kbit/s) for each size; None = full quality
+SIZES = {"full": None, "720": (720, 2500), "480": (480, 1000)}
+
+
+def out_size(w, h, size):
+    """(width, height) of the saved video for a size choice (never larger than the picture), even numbers."""
+    s = SIZES.get(size)
+    if not s or min(w, h) <= s[0]:
+        return w, h
+    k = s[0] / min(w, h)
+    return round(w * k / 2) * 2, round(h * k / 2) * 2
+
+
+def burn(src, frames_list, dst, duration, on_progress, sprites=(), vertical=None, start=0.0, size="full", canvas=None):
     """Lay the rendered caption frames (style.frames) over the video, then any moving items
     (style.sprites): each a still picture that ffmpeg moves/turns/squashes on every frame.
     vertical: a style.vertical_plan: the picture goes on a 9:16 canvas first (cropped, or on a blurred copy).
-    start: save from this moment (a part of the video); the frames and sprites are timed from it."""
+    start: save from this moment (a part of the video); the frames and sprites are timed from it.
+    size: "full", "720" or "480" (SIZES): a smaller file, scaled down after the captions are on; canvas: (w, h)
+    of the picture the captions were drawn for."""
     inputs = [*(["-ss", f"{start:.3f}"] if start else []), "-i", str(src), "-f", "concat", "-safe", "0", "-i", str(frames_list)]
     graph = ["[1:v]format=rgba[c]"]
     if vertical:
@@ -100,11 +115,19 @@ def burn(src, frames_list, dst, duration, on_progress, sprites=(), vertical=None
         graph.append(f"[{i + 2}:v]{pre}[s{i}]")
         graph.append(f"[v{i}][s{i}]overlay=x='{sp['x']}':y='{sp['y']}':eval=frame:format=auto:shortest=0:"
                      f"enable='between(t,{sp['start']:.3f},{sp['end']:.3f})'[v{i + 1}]")
-    graph.append(f"[v{len(sprites)}]format=yuv420p[v]")
+    small = SIZES.get(size) if canvas else None
+    if small:
+        ow, oh = out_size(*canvas, size)
+        graph.append(f"[v{len(sprites)}]scale={ow}:{oh}:flags=lanczos,format=yuv420p[v]")
+        quality = ["-b:v", f"{small[1]}k", "-maxrate", f"{int(small[1] * 1.5)}k", "-bufsize", f"{small[1] * 2}k"]
+        audio = ["-b:a", "128k" if small[0] >= 720 else "96k"]
+    else:
+        graph.append(f"[v{len(sprites)}]format=yuv420p[v]")
+        quality, audio = ["-q:v", "65"], ["-b:a", "192k"]
     args = [paths.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-progress", "pipe:1", "-nostats",
             *inputs, "-filter_complex", ";".join(graph), "-t", f"{duration:.3f}" if duration else "36000",
             "-map", "[v]", "-map", "0:a?",
-            "-c:v", "h264_videotoolbox", "-q:v", "65", "-c:a", "aac", "-b:a", "192k",
+            "-c:v", "h264_videotoolbox", *quality, "-c:a", "aac", *audio,
             "-movflags", "+faststart", str(dst)]
     p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     procs.register(p)

@@ -637,6 +637,7 @@ function peopleSpans() {
   return out;
 }
 function showPeoplePick() {
+  showSizes();
   $("#peopleBox").hidden = !peopleOn();
   if (!peopleOn()) return;
   const people = (job.speakers || []).filter(p => p.name);
@@ -663,7 +664,29 @@ function partNow() {                  // null: the whole video; false: not ready
   }
   return { start: Math.round(part.start * 1000) / 1000, end: Math.round(part.end * 1000) / 1000 };
 }
+// how big the saved video will be, roughly: the bitrates are media.py SIZES (+ sound); full ≈ like the original
+function savedSeconds() {
+  const full = job?.media?.duration || 0;
+  if (peopleOn()) return peopleSpans().reduce((s, [a, b]) => s + b - a, 0);
+  if (partOn() && part.start != null && part.end != null) return Math.max(0, part.end - part.start);
+  return full;
+}
+function showSizes() {
+  if (!job) return;
+  const sec = savedSeconds(), vertical = shapeNow().vertical;
+  const px = vertical ? 1080 * 1920 : (job.media?.width || 1920) * (job.media?.height || 1080);
+  // original quality: measured about 6.7 Mbit/s for 1080p (h264_videotoolbox -q:v 65), by the number of pixels
+  const est = { full: sec * (6700 * px / (1920 * 1080) + 192) / 8 / 1000, "720": sec * (2500 + 128) / 8 / 1000, "480": sec * (1000 + 96) / 8 / 1000 };
+  const short = vertical ? 1080 : Math.min(job.media?.width || 1920, job.media?.height || 1080);
+  if (short <= 720) est["720"] = Math.min(est["720"], est.full);
+  if (short <= 480) est["480"] = Math.min(est["480"], est.full);
+  const mb = x => x == null ? "" : x >= 1000 ? `about ${(x / 1000).toFixed(1)} GB` : `about ${Math.max(1, Math.round(x))} MB`;
+  $$("[data-est]").forEach(el => {
+    el.textContent = `(${mb(est[el.dataset.est])})`;
+  });
+}
 function showPart() {
+  showSizes();
   $("#partBox").hidden = !partOn();
   if (document.activeElement !== $("#partStart")) $("#partStart").value = part.start == null ? "" : fmtTime(part.start);
   if (document.activeElement !== $("#partEnd")) $("#partEnd").value = part.end == null ? "" : fmtTime(part.end);
@@ -709,10 +732,12 @@ $("#partPlay").onclick = () => {
 let cropPos = 0.5;
 function shapeNow() {
   const vertical = $("input[name=shape]:checked").value === "vertical";
-  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000 } : {};
+  const size = $("input[name=vsize]:checked").value;
+  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size } : { size };
 }
 function showShape() {
   const s = shapeNow();
+  showSizes();
   $("#fitRow").hidden = !s.vertical;
   $("#fitHint").hidden = !s.vertical || s.fit !== "fill";
   placeCrop();
@@ -730,13 +755,14 @@ function loadShape() {           // what you chose last time for this video
   $(`input[name=shape][value="${s.vertical ? "vertical" : "original"}"]`).checked = true;
   $(`input[name=fit][value="${s.fit === "fit" ? "fit" : "fill"}"]`).checked = true;
   cropPos = s.pos ?? 0.5;
+  $(`input[name=vsize][value="${["720", "480"].includes(s.size) ? s.size : "full"}"]`).checked = true;
   showShape();
   part.start = job.part?.start ?? null; part.end = job.part?.end ?? null;     // what you saved last time
   whoPicked.clear(); (job.part?.people || []).forEach(id => whoPicked.add(id));
   $(`input[name=part][value="${job.part?.people ? "people" : job.part ? "part" : "all"}"]`).checked = true;
   showPart(); showPeoplePick();
 }
-$$("input[name=shape], input[name=fit]").forEach(r => r.addEventListener("change", showShape));
+$$("input[name=shape], input[name=fit], input[name=vsize]").forEach(r => r.addEventListener("change", showShape));
 $("#cropWin").addEventListener("pointerdown", e => {
   e.preventDefault(); video.pause();
   const el = $("#cropWin"), x0 = e.clientX, p0 = cropPos, room = frame.w - el.offsetWidth;

@@ -1063,7 +1063,9 @@ def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
         plan = style.vertical_plan(W0, H0, shape.get("fit", "fill"), shape.get("pos", 0.5))
         all_touches = [style.on_vertical(t, plan) for t in all_touches]
         W, H, st = plan["w"], plan["h"], style.vertical_style(st)
-    label = {"zh": "中文字幕", "both": "中泰字幕", "th": "Thai captions"}[which] + (" 9x16" if plan else "")
+    size = (shape or {}).get("size", "full")
+    label = {"zh": "中文字幕", "both": "中泰字幕", "th": "Thai captions"}[which] + (" 9x16" if plan else "") + \
+        (f" {size}p" if size in media.SIZES and size != "full" else "")
     out = folder / f"{base} ({label}).mp4"
     total = sum(b - a for a, b in spans) or 1
     pieces, done = [], 0.0
@@ -1081,7 +1083,7 @@ def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
         update(jid, label="Burning captions into the video" + (f" (part {i + 1} of {len(spans)})" if len(spans) > 1 else ""))
         dst = out if len(spans) == 1 else work / f"{i:04d}.mp4"
         media.burn(d / job["source"], lst, dst, b - a, lambda p: update(jid, progress=round(done + share * (0.3 + 0.7 * p), 3)),
-                   moves, plan, start=a)
+                   moves, plan, start=a, size=(shape or {}).get("size", "full"), canvas=(W, H))
         pieces.append(dst)
         done += share
     if len(pieces) > 1:

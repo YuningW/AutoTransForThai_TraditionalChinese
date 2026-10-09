@@ -351,6 +351,12 @@
           <label><input type="radio" name="fit" value="fill" checked> Fill the screen, cut the sides</label>
           <label><input type="radio" name="fit" value="fit"> Whole picture, blurred behind</label>
         </div>
+        <div class="opt-row">
+          <span>Size</span>
+          <label><input type="radio" name="vsize" value="full" checked> Original quality <small class="muted" data-est="full"></small></label>
+          <label><input type="radio" name="vsize" value="720"> Smaller, 720p <small class="muted" data-est="720"></small></label>
+          <label><input type="radio" name="vsize" value="480"> Smallest, 480p <small class="muted" data-est="480"></small></label>
+        </div>
         <p class="muted" id="fitHint" hidden>Drag the frame on the video to choose which part stays. Captions sit higher, clear of the app's buttons.</p>
         <p class="muted">Uses the caption style above, the emoji and notes you kept, and your text and logo. SRT files (Thai, Chinese, both) are always saved too. They go to <span id="outDir">~/Movies/AutoCaption</span>.</p>
         <button class="primary" id="export" type="button">Save</button>
