@@ -1820,7 +1820,11 @@ async function route() {
 }
 $("#home").onclick = () => { location.hash = ""; };
 addEventListener("hashchange", route);
+// the page is always the newest; the app behind it only after you reopen it: say so when they differ
+function checkStale() { api("GET", "/api/status").then(s => { $("#updateBar").hidden = !s.stale; }).catch(() => {}); }
+setInterval(checkStale, 60000);
 api("GET", "/api/status").then(s => {
+  $("#updateBar").hidden = !s.stale;
   $("#outDir").textContent = s.out;
   if (!s.claude) $("#formError").textContent = "The Claude command-line tool isn't installed, so it can only listen, not translate. Install Claude Code and sign in once.";
 }).catch(() => {});

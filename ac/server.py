@@ -44,10 +44,19 @@ async def friendly(_request, exc):
     return JSONResponse({"error": str(exc)}, 400)
 
 
+def _code_stamp():
+    """When the app's own code last changed on disk."""
+    return max((f.stat().st_mtime for f in Path(__file__).parent.glob("*.*") if f.suffix in (".py", ".swift")), default=0)
+
+
+CODE_AT_START = _code_stamp()
+
+
 @app.get("/api/status")
 def status():
+    # stale: the app was updated after it started; the page asks you to reopen it (new buttons need the new code)
     return {"claude": bool(paths.claude()), "out": str(paths.OUT).replace(str(Path.home()), "~"),
-            "burn": "ffmpeg-full" in paths.ffmpeg()}
+            "burn": "ffmpeg-full" in paths.ffmpeg(), "stale": _code_stamp() > CODE_AT_START + 1}
 
 
 # ---------------------------------------------------------------- jobs
