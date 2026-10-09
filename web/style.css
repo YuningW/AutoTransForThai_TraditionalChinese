@@ -129,6 +129,25 @@ textarea.field { resize: vertical; }
 .touch.bubble { background: rgba(255,255,255,.93); color: #3a2a3a; }
 .touch.pending { opacity: .6; outline: 2px dashed var(--caption); outline-offset: 3px; }
 .touch.sel { outline: 2px solid var(--caption); outline-offset: 4px; }
+/* timeline: the sound, the captions as blocks, the playhead */
+.timeline { flex: none; display: flex; flex-direction: column; gap: 4px; }
+.tl-view { position: relative; height: 96px; background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; cursor: text; touch-action: none; user-select: none; }
+#tlWave { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tl-ticks { position: absolute; inset: 0 0 auto 0; height: 16px; font-size: 10px; color: var(--ink-3); pointer-events: none; }
+.tl-ticks span { position: absolute; top: 2px; padding-left: 3px; border-left: 1px solid var(--rule); line-height: 12px; }
+.tl-lines { position: absolute; left: 0; right: 0; top: 20px; bottom: 6px; }
+.tl-line { position: absolute; height: calc(50% - 3px); border-radius: 5px; background: color-mix(in srgb, var(--c, #6b7bd6) 30%, var(--sheet)); border: 1.5px solid var(--c, #6b7bd6);
+  font-size: 11px; line-height: 1.2; padding: 2px 7px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ink); cursor: grab; box-sizing: border-box; }
+.tl-line.row1 { top: calc(50% + 1px); }
+.tl-line.now { box-shadow: 0 0 0 2px var(--ink); }
+.tl-line.moving { cursor: grabbing; opacity: .85; }
+.tl-line .h { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
+.tl-line .h.l { left: 0; } .tl-line .h.r { right: 0; }
+.tl-line .h:hover { background: color-mix(in srgb, var(--c, #6b7bd6) 50%, transparent); }
+.tl-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #e5484d; pointer-events: none; }
+.tl-bar { display: flex; justify-content: space-between; gap: 10px; align-items: center; font-size: 12px; }
+.tl-zoom { display: flex; gap: 4px; flex: none; }
+.tl-zoom button { width: 26px; height: 22px; border: 1px solid var(--rule); background: var(--sheet); border-radius: 6px; color: var(--ink-2); }
 .view-opts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; align-items: center; }
 .drag-hint { font-size: 12.5px; flex-basis: 100%; }
 .view-opts label { display: flex; gap: 4px; align-items: center; }

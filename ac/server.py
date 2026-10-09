@@ -7,7 +7,7 @@ import webbrowser
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -149,6 +149,12 @@ class AgainIn(BaseModel):
 def listen_again(jid: str, body: AgainIn):
     jobs.listen_again(jid, body.clean_voice)
     return jobs.load(jid)
+
+
+@app.get("/api/jobs/{jid}/waveform")
+def waveform(jid: str):
+    return Response(jobs.waveform(jid), media_type="application/octet-stream",
+                    headers={"X-Rate": str(jobs.WAVE_RATE), "Cache-Control": "no-cache"})
 
 
 @app.get("/api/jobs/{jid}/video")

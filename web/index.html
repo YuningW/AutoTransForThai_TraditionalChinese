@@ -81,6 +81,18 @@
       <div id="ovOwn"></div>
       <div class="touch-layer" id="touchLayer"></div>
     </div>
+    <div class="timeline" id="timeline">
+      <div class="tl-view" id="tlView" aria-label="Timeline: the sound and the captions. Drag a caption to move it, or its edges to change when it starts or ends.">
+        <canvas id="tlWave"></canvas>
+        <div class="tl-ticks" id="tlTicks"></div>
+        <div class="tl-lines" id="tlLines"></div>
+        <div class="tl-head" id="tlHead"></div>
+      </div>
+      <div class="tl-bar">
+        <span class="muted">Drag a caption to move it; pull its edges to change its timing. Scroll to move along, ⌘-scroll or pinch to zoom.</span>
+        <span class="tl-zoom"><button type="button" id="tlOut" aria-label="Show more time">−</button><button type="button" id="tlIn" aria-label="Show less time">+</button></span>
+      </div>
+    </div>
     <div class="view-opts">
       <span class="muted">On the video:</span>
       <label><input type="radio" name="show" value="both" checked> 中文 + Thai</label>

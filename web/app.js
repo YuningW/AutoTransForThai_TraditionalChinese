@@ -205,7 +205,7 @@ async function refresh(jid) {
     if (first) { renderStylePanel(); renderPeople(); placeOverlay(); picked.clear(); renderSavedLogos(); }
     else if (job.speakers && !document.activeElement?.closest?.("#peopleList")) { /* keep the page's copy */ }
     if ((j.touches_rev || 0) !== touchesRev) await loadTouches();
-    if (firstVideo && j.media?.duration) { video.src = `/api/jobs/${jid}/video`; }
+    if (firstVideo && j.media?.duration) { video.src = `/api/jobs/${jid}/video`; loadWave(jid); }
     if (j.lines_rev !== linesRev) {
       if (editing()) dirtyWhileEditing = true;
       else { lines = await api("GET", `/api/jobs/${jid}/lines`); linesRev = j.lines_rev; renderLines(); renderRange(); }
@@ -845,6 +845,7 @@ function tick() {
     }
   }
   drawTouches(t);
+  drawTimeline(t);
 }
 function loop() { tick(); if (!video.paused) requestAnimationFrame(loop); }
 video.addEventListener("play", loop);
@@ -1470,6 +1471,149 @@ $("#redoTranslation").onclick = async () => {
   $("#memory").close();
   try { await api("POST", `/api/jobs/${job.id}/redo`, { what: "translation" }); refresh(job.id); } catch (ex) { alert(ex.message); }
 };
+
+/* ============================================================ timeline */
+
+// A strip under the video: the sound as a wave, each caption as a block you can drag (move it) or pull by
+// its edges (change when it starts or ends), and the playhead. It follows the video while it plays.
+const tl = { span: 20, from: 0, wave: null, rate: 50, drag: null, lastT: -1 };
+
+async function loadWave(jid) {
+  tl.wave = null; tl.from = 0;
+  try {
+    const r = await fetch(`/api/jobs/${jid}/waveform`);
+    if (r.ok) { tl.rate = +r.headers.get("X-Rate") || 50; tl.wave = new Uint8Array(await r.arrayBuffer()); }
+  } catch { /* the timeline still shows the captions */ }
+  drawTimeline(video.currentTime, true);
+}
+
+function tlWidth() { return $("#tlView").clientWidth || 600; }
+function tlTime(clientX) {
+  const b = $("#tlView").getBoundingClientRect();
+  return tl.from + (clientX - b.left) / b.width * tl.span;
+}
+function tlClamp() {
+  const dur = video.duration || job?.media?.duration || 0;
+  tl.span = Math.max(4, Math.min(tl.span, Math.max(8, dur || 600)));
+  tl.from = Math.max(0, Math.min(tl.from, Math.max(0, dur - tl.span)));
+}
+
+let tlLastKey = "";
+function drawTimeline(t, force) {
+  if (!job || $("#timeline").hidden) return;
+  if (!tl.drag && t !== tl.lastT) {                // the video moved: keep the playhead in view
+    if (t < tl.from || t > tl.from + tl.span * 0.85) tl.from = t - tl.span * 0.25;
+  }
+  tl.lastT = t;
+  tlClamp();
+  const W = tlWidth(), pps = W / tl.span;
+  $("#tlHead").style.left = `${(t - tl.from) * pps}px`;
+  const key = `${tl.from.toFixed(2)}|${tl.span}|${W}|${linesRev}|${current}|${tl.drag ? Math.random() : ""}`;
+  if (key === tlLastKey && !force) return;
+  tlLastKey = key;
+  drawWave(W, pps);
+  // time labels
+  const step = [1, 2, 5, 10, 15, 30, 60, 120, 300].find(s => s * pps >= 70) || 600;
+  const ticks = [];
+  for (let s = Math.ceil(tl.from / step) * step; s < tl.from + tl.span; s += step) {
+    const el = document.createElement("span"); el.style.left = `${(s - tl.from) * pps}px`; el.textContent = fmtTime(s).replace(/\.\d$/, "");
+    ticks.push(el);
+  }
+  $("#tlTicks").replaceChildren(...ticks);
+  // caption blocks; two people at once go on two rows
+  const shown = lines.filter(l => l.end > tl.from && l.start < tl.from + tl.span);
+  let rowEnd = -1;
+  const blocks = shown.map(l => {
+    const row = l.start < rowEnd - 0.05 ? 1 : 0;
+    if (!row) rowEnd = l.end;
+    const el = document.createElement("div");
+    el.className = `tl-line${row ? " row1" : ""}${linesAt(t).includes(l) ? " now" : ""}${tl.drag?.l === l ? " moving" : ""}`;
+    el.dataset.id = l.id;
+    el.style.left = `${(l.start - tl.from) * pps}px`;
+    el.style.width = `${Math.max(6, (l.end - l.start) * pps)}px`;
+    const c = (l.look && l.look.color) || ownColour(l);
+    if (c) el.style.setProperty("--c", c);
+    el.textContent = l.zh || l.th || "…";
+    el.title = `${fmtTime(l.start)}–${fmtTime(l.end)}  ${l.th || ""}\n${l.zh || ""}`;
+    const hl = document.createElement("i"), hr = document.createElement("i");
+    hl.className = "h l"; hr.className = "h r";
+    el.append(hl, hr);
+    return el;
+  });
+  $("#tlLines").replaceChildren(...blocks);
+}
+
+function drawWave(W, pps) {
+  const cv = $("#tlWave"), H = cv.clientHeight || 96, dpr = devicePixelRatio || 1;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  if (!tl.wave) return;
+  g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--ink-3").trim() || "#8a90ad";
+  g.globalAlpha = 0.45;
+  const mid = 20 + (H - 26) / 2, half = (H - 26) / 2;
+  for (let x = 0; x < W; x++) {
+    const a = Math.floor((tl.from + x / pps) * tl.rate), b = Math.max(a + 1, Math.floor((tl.from + (x + 1) / pps) * tl.rate));
+    let m = 0;
+    for (let i = a; i < b && i < tl.wave.length; i++) if (tl.wave[i] > m) m = tl.wave[i];
+    const h = Math.max(0.5, m / 255 * half);
+    g.fillRect(x, mid - h, 1, h * 2);
+  }
+  g.globalAlpha = 1;
+}
+
+$("#tlView").addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  const block = e.target.closest(".tl-line");
+  const l = block && lines.find(x => x.id === +block.dataset.id);
+  const mode = !l ? "pan" : e.target.classList.contains("l") ? "start" : e.target.classList.contains("r") ? "end" : "move";
+  tl.drag = { l, mode, x0: e.clientX, t0: tlTime(e.clientX), from0: tl.from, s0: l?.start, e0: l?.end, moved: false };
+  $("#tlView").setPointerCapture(e.pointerId);
+  if (l) video.pause();
+});
+$("#tlView").addEventListener("pointermove", e => {
+  const d = tl.drag;
+  if (!d) return;
+  if (Math.abs(e.clientX - d.x0) > 3) d.moved = true;
+  if (!d.moved) return;
+  const dt = tlTime(e.clientX) - d.t0, snap = v => Math.round(v * 20) / 20;
+  if (d.mode === "pan") { tl.from = d.from0 - (e.clientX - d.x0) / tlWidth() * tl.span; tlClamp(); }
+  else if (d.mode === "move") { const len = d.e0 - d.s0; d.l.start = Math.max(0, snap(d.s0 + dt)); d.l.end = d.l.start + len; }
+  else if (d.mode === "start") d.l.start = Math.max(0, Math.min(d.e0 - 0.2, snap(d.s0 + dt)));
+  else d.l.end = Math.max(d.s0 + 0.2, snap(d.e0 + dt));
+  if (d.l) { current = undefined; video.currentTime = d.mode === "end" ? d.l.end - 0.05 : d.l.start + 0.01; }
+  drawTimeline(video.currentTime, true);
+});
+$("#tlView").addEventListener("pointerup", e => {
+  const d = tl.drag;
+  tl.drag = null;
+  if (!d) return;
+  if (!d.moved) {                                     // a click: go there (and to that line in the list)
+    video.currentTime = d.l ? d.l.start + 0.01 : Math.max(0, tlTime(e.clientX));
+    if (d.l) $(`.line[data-id="${d.l.id}"]`)?.scrollIntoView({ block: "center" });
+  } else if (d.l && (d.l.start !== d.s0 || d.l.end !== d.e0)) {
+    const l = d.l, before = lines.map(x => x.id).join();
+    lines.sort((a, b) => a.start - b.start || a.end - b.end);
+    const reordered = lines.map(x => x.id).join() !== before;
+    patch(l, { start: Math.round(l.start * 1000) / 1000, end: Math.round(l.end * 1000) / 1000 })
+      .then(() => { if (reordered) renderLines(); });
+  }
+  drawTimeline(video.currentTime, true);
+});
+$("#tlView").addEventListener("wheel", e => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) {                       // pinch or ⌘-scroll: zoom around the pointer
+    const at = tlTime(e.clientX), f = Math.exp(e.deltaY * 0.01);
+    tl.span *= f; tl.from = at - (at - tl.from) * f;
+  } else tl.from += (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) / tlWidth() * tl.span;
+  tlClamp();
+  tl.drag = null;
+  drawTimeline(video.currentTime, true);
+}, { passive: false });
+$("#tlIn").onclick = () => { const mid = tl.from + tl.span / 2; tl.span /= 1.6; tl.from = mid - tl.span / 2; tlClamp(); drawTimeline(video.currentTime, true); };
+$("#tlOut").onclick = () => { const mid = tl.from + tl.span / 2; tl.span *= 1.6; tl.from = mid - tl.span / 2; tlClamp(); drawTimeline(video.currentTime, true); };
+new ResizeObserver(() => drawTimeline(video.currentTime, true)).observe($("#tlView"));
 
 /* ============================================================ routing */
 

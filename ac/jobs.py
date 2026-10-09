@@ -807,8 +807,33 @@ def edit_line(jid, lid, changes):
                 l.pop("look", None)
         if l["end"] <= l["start"]:
             l["end"] = round(l["start"] + 0.5, 3)
+        if "start" in changes:
+            ls.sort(key=lambda x: (x["start"], x["end"]))      # moved on the timeline: keep the order by time
         save_lines(jid, ls)
         return l
+
+
+WAVE_RATE = 50                       # waveform points per second, for the timeline
+
+
+def waveform(jid):
+    """The sound's loudness, WAVE_RATE points a second, 0-255 each: the timeline draws it under the captions."""
+    d = job_dir(jid)
+    wav, out = d / "audio.wav", d / "waveform.bin"
+    if not wav.exists():
+        raise JobError("This video has no sound yet.")
+    if out.exists() and out.stat().st_mtime >= wav.stat().st_mtime:
+        return out.read_bytes()
+    import numpy as np
+    from . import listen
+    x = np.abs(listen.load_wav(wav))
+    step = listen.SR // WAVE_RATE
+    n = len(x) // step
+    peaks = x[:n * step].reshape(n, step).max(axis=1)
+    top = float(np.percentile(peaks, 99.5)) or 1.0
+    data = (np.sqrt(np.clip(peaks / top, 0, 1)) * 255).astype(np.uint8).tobytes()
+    out.write_bytes(data)
+    return data
 
 
 def redo(jid, what):
