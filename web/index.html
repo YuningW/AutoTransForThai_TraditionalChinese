@@ -90,6 +90,7 @@
         <canvas id="tlWave"></canvas>
         <div class="tl-ticks" id="tlTicks"></div>
         <div class="tl-lines" id="tlLines"></div>
+        <div class="tl-part" id="tlPart" hidden></div>
         <div class="tl-head" id="tlHead"></div>
       </div>
       <div class="tl-bar">
@@ -315,6 +316,25 @@
           <label><input type="radio" name="burn" value="zh" checked> 中文</label>
           <label><input type="radio" name="burn" value="both"> 中文 + Thai</label>
           <label><input type="radio" name="burn" value="none"> Don't</label>
+        </div>
+        <div class="opt-row">
+          <span>What to save</span>
+          <label><input type="radio" name="part" value="all" checked> The whole video</label>
+          <label><input type="radio" name="part" value="part"> Just a part</label>
+        </div>
+        <div class="part-box" id="partBox" hidden>
+          <div class="range-ends">
+            <button class="secondary" type="button" id="partFrom">From here</button>
+            <input class="field part-t" id="partStart" aria-label="Part starts at" placeholder="0:00.0">
+            <span class="muted">to</span>
+            <input class="field part-t" id="partEnd" aria-label="Part ends at" placeholder="0:00.0">
+            <button class="secondary" type="button" id="partTo">To here</button>
+          </div>
+          <div class="range-ends">
+            <button class="ghost" type="button" id="partTicked" title="From the first ticked line to the last">Use the ticked lines</button>
+            <button class="ghost" type="button" id="partPlay">Play it</button>
+            <span class="muted" id="partLen"></span>
+          </div>
         </div>
         <div class="opt-row" id="shapeRow">
           <span>Shape</span>

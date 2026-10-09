@@ -609,10 +609,68 @@ $("#export").onclick = async () => {
   const burn = $("input[name=burn]:checked").value;
   try {
     await saveStyleNow();
-    await api("POST", `/api/jobs/${job.id}/export`, { srt: true, burn, shape: shapeNow() });
+    const part = partNow();
+    if (part === false) return;
+    await api("POST", `/api/jobs/${job.id}/export`, { srt: true, burn, shape: shapeNow(), part });
     refresh(job.id);
   } catch (ex) { alert(ex.message); }
 };
+
+// Just a part of the video: from..to, marked with the playhead, typed, or the ticked lines' span
+const part = { start: null, end: null };
+function parseTime(s) {               // "1:23.4", "83.4", "1:02:03"
+  const bits = String(s || "").trim().split(":").map(Number);
+  if (!bits.length || bits.some(isNaN)) return null;
+  return bits.reduce((t, x) => t * 60 + x, 0);
+}
+function partOn() { return $("input[name=part]:checked").value === "part"; }
+function partNow() {                  // null: the whole video; false: not ready (says why)
+  if (!partOn()) return null;
+  if (part.start == null || part.end == null || part.end - part.start < 0.5) {
+    alert("Choose the part to save: From here and To here (at least half a second)."); return false;
+  }
+  return { start: Math.round(part.start * 1000) / 1000, end: Math.round(part.end * 1000) / 1000 };
+}
+function showPart() {
+  $("#partBox").hidden = !partOn();
+  if (document.activeElement !== $("#partStart")) $("#partStart").value = part.start == null ? "" : fmtTime(part.start);
+  if (document.activeElement !== $("#partEnd")) $("#partEnd").value = part.end == null ? "" : fmtTime(part.end);
+  const ok = part.start != null && part.end != null && part.end > part.start;
+  const n = ok ? lines.filter(l => l.end > part.start && l.start < part.end).length : 0;
+  $("#partLen").textContent = ok ? `${fmtTime(part.end - part.start)} long, ${n} caption${n === 1 ? "" : "s"}` : "";
+  drawTimeline(video.currentTime, true);
+}
+function setPart(k, v) {
+  part[k] = Math.max(0, Math.min(video.duration || 1e9, v));
+  if (part.start != null && part.end != null && part.end < part.start) [part.start, part.end] = [part.end, part.start];
+  showPart();
+}
+$$("input[name=part]").forEach(r => r.addEventListener("change", () => {
+  if (partOn() && part.start == null) {            // a start: the ticked lines, or a minute from the playhead
+    const ticked = lines.filter(l => picked.has(l.id));
+    if (ticked.length) { part.start = ticked[0].start; part.end = ticked[ticked.length - 1].end; }
+    else { part.start = video.currentTime; part.end = Math.min(video.duration || 1e9, video.currentTime + 60); }
+  }
+  showPart();
+}));
+$("#partFrom").onclick = () => setPart("start", video.currentTime);
+$("#partTo").onclick = () => setPart("end", video.currentTime);
+$("#partTicked").onclick = () => {
+  const ticked = lines.filter(l => picked.has(l.id));
+  if (!ticked.length) { alert("Tick lines in the list first (Shift-click ticks a range)."); return; }
+  part.start = ticked[0].start; part.end = ticked[ticked.length - 1].end; showPart();
+};
+$("#partPlay").onclick = () => {
+  if (part.start == null) return;
+  video.currentTime = part.start; video.play();
+  const stop = () => { if (video.currentTime >= part.end) { video.pause(); video.removeEventListener("timeupdate", stop); } };
+  video.addEventListener("timeupdate", stop);
+};
+["partStart", "partEnd"].forEach(id => $("#" + id).addEventListener("change", e => {
+  const t = parseTime(e.target.value);
+  if (t == null) { showPart(); return; }
+  setPart(id === "partStart" ? "start" : "end", t);
+}));
 
 // Vertical 9:16: "fill" crops the sides (the frame on the video picks which part stays), "fit" keeps all of it
 let cropPos = 0.5;
@@ -640,6 +698,9 @@ function loadShape() {           // what you chose last time for this video
   $(`input[name=fit][value="${s.fit === "fit" ? "fit" : "fill"}"]`).checked = true;
   cropPos = s.pos ?? 0.5;
   showShape();
+  part.start = job.part?.start ?? null; part.end = job.part?.end ?? null;     // the part you saved last time
+  $(`input[name=part][value="${job.part ? "part" : "all"}"]`).checked = true;
+  showPart();
 }
 $$("input[name=shape], input[name=fit]").forEach(r => r.addEventListener("change", showShape));
 $("#cropWin").addEventListener("pointerdown", e => {
@@ -1595,7 +1656,10 @@ function drawTimeline(t, force) {
   tlClamp();
   const W = tlWidth(), pps = W / tl.span;
   $("#tlHead").style.left = `${(t - tl.from) * pps}px`;
-  const key = `${tl.from.toFixed(2)}|${tl.span}|${W}|${linesRev}|${current}|${tl.drag ? Math.random() : ""}`;
+  const pb = $("#tlPart"), showP = partOn() && part.start != null && part.end != null;
+  pb.hidden = !showP;
+  if (showP) Object.assign(pb.style, { left: `${(part.start - tl.from) * pps}px`, width: `${Math.max(2, (part.end - part.start) * pps)}px` });
+  const key = `${tl.from.toFixed(2)}|${tl.span}|${W}|${linesRev}|${current}|${tl.drag ? Math.random() : ""}|${part.start}|${part.end}`;
   if (key === tlLastKey && !force) return;
   tlLastKey = key;
   drawWave(W, pps);

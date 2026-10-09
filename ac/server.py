@@ -201,11 +201,12 @@ class ExportIn(BaseModel):
     srt: bool = True
     burn: str = "zh"          # zh | both | th | none
     shape: dict | None = None  # {"vertical": true, "fit": "fill" | "fit", "pos": 0..1}
+    part: dict | None = None   # {"start", "end"}: just this part of the video
 
 
 @app.post("/api/jobs/{jid}/export")
 def export(jid: str, body: ExportIn):
-    return jobs.export(jid, body.srt, body.burn, body.shape)
+    return jobs.export(jid, body.srt, body.burn, body.shape, body.part)
 
 
 class StyleIn(BaseModel):

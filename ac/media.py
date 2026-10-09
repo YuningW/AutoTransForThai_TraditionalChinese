@@ -76,11 +76,12 @@ def browser_copy(src, info, dst):
           "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst)], "Making a playable copy")
 
 
-def burn(src, frames_list, dst, duration, on_progress, sprites=(), vertical=None):
+def burn(src, frames_list, dst, duration, on_progress, sprites=(), vertical=None, start=0.0):
     """Lay the rendered caption frames (style.frames) over the video, then any moving items
     (style.sprites): each a still picture that ffmpeg moves/turns/squashes on every frame.
-    vertical: a style.vertical_plan: the picture goes on a 9:16 canvas first (cropped, or on a blurred copy)."""
-    inputs = ["-i", str(src), "-f", "concat", "-safe", "0", "-i", str(frames_list)]
+    vertical: a style.vertical_plan: the picture goes on a 9:16 canvas first (cropped, or on a blurred copy).
+    start: save from this moment (a part of the video); the frames and sprites are timed from it."""
+    inputs = [*(["-ss", f"{start:.3f}"] if start else []), "-i", str(src), "-f", "concat", "-safe", "0", "-i", str(frames_list)]
     graph = ["[1:v]format=rgba[c]"]
     if vertical:
         W, H = vertical["w"], vertical["h"]
