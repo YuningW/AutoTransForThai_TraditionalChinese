@@ -147,6 +147,11 @@ textarea.field { resize: vertical; }
 .tl-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #e5484d; pointer-events: none; }
 .tl-bar { display: flex; justify-content: space-between; gap: 10px; align-items: center; font-size: 12px; }
 .tl-zoom { display: flex; gap: 4px; flex: none; }
+.tl-zoom .keys-btn { width: auto; padding: 0 8px; font-size: 12px; }
+.keys table { border-collapse: collapse; font-size: 14px; }
+.keys td { padding: 5px 14px 5px 0; vertical-align: top; }
+kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 4px; padding: 2px 5px; background: var(--sheet); color: var(--ink-2); }
+.look-actions { flex-wrap: wrap; }
 .tl-zoom button { width: 26px; height: 22px; border: 1px solid var(--rule); background: var(--sheet); border-radius: 6px; color: var(--ink-2); }
 .view-opts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; align-items: center; }
 .drag-hint { font-size: 12.5px; flex-basis: 100%; }

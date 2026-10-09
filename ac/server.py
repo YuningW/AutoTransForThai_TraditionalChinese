@@ -220,6 +220,20 @@ def add_line(jid: str, body: NewLineIn):
     return jobs.add_line(jid, body.start, body.end, body.th, body.zh)
 
 
+class CutIn(BaseModel):
+    at: float
+
+
+@app.post("/api/jobs/{jid}/lines/{lid}/cut")
+def cut_line(jid: str, lid: int, body: CutIn):
+    return jobs.cut_line(jid, lid, body.at)
+
+
+@app.post("/api/jobs/{jid}/lines/{lid}/join")
+def join_line(jid: str, lid: int):
+    return jobs.join_line(jid, lid)
+
+
 @app.post("/api/jobs/{jid}/lines/{lid}/split")
 def split_line(jid: str, lid: int):
     return jobs.split_speakers(jid, lid)

@@ -90,7 +90,7 @@
       </div>
       <div class="tl-bar">
         <span class="muted">Drag a caption to move it; pull its edges to change its timing. Scroll to move along, ⌘-scroll or pinch to zoom.</span>
-        <span class="tl-zoom"><button type="button" id="tlOut" aria-label="Show more time">−</button><button type="button" id="tlIn" aria-label="Show less time">+</button></span>
+        <span class="tl-zoom"><button type="button" class="keys-btn" id="keysBtn">Shortcuts</button><button type="button" id="tlOut" aria-label="Show more time">−</button><button type="button" id="tlIn" aria-label="Show less time">+</button></span>
       </div>
     </div>
     <div class="view-opts">
@@ -375,6 +375,26 @@
   </div>
 </dialog>
 
+<dialog id="keys" class="memory keys">
+  <form method="dialog" class="mem-head">
+    <h2>Keyboard shortcuts</h2>
+    <button class="ghost" value="close" aria-label="Close">Close</button>
+  </form>
+  <p class="muted">They work whenever you're not typing. “The line” is the one at the playhead.</p>
+  <table>
+    <tr><td><kbd>Space</kbd></td><td>Play or pause</td></tr>
+    <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Back or forward 1 second (with <kbd>Shift</kbd>: 5 seconds)</td></tr>
+    <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Previous or next line</td></tr>
+    <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>The line starts here, or ends here</td></tr>
+    <tr><td><kbd>S</kbd></td><td>Split the line at the playhead</td></tr>
+    <tr><td><kbd>M</kbd></td><td>Join the line with the next one</td></tr>
+    <tr><td><kbd>Enter</kbd></td><td>Edit the line's Chinese (<kbd>Shift</kbd> <kbd>Tab</kbd> for the Thai, <kbd>Enter</kbd> to finish)</td></tr>
+    <tr><td><kbd>F</kbd></td><td>Flag the line</td></tr>
+    <tr><td><kbd>Delete</kbd></td><td>Delete the line</td></tr>
+    <tr><td><kbd>?</kbd></td><td>This list</td></tr>
+  </table>
+</dialog>
+
 <dialog id="settings" class="memory">
   <form method="dialog" class="mem-head">
     <h2>Models</h2>
@@ -449,6 +469,8 @@
           <button type="button" data-t="end=">End here</button><button type="button" data-t="end-">End −0.2s</button><button type="button" data-t="end+">End +0.2s</button>
         </div></div>
       <div class="look-actions">
+        <button type="button" class="cut-here">Split at the playhead <kbd>S</kbd></button>
+        <button type="button" class="join-next">Join with the next line <kbd>M</kbd></button>
         <button type="button" class="look-apply" hidden></button>
         <button type="button" class="look-reset">Make it like the rest</button>
       </div>

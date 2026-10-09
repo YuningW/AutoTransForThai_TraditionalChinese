@@ -201,3 +201,30 @@ def parse_srt(text):
 
 def looks_like_srt(text):
     return bool(re.search(r"\d+:\d+:\d+[,.]\d+\s*-->", text or ""))
+
+
+_BREAK_AFTER = set("，。、！？!?,;；：:…）)」』 ")
+
+
+def split_text(text, frac, thai=False):
+    """Cut text about `frac` of the way through, at the nearest sensible place: a space or punctuation, and
+    for Thai never inside a word. Returns (first, second)."""
+    text = (text or "").strip()
+    if not text:
+        return "", ""
+    want = max(1, min(len(text) - 1, round(len(text) * frac)))
+    if thai:
+        from pythainlp.tokenize import word_tokenize
+        cuts, pos = [], 0
+        for w in word_tokenize(text, keep_whitespace=True):
+            pos += len(w)
+            cuts.append(pos)
+    else:
+        cuts = list(range(1, len(text)))
+    cuts = [c for c in cuts if 0 < c < len(text)] or [want]
+    nice = [c for c in cuts if text[c - 1] in _BREAK_AFTER or text[c] == " "]
+    best = min(cuts, key=lambda c: abs(c - want))
+    near = [c for c in nice if abs(c - want) <= max(3, len(text) * 0.15)]
+    if near:
+        best = min(near, key=lambda c: abs(c - want))
+    return text[:best].strip(), text[best:].strip()

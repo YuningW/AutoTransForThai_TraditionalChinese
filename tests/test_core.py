@@ -221,3 +221,11 @@ class LineLook(unittest.TestCase):
     def test_hidden_line_and_bad_values(self):
         self.assertIsNone(style.caption_block([{"start": 0, "end": 1, "zh": "嗨", "look": {"show": "none"}}], "zh", 1920, 1080, style.merged({})))
         self.assertEqual(style.clean_look({"size": 1.0, "color": "red", "position": "custom", "y": 5}), {"position": "custom", "y": 0.99})
+
+
+class SplitText(unittest.TestCase):
+    def test_cut_at_punctuation_and_thai_words(self):
+        self.assertEqual(captions.split_text("真的假的？我們今天去吃", 0.4), ("真的假的？", "我們今天去吃"))
+        a, b = captions.split_text("หนูก็มีเหมือนกัน หนูก็ว่า ขอให้มัน", 0.5, thai=True)
+        self.assertEqual((a + " " + b).split(), "หนูก็มีเหมือนกัน หนูก็ว่า ขอให้มัน".split())
+        self.assertTrue(a and b)

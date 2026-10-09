@@ -1326,6 +1326,50 @@ def _guess_job(jid):
     log(jid, f"Guessed who says {n} lines (dashed chips). Correct any that are wrong.", "done")
 
 
+def cut_line(jid, lid, at):
+    """One line into two at a moment in it; the Thai and Chinese are cut at about the same place."""
+    with _lock(jid):
+        ls = lines(jid)
+        l = next((x for x in ls if x["id"] == lid), None)
+        if not l:
+            raise JobError("That line is gone.")
+        at = float(at)
+        if not (l["start"] + 0.2 <= at <= l["end"] - 0.2):
+            raise JobError("Put the playhead inside the line (not right at its edges) to split it there.")
+        frac = (at - l["start"]) / (l["end"] - l["start"])
+        th1, th2 = captions.split_text(l.get("th", ""), frac, thai=True)
+        zh1, zh2 = captions.split_text(l.get("zh", ""), frac)
+        keep = {k: v for k, v in l.items() if k not in ("explain", "feedback", "th_before", "zh_before", "heard", "attempts", "flag", "note")}
+        first = {**keep, "end": round(at, 3), "th": th1, "zh": zh1, "status": "edited"}
+        second = {**keep, "id": max(x["id"] for x in ls) + 1, "start": round(at, 3), "th": th2, "zh": zh2, "status": "edited"}
+        i = ls.index(l)
+        ls[i:i + 1] = [first, second]
+        save_lines(jid, ls)
+        return [first, second]
+
+
+def join_line(jid, lid):
+    """A line and the next one (by time) become one."""
+    with _lock(jid):
+        ls = sorted(lines(jid), key=lambda x: (x["start"], x["end"]))
+        i = next((k for k, x in enumerate(ls) if x["id"] == lid), None)
+        if i is None:
+            raise JobError("That line is gone.")
+        if i + 1 >= len(ls):
+            raise JobError("This is the last line: there's nothing after it to join.")
+        a, b = ls[i], ls[i + 1]
+        def glue(x, y):                       # a space between, unless the first ends with punctuation (，！？)
+            x, y = (x or "").strip(), (y or "").strip()
+            return x + y if x and x[-1] in "，。、！？：；…）」" else " ".join(t for t in (x, y) if t)
+        a.update(start=min(a["start"], b["start"]), end=max(a["end"], b["end"]), th=glue(a.get("th"), b.get("th")),
+                 zh=glue(a.get("zh"), b.get("zh")), status="edited")
+        if not a.get("speaker") and b.get("speaker"):
+            a["speaker"] = b["speaker"]
+        del ls[i + 1]
+        save_lines(jid, ls)
+        return a
+
+
 def delete_line(jid, lid):
     with _lock(jid):
         ls = lines(jid)

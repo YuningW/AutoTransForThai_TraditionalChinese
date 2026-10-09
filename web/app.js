@@ -441,6 +441,8 @@ ol.addEventListener("click", e => {
   const sb = e.target.closest(".lookbox .seg button");
   if (sb) { setLook(l, { [sb.closest(".seg").dataset.k]: sb.dataset.v }); video.pause(); video.currentTime = Math.min(l.end - 0.05, l.start + 0.3); return; }
   if (e.target.closest(".look-color-reset")) { setLook(l, { color: "" }); return; }
+  if (e.target.closest(".cut-here")) { cutLine(l); return; }
+  if (e.target.closest(".join-next")) { joinLine(l); return; }
   if (e.target.closest(".look-reset")) { setLook(l, {}, false); l.look = {}; patch(l, { look: {} }); return; }
   if (e.target.closest(".look-apply")) {
     const others = lines.filter(x => picked.has(x.id) && x.id !== l.id);
@@ -1614,6 +1616,63 @@ $("#tlView").addEventListener("wheel", e => {
 $("#tlIn").onclick = () => { const mid = tl.from + tl.span / 2; tl.span /= 1.6; tl.from = mid - tl.span / 2; tlClamp(); drawTimeline(video.currentTime, true); };
 $("#tlOut").onclick = () => { const mid = tl.from + tl.span / 2; tl.span *= 1.6; tl.from = mid - tl.span / 2; tlClamp(); drawTimeline(video.currentTime, true); };
 new ResizeObserver(() => drawTimeline(video.currentTime, true)).observe($("#tlView"));
+
+/* ============================================================ splitting, joining, keyboard */
+
+async function reloadLines() {
+  lines = await api("GET", `/api/jobs/${job.id}/lines`); linesRev = -1; renderLines(); drawTimeline(video.currentTime, true);
+}
+async function cutLine(l) {
+  try { await api("POST", `/api/jobs/${job.id}/lines/${l.id}/cut`, { at: Math.round(video.currentTime * 1000) / 1000 }); await reloadLines(); }
+  catch (ex) { alert(ex.message); }
+}
+async function joinLine(l) {
+  try { await api("POST", `/api/jobs/${job.id}/lines/${l.id}/join`); await reloadLines(); }
+  catch (ex) { alert(ex.message); }
+}
+
+// the line at the playhead, else the last one before it
+function lineHere() {
+  const t = video.currentTime, on = linesAt(t);
+  if (on.length) return on[on.length - 1];
+  let best = null;
+  for (const l of lines) { if (l.start <= t) best = l; else break; }
+  return best;
+}
+
+document.addEventListener("keydown", e => {
+  if (!job || $("#jobView").hidden || e.metaKey || e.ctrlKey || e.altKey) return;
+  const el = e.target;
+  const typing = el.isContentEditable || /^(TEXTAREA|SELECT|VIDEO)$/.test(el.tagName) ||
+    (el.tagName === "INPUT" && !/^(radio|checkbox|range|color)$/.test(el.type));
+  if (typing || document.querySelector("dialog[open]")) return;
+  if (/^(BUTTON|INPUT|SUMMARY)$/.test(el.tagName) && (e.key === " " || e.key === "Enter")) return;   // let buttons do their own thing
+  const l = lineHere(), t = video.currentTime;
+  const go = s => { video.currentTime = Math.max(0, Math.min(video.duration || 1e9, s)); };
+  let done = true;
+  switch (e.key) {
+    case " ": video.paused ? video.play() : video.pause(); break;
+    case "ArrowLeft": go(t - (e.shiftKey ? 5 : 1)); break;
+    case "ArrowRight": go(t + (e.shiftKey ? 5 : 1)); break;
+    case "ArrowUp": case "ArrowDown": {
+      const i = l ? lines.indexOf(l) : -1;
+      const n = e.key === "ArrowUp" ? (l && t > l.start + 0.3 ? l : lines[Math.max(0, i - 1)]) : lines[Math.min(lines.length - 1, i + 1)];
+      if (n) { go(n.start + 0.01); $(`.line[data-id="${n.id}"]`)?.scrollIntoView({ block: "center" }); }
+      break;
+    }
+    case "[": if (l) patch(l, { start: Math.round(t * 1000) / 1000 }).then(() => drawTimeline(t, true)); break;
+    case "]": if (l) patch(l, { end: Math.round(t * 1000) / 1000 }).then(() => drawTimeline(t, true)); break;
+    case "s": case "S": if (l) cutLine(l); break;
+    case "m": case "M": if (l) joinLine(l); break;
+    case "f": case "F": if (l) { const li = $(`.line[data-id="${l.id}"]`); li?.scrollIntoView({ block: "center" }); $(".flag", li)?.click(); } break;
+    case "Enter": if (l) { video.pause(); const z = $(`.line[data-id="${l.id}"] .zh`); z?.scrollIntoView({ block: "center" }); z?.focus(); } break;
+    case "Delete": case "Backspace": if (l) $(`.line[data-id="${l.id}"] .delline`)?.click(); break;
+    case "?": $("#keys").showModal(); break;
+    default: done = false;
+  }
+  if (done) e.preventDefault();
+});
+$("#keysBtn").onclick = () => $("#keys").showModal();
 
 /* ============================================================ routing */
 
