@@ -1,4 +1,5 @@
 """Local web app: python -m ac  ->  http://127.0.0.1:8771"""
+import json
 import os
 import subprocess
 import sys
@@ -515,27 +516,71 @@ def reveal(body: PathIn):
     return {"ok": True}
 
 
+class QuitIn(BaseModel):
+    force: bool = False
+
+
+@app.post("/api/quit")
+def quit_app(body: QuitIn):
+    """Close AutoCaption (the page's Quit button, or a newer copy starting). Not while a video is being worked on,
+    unless forced: that step would have to be run again."""
+    busy = [j for j in jobs.listing() if j.get("busy")]
+    if busy and not body.force:
+        raise HTTPException(409, "A video is still being worked on (" + (busy[0].get("title") or "a video")[:60] + ").")
+    for j in busy:
+        jobs.stop(j["id"])
+
+    def bye():
+        if style.renderer.proc and style.renderer.proc.poll() is None:
+            style.renderer.proc.kill()
+        os._exit(0)
+    threading.Timer(0.4, bye).start()
+    return {"ok": True}
+
+
 app.mount("/", StaticFiles(directory=paths.WEB, html=True), name="web")
 
 
 def _already_running(url):
+    """The AutoCaption already running here, if any: its /api/status."""
     import urllib.request
     try:
         with urllib.request.urlopen(url + "api/status", timeout=1) as r:
-            return r.status == 200
+            return json.loads(r.read()) if r.status == 200 else None
+    except (OSError, ValueError):
+        return None
+
+
+def _ask_to_quit(url):
+    """Ask the AutoCaption that's running to close (it says no while it's busy). True when it has gone."""
+    import time
+    import urllib.request
+    req = urllib.request.Request(url + "api/quit", data=b"{}", method="POST",
+                                 headers={"x-ac": "1", "content-type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=3).read()
     except OSError:
         return False
+    for _ in range(30):
+        time.sleep(0.2)
+        if _already_running(url) is None:
+            return True
+    return False
 
 
 def main():
     import uvicorn
     paths.ensure_dirs()
     url = f"http://127.0.0.1:{PORT}/"
-    if _already_running(url):
-        print(f"AutoCaption is already running at {url}")
-        if "--no-browser" not in sys.argv:
-            webbrowser.open(url)
-        return
+    if _already_running(url) is not None:
+        # an AutoCaption is already running (maybe an older one, maybe with no window): this one takes over,
+        # with the newest code, unless that one is busy with a video
+        if not _ask_to_quit(url):
+            print(f"AutoCaption is already running at {url} and is busy with a video, so that one stays open.")
+            if "--no-browser" not in sys.argv:
+                webbrowser.open(url)
+            return
+        print("Closed the AutoCaption that was already running; starting this one.")
     jobs.recover_interrupted()
     if "--no-browser" not in sys.argv:
         threading.Timer(1.2, lambda: webbrowser.open(url)).start()

@@ -1990,6 +1990,25 @@ async function route() {
 }
 $("#home").onclick = () => { location.hash = ""; };
 addEventListener("hashchange", route);
+$("#quitApp").onclick = async () => {
+  if (!confirm("Quit AutoCaption? Your work is saved.")) return;
+  const quit = async force => {
+    const r = await fetch("/api/quit", { method: "POST", headers: { "x-ac": "1", "content-type": "application/json" }, body: JSON.stringify({ force }) });
+    if (r.status === 409) {
+      const msg = (await r.json().catch(() => ({}))).detail || "A video is still being worked on.";
+      if (!confirm(`${msg}\n\nQuit anyway? That step stops and you'd press it again next time.`)) return false;
+      return quit(true);
+    }
+    return r.ok;
+  };
+  try {
+    if (!(await quit(false))) return;
+  } catch { /* already gone */ }
+  clearTimeout(pollTimer); video.pause();
+  $$("main, .update-bar").forEach(el => { el.hidden = true; });
+  $("#closedView").hidden = false;
+};
+
 // the page is always the newest; the app behind it only after you reopen it: say so when they differ
 function checkStale() { api("GET", "/api/status").then(s => { $("#updateBar").hidden = !s.stale; }).catch(() => {}); }
 setInterval(checkStale, 60000);

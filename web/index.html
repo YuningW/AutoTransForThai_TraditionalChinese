@@ -15,7 +15,12 @@
   <div class="top-title" id="topTitle"></div>
   <button class="ghost" id="openMemory" type="button">What it has learned <span class="count" id="memCount"></span></button>
   <button class="ghost" id="openSettings" type="button">Models</button>
+  <button class="ghost" id="quitApp" type="button" title="Close AutoCaption. Your work is saved; double-click AutoCaption.command to open it again.">Quit</button>
 </header>
+<div class="closed" id="closedView" hidden>
+  <h1>AutoCaption is closed</h1>
+  <p>Your work is saved. To open it again, double-click <b>AutoCaption.command</b> (in the AutoCaption folder), then reload this page.</p>
+</div>
 <div class="update-bar" id="updateBar" role="status" hidden>
   AutoCaption has been updated. Some new buttons won't work until you reopen it: quit it (close its Terminal window), then double-click AutoCaption.command. Your work is saved.
 </div>
