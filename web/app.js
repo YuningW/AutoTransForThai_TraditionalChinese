@@ -245,10 +245,10 @@ function renderJob() {
   $("#suggestTouches").disabled = !!job.busy || !(job.counts && job.counts.lines);
   if (!$("#rangeBox").hidden) renderRange();
   const music = !!job.options?.clean_voice, done = job.state === "ready" && !job.busy && job.counts?.lines;
-  $("#again").hidden = !done;
-  $("#againText").textContent = music ? "Listened with the background music removed."
-    : "Background music drowning out words?";
-  $("#againBtn").textContent = music ? "Listen again without removing music" : "Listen again with the music removed";
+  $("#againBtn").hidden = !done;
+  $("#againText").textContent = music ? "It listened with the background music removed; try the original sound"
+    : "Background music drowning out words? Take it out and listen again";
+  $("#againLabel").textContent = music ? "Listen again without removing music" : "Listen again with the music removed";
   $("#fixNow").disabled = !!job.busy;
 
   // exports
@@ -504,7 +504,7 @@ ol.addEventListener("click", e => {
   if (e.target.closest(".unflag")) { patch(l, { flag: "", note: "" }); return; }
   if (e.target.closest(".twoppl")) {
     if (!(job.speakers || []).length) {
-      $("#stylePanel").open = true; $("#addPerson").scrollIntoView({ block: "center" });
+      showTab("peoplePanel"); $("#addPerson").scrollIntoView({ block: "center" });
       alert("Add the people first (Caption style → People), so each line can have its own colour.");
       return;
     }
@@ -894,6 +894,7 @@ async function loadSettings() {
     $("#videoSubs").checked = settings.video_subs !== false;
     $("#subsCheck").checked = !!settings.subs_check;
     $("#subsCheck").disabled = !$("#videoSubs").checked;
+    showOptsNow();
   }
 }
 
@@ -1052,6 +1053,7 @@ $("#addPerson").onclick = () => {
 const picked = new Set();
 let lastPick = null;
 function renderBulk() {
+  $("#lines").classList.toggle("picking", picked.size > 0);      // tick boxes show on every line once you tick one
   $$(".line").forEach(li => {
     const on = picked.has(+li.dataset.id);
     li.classList.toggle("picked", on); $(".pick", li).checked = on;
@@ -1067,7 +1069,7 @@ function renderBulk() {
 }
 $("#bulkAssign").onclick = async () => {
   if (!(job.speakers || []).length && $("#bulkWho").value === "") {
-    $("#stylePanel").open = true; $("#addPerson").scrollIntoView({ block: "center" });
+    showTab("peoplePanel"); $("#addPerson").scrollIntoView({ block: "center" });
     alert("Add the people first (Caption style → People)."); return;
   }
   try {
@@ -1420,7 +1422,7 @@ function selectTouch(id) {
   $("#brandEdit").hidden = !t || !isBrand(t);
   if (t && isBrand(t)) { fillBrandEditor(t); renderTouchList(); drawTouches(video.currentTime, true); return; }
   if (t) {
-    $("#touchPanel").open = true;
+    showTab("touchPanel");
     $("#teText").value = t.text;
     $("#teSize").value = t.size || 1.3; $("#teSizeOut").textContent = Math.round((t.size || 1.3) * 100) + "%";
     const d = Math.round((t.end - t.start) * 2) / 2; $("#teDur").value = d; $("#teDurOut").textContent = d + "s";
@@ -1524,7 +1526,7 @@ async function addBrand(t) {
   try {
     const n = await api("POST", `/api/jobs/${job.id}/touches`, { start: video.currentTime, end: video.currentTime + 5, ...t });
     touches.push(n); touches.sort((a, b) => a.start - b.start);
-    $("#brandPanel").open = true; selectTouch(n.id);
+    showTab("brandPanel"); selectTouch(n.id);
     if (t.kind === "text") { $("#beText").select(); $("#beText").focus(); }
   } catch (ex) { alert(ex.message); }
 }
@@ -2021,6 +2023,36 @@ document.addEventListener("keydown", e => {
 });
 $("#keysBtn").onclick = () => $("#keys").showModal();
 
+/* ============================================================ tabs, More, quieter lines */
+
+// one panel at a time under the video; the last one you used comes back
+function showTab(id) {
+  $$("#tabs [data-tab]").forEach(b => {
+    const on = b.dataset.tab === id;
+    b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1;
+    const panel = $("#" + b.dataset.tab);
+    panel.hidden = !on; panel.open = on;
+  });
+  try { localStorage.setItem("ac-tab", id); } catch { /* fine */ }
+}
+$("#tabs").addEventListener("click", e => { const b = e.target.closest("[data-tab]"); if (b) showTab(b.dataset.tab); });
+$("#tabs").addEventListener("keydown", e => {
+  if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+  const tabs = $$("#tabs [data-tab]"), i = tabs.findIndex(b => b.getAttribute("aria-selected") === "true");
+  const n = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+  showTab(n.dataset.tab); n.focus(); e.preventDefault(); e.stopPropagation();
+});
+showTab((() => { try { return localStorage.getItem("ac-tab"); } catch { return null; } })() || "stylePanel");
+$$(".stage > details.panel > summary").forEach(s => s.addEventListener("click", e => e.preventDefault()));   // tabs open them
+
+// More ▾ closes after a choice, or a click anywhere else
+$("#moreMenu").addEventListener("click", e => { if (e.target.closest(".more-list button")) $("#moreMenu").open = false; });
+document.addEventListener("click", e => { if (!e.target.closest("#moreMenu")) $("#moreMenu").open = false; });
+$("#keysBtn2").onclick = () => $("#keys").showModal();
+
+// a line's note (what it fixed, what it first heard) shows one line until you click it
+$("#lines").addEventListener("click", e => { const w = e.target.closest(".why"); if (w && !w.classList.contains("open")) w.classList.add("open"); });
+
 /* ============================================================ routing */
 
 async function route() {
@@ -2068,3 +2100,11 @@ route();
 setInterval(() => { if (!$("#startView").hidden) loadJobList(); }, 5000);
 
 $("#videoSubs").addEventListener("change", () => { $("#subsCheck").disabled = !$("#videoSubs").checked; });
+// Options stays folded; its line says what's on, so you can see it without opening it
+function showOptsNow() {
+  const on = [["cleanVoice", "music removed"], ["fast", "quicker listening"], ["videoSubs", "video's subtitles"], ["subsCheck", "checked against them"]]
+    .filter(([id]) => $("#" + id).checked && !$("#" + id).disabled).map(([, t]) => t);
+  $("#optsNow").textContent = on.length ? on.join(", ") : "none";
+}
+["cleanVoice", "fast", "videoSubs", "subsCheck"].forEach(id => $("#" + id).addEventListener("change", showOptsNow));
+showOptsNow();

@@ -4,7 +4,7 @@
 
 ## 1. Start a video
 
-Drop a video file on the page, or paste a link (YouTube, Bilibili, X, TikTok…). Then choose:
+Drop a video file on the page, or paste a link (YouTube, Bilibili, X, TikTok…). Under **Options** (its line shows what's on) you can choose:
 
 - **Remove background music first**: for songs, BGM, fancams or crowd noise. It takes the music out, then listens to the voices. Adds about 10 seconds per minute of video.
 - **Quicker listening**: several times faster, but misses more Thai. Best for long videos when a rough first draft is fine.
@@ -16,6 +16,10 @@ All these choices are remembered for next time.
 **Give it something to help** (optional): screenshots of CapCut's caption list, an `.srt`, or someone else's translation, as pictures or text. You can also say who's in the video.
 
 When it finishes, **What it did** lists every step, including how many Claude tokens the video used.
+
+## The video page
+
+Under the video: the timeline, a small switch for which captions show on the video (中文 + Thai, 中文, Thai), and the main actions (**+ Caption**, **+ Emoji**, **Fix a stretch…**, **Find & replace**, and **More** for the rest). Below them, tabs: **Style · People · Emoji · Text & logo · Save · Help · Log**; the last one you used opens next time. **Quit** (top right) closes AutoCaption.
 
 ## 2. Check and fix the captions
 
