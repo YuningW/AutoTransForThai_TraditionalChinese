@@ -1190,14 +1190,15 @@ def split_speakers(jid, lid):
 
 
 def set_speakers(jid, people):
-    """People who talk, each with a caption colour: [{"id", "name", "color"}]."""
+    """People who talk, each with a caption colour and maybe their own Chinese font: [{"id", "name", "color", "font"}]."""
     clean, seen = [], set()
     for p in people or []:
         pid = str(p.get("id") or uuid.uuid4().hex[:6])
         if pid in seen:
             continue
         seen.add(pid)
-        clean.append({"id": pid, "name": (p.get("name") or "").strip()[:30], "color": p.get("color") or "#FFFFFF"})
+        clean.append({"id": pid, "name": (p.get("name") or "").strip()[:30], "color": p.get("color") or "#FFFFFF",
+                      **({"font": str(p["font"])[:60]} if p.get("font") else {})})
     with _lock(jid):
         ids = {p["id"] for p in clean}
         ls = lines(jid)

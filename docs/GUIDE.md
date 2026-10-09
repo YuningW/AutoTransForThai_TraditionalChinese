@@ -44,7 +44,7 @@ The preview on the video matches what gets burned in.
 
 **One line only**: press **Aa** on a line to give just that line its own:
 - position: top, bottom, or drag that caption on the video
-- size, colour or bold
+- size, colour, bold or font
 - language: Chinese only, Thai only, or hidden
 - timing
 
@@ -52,7 +52,7 @@ Use it when a caption covers something on screen, or for a line that deserves to
 
 ## 4. People and colours
 
-Under **Caption style → People**, give each person a colour (Milk 🟡, Love 🔵…).
+Under **Caption style → People**, give each person a colour (Milk 🟡, Love 🔵…), and their own Chinese font if you like. A line's own font (under **Aa**) wins over the person's.
 
 - **Assign**: pick who says a line with the chip on it, or tick many lines (Shift-click ticks a range) and assign them at once.
 - **Two people at once**: on a line, adds a line for the other person. Each gets their own row, in their own colour.

@@ -387,11 +387,21 @@ function fillLook(li, l, open) {
   $(".look-color", box).value = hex6(look.color || ownColour(l) || st.color);
   $(".look-color-reset", box).hidden = !look.color;
   $(".look-bold", box).checked = look.bold ?? !!st.bold;
+  if (open) fontMenu($(".look-font", box), look.font, ownFont(l) ? "Like this person's" : "Like the rest");
   const n = [...picked].filter(id => id !== l.id).length;
   $(".look-apply", box).hidden = !n || !Object.keys(look).length;
   $(".look-apply", box).textContent = `Use this look on the ${n} ticked line${n === 1 ? "" : "s"}`;
 }
 const ownColour = l => ((job.speakers || []).find(p => p.id === l.speaker) || {}).color;
+const ownFont = l => ((job.speakers || []).find(p => p.id === l.speaker) || {}).font;
+// a font menu: "like the rest" first, then every Chinese caption font, each shown in itself
+function fontMenu(sel, value, first) {
+  const o0 = document.createElement("option"); o0.value = ""; o0.textContent = first;
+  sel.replaceChildren(o0, ...(settings?.fonts?.zh || []).map(f => {
+    const o = document.createElement("option"); o.value = f.family; o.textContent = f.label; o.style.fontFamily = `"${f.family}"`; return o;
+  }));
+  sel.value = value || "";
+}
 
 function setLook(l, changes, now = true) {
   const look = { ...(l.look || {}), ...changes };
@@ -524,6 +534,7 @@ ol.addEventListener("change", e => {
   else if (e.target.classList.contains("look-size")) setLook(l, { size: +e.target.value });
   else if (e.target.classList.contains("look-color")) setLook(l, { color: e.target.value });
   else if (e.target.classList.contains("look-bold")) setLook(l, { bold: e.target.checked });
+  else if (e.target.classList.contains("look-font")) setLook(l, { font: e.target.value });
 });
 ol.addEventListener("input", e => {             // see it on the video while you slide
   const l = lineOf(e.target);
@@ -800,8 +811,11 @@ function renderPeople() {
       return d;
     }));
     n.addEventListener("input", () => { const q = personById(p.id); if (q) { q.name = n.value.trim(); peopleChanged(); } });
+    const f = document.createElement("select"); f.className = "field pfont"; f.setAttribute("aria-label", "This person's Chinese font");
+    fontMenu(f, p.font, "Font: like the rest");
+    f.addEventListener("change", () => { const q = personById(p.id); if (q) { q.font = f.value || undefined; peopleChanged(true); } });
     x.onclick = () => { job.speakers = (job.speakers || []).filter(q => q.id !== p.id); peopleChanged(true); renderPeople(); };
-    li.append(c, n, x, dots); return li;
+    li.append(c, n, x, dots, f); return li;
   }));
 }
 let peopleTimer = null;
@@ -1001,18 +1015,20 @@ function fillBox(boxEl, group, st) {
     const zhPx = basePx * (lk.size || 1), thPx = mine === "both" ? zhPx * st.th_scale : zhPx;
     biggest = Math.max(biggest, zhPx);
     const th = l.kind === "sound" ? "" : (l.th || ""), zh = l.zh || "", colour = lk.color || ownColour(l);
+    const zf = lk.font || ownFont(l);                 // the line's font, the person's, or the video's
     const pair = [];
     if (mine !== "zh" && th) pair.push([th, thPx, true]);
     if (mine !== "th" && zh) pair.push([zh, zhPx, false]);
     if (st.order === "zh_above") pair.reverse();
-    pair.forEach(r => rows.push([...r, colour, lk.bold, mine]));
+    pair.forEach(r => rows.push([...r, colour, lk.bold, mine, zf]));
   }
-  rows.forEach(([text, px, isTh, colour, bold, mine], i) => {
+  rows.forEach(([text, px, isTh, colour, bold, mine, zf], i) => {
     const el = document.createElement("div");
     el.className = "ov-row"; el.textContent = text;
     Object.assign(el.style, rowCss(st, px, isTh && mine === "both"), { marginTop: i ? `${biggest * 0.12}px` : "0" });
     if (colour) el.style.color = colour;
     if (bold !== undefined) el.style.fontWeight = bold ? "700" : "500";
+    if (zf && !isTh) el.style.fontFamily = `"${zf}", "PingFang TC", sans-serif`;
     boxEl.append(el);
   });
   if (st.box && rows.length) Object.assign(boxEl.style, { background: st.box_color, padding: `${biggest * 0.19}px ${biggest * 0.32}px`, borderRadius: `${biggest * 0.25}px` });

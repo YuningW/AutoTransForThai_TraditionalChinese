@@ -254,6 +254,7 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .seg button, .look-color-reset, .look-actions button { border: 1px solid var(--rule); background: var(--paper, transparent); border-radius: 6px; padding: 3px 10px; font-size: 13px; color: var(--ink-2); }
 .seg button[aria-checked="true"] { background: var(--ink); border-color: var(--ink); color: var(--sheet); }
 .look-size { width: 160px; }
+.look-font, .pfont { width: auto; max-width: 240px; padding: 4px 8px; font-size: 13px; }
 .look-color { width: 36px; height: 26px; padding: 0; border: 1px solid var(--rule); border-radius: 6px; background: none; }
 .look-bold-l { display: inline-flex; gap: 4px; align-items: center; color: var(--ink-2); }
 .look-actions { display: flex; justify-content: flex-end; gap: 8px; }

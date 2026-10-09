@@ -120,10 +120,13 @@ def remember_people(people):
                 or next((q for q in m["people"] if q.get("name") == name), None)
             if old:
                 old.update(name=name, color=p.get("color") or old.get("color"), id=old.get("id") or pid or _new_id())
+                if "font" in p or old.get("font"):
+                    old["font"] = p.get("font") or None     # their own font (or back to the video's)
                 if pid and pid != old["id"] and pid not in (old.get("ids") or []):
                     old["ids"] = (old.get("ids") or []) + [pid]    # the same person under another video's id
             else:
-                m["people"].append({"id": pid or _new_id(), "name": name, "color": p.get("color")})
+                m["people"].append({"id": pid or _new_id(), "name": name, "color": p.get("color"),
+                                    **({"font": p["font"]} if p.get("font") else {})})
         # one entry per name (a rename can make two the same: keep the one with a voice)
         seen, keep = set(), []
         for q in sorted(m["people"], key=lambda q: -int(q.get("voice_n") or 0)):

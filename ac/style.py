@@ -177,7 +177,8 @@ LOOK_SHOW = ("zh", "th", "none")
 
 def clean_look(look):
     """One line's own look, on top of the video's style: position (bottom | top | custom, with y), size
-    (× the style's), color, bold, show (zh | th | none: only that language, or hide the line). {} = as all."""
+    (× the style's), color, bold, show (zh | th | none: only that language, or hide the line), font (Chinese).
+    {} = as all."""
     look = look or {}
     out = {}
     if look.get("position") in LOOK_POSITIONS:
@@ -192,6 +193,8 @@ def clean_look(look):
         out["bold"] = look["bold"]
     if look.get("show") in LOOK_SHOW:
         out["show"] = look["show"]
+    if isinstance(look.get("font"), str) and look["font"].strip():
+        out["font"] = look["font"].strip()[:60]
     return out
 
 
@@ -210,6 +213,7 @@ def caption_block(line, which, w, h, style, speakers=None):
     s = style
     group = line if isinstance(line, list) else [line]
     colours = {p["id"]: p.get("color") for p in speakers or [] if p.get("color")}
+    fonts = {p["id"]: p.get("font") for p in speakers or [] if p.get("font")}
 
     def row(text, fam, px, col, bold):
         return {"text": text, "font": fam, "size": round(px, 1), "color": col, "bold": bool(bold),
@@ -233,7 +237,8 @@ def caption_block(line, which, w, h, style, speakers=None):
         biggest = max(biggest, zh_px)
         own = look.get("color") or colours.get(l.get("speaker"))
         bold = look.get("bold", s["bold"])
-        zh_row = row(zh, s["zh_font"], zh_px, own or s["color"], bold) if mine in ("zh", "both") and zh else None
+        zh_font = look.get("font") or fonts.get(l.get("speaker")) or s["zh_font"]     # the line's, the person's, or the video's
+        zh_row = row(zh, zh_font, zh_px, own or s["color"], bold) if mine in ("zh", "both") and zh else None
         th_row = row(th, s["th_font"], th_px, own or (s["th_color"] if mine == "both" else s["color"]), bold) \
             if mine in ("th", "both") and th else None
         pair = (th_row, zh_row) if s["order"] == "th_above" else (zh_row, th_row)
