@@ -78,6 +78,7 @@
     <div class="player" id="player">
       <video id="video" controls playsinline preload="metadata"></video>
       <div class="overlay" id="overlay"><div class="ov-box" id="ovBox"></div></div>
+      <div id="ovOwn"></div>
       <div class="touch-layer" id="touchLayer"></div>
     </div>
     <div class="view-opts">
@@ -392,6 +393,7 @@
     <div class="marks">
       <i class="dot"></i>
       <button class="flag" type="button" aria-label="Flag this line">⚑</button>
+      <button class="lookbtn" type="button" aria-label="This line's look, place and timing" title="This line's look, place and timing">Aa</button>
     </div>
     <div class="flagbox" hidden>
       <div class="flag-types" role="radiogroup" aria-label="What's wrong">
@@ -413,6 +415,30 @@
         <button type="button" class="twoppl">Two people at once: add a line for the other</button>
         <button type="button" class="delline">Delete this line</button>
         <button type="button" class="unflag">Not wrong</button>
+      </div>
+    </div>
+    <div class="lookbox" hidden>
+      <div class="look-row"><span class="look-k">Where</span>
+        <div class="seg" data-k="position" role="radiogroup" aria-label="Where this line sits">
+          <button type="button" data-v="">Like the rest</button><button type="button" data-v="bottom">Bottom</button><button type="button" data-v="top">Top</button><button type="button" data-v="custom">Drag it on the video</button>
+        </div></div>
+      <div class="look-row"><span class="look-k">Size</span>
+        <input type="range" class="look-size" min="0.5" max="2" step="0.05" aria-label="Size of this line"><output class="look-size-out"></output></div>
+      <div class="look-row"><span class="look-k">Colour</span>
+        <input type="color" class="look-color" aria-label="Colour of this line"><button type="button" class="look-color-reset">Like the rest</button>
+        <label class="look-bold-l"><input type="checkbox" class="look-bold"> Bold</label></div>
+      <div class="look-row"><span class="look-k">Show</span>
+        <div class="seg" data-k="show" role="radiogroup" aria-label="Which language this line shows">
+          <button type="button" data-v="">Like the rest</button><button type="button" data-v="zh">中文 only</button><button type="button" data-v="th">ไทย only</button><button type="button" data-v="none">Hide it</button>
+        </div></div>
+      <div class="look-row"><span class="look-k">Timing</span>
+        <div class="timing">
+          <button type="button" data-t="start-">Start −0.2s</button><button type="button" data-t="start+">Start +0.2s</button><button type="button" data-t="start=">Start here</button>
+          <button type="button" data-t="end=">End here</button><button type="button" data-t="end-">End −0.2s</button><button type="button" data-t="end+">End +0.2s</button>
+        </div></div>
+      <div class="look-actions">
+        <button type="button" class="look-apply" hidden></button>
+        <button type="button" class="look-reset">Make it like the rest</button>
       </div>
     </div>
   </li>

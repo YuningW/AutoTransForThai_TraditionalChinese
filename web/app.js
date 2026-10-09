@@ -318,14 +318,15 @@ function renderLines() {
   $("#emptyLines").hidden = lines.length > 0;
   const ol = $("#lines");
   const open = new Set($$(".line .flagbox:not([hidden])", ol).map(b => +b.closest(".line").dataset.id));
-  ol.replaceChildren(...lines.map(l => lineEl(l, open.has(l.id))));
+  const looks = new Set($$(".line .lookbox:not([hidden])", ol).map(b => +b.closest(".line").dataset.id));
+  ol.replaceChildren(...lines.map(l => lineEl(l, open.has(l.id), looks.has(l.id))));
   updateFixbar();
   for (const id of [...picked]) if (!lines.some(l => l.id === id)) picked.delete(id);
   renderBulk();
   current = null; tick();
 }
 
-function lineEl(l, flagOpen) {
+function lineEl(l, flagOpen, lookOpen) {
   const li = tpl.content.firstElementChild.cloneNode(true);
   li.dataset.id = l.id;
   const unsure = l.status === "auto" && l.kind === "speech" && l.conf < UNSURE;
@@ -361,7 +362,45 @@ function lineEl(l, flagOpen) {
   });
   $(".note", box).value = l.note || "";
   $(".timing", box).hidden = l.flag !== "timing";
+  fillLook(li, l, lookOpen);
   return li;
+}
+
+/* ---------------------------------------------------------- one line's own look */
+
+function fillLook(li, l, open) {
+  const look = l.look || {}, st = fullStyle() || {}, box = $(".lookbox", li);
+  li.classList.toggle("has-look", Object.keys(look).length > 0);
+  box.hidden = !open;
+  $(".lookbtn", li).setAttribute("aria-expanded", String(!!open));
+  $$(".seg", box).forEach(seg => $$("button", seg).forEach(b => {
+    b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String((look[seg.dataset.k] || "") === b.dataset.v));
+  }));
+  $(".look-size", box).value = look.size || 1;
+  $(".look-size-out", box).textContent = `${Math.round((look.size || 1) * 100)}%`;
+  $(".look-color", box).value = hex6(look.color || ownColour(l) || st.color);
+  $(".look-color-reset", box).hidden = !look.color;
+  $(".look-bold", box).checked = look.bold ?? !!st.bold;
+  const n = [...picked].filter(id => id !== l.id).length;
+  $(".look-apply", box).hidden = !n || !Object.keys(look).length;
+  $(".look-apply", box).textContent = `Use this look on the ${n} ticked line${n === 1 ? "" : "s"}`;
+}
+const ownColour = l => ((job.speakers || []).find(p => p.id === l.speaker) || {}).color;
+
+function setLook(l, changes, now = true) {
+  const look = { ...(l.look || {}), ...changes };
+  for (const k of Object.keys(look)) if (look[k] === "" || look[k] === null || look[k] === undefined) delete look[k];
+  if (look.position === "custom" && look.y == null) {
+    const st = fullStyle();
+    look.y = st.position === "top" ? 0.2 : st.position === "custom" ? Math.max(0.2, st.y - 0.12) : 0.8;   // a little above the rest, so you see it move
+  }
+  if (look.position !== "custom") delete look.y;
+  if (look.size && Math.abs(look.size - 1) < 0.01) delete look.size;
+  l.look = look;
+  const li = $(`.line[data-id="${l.id}"]`);
+  if (li) fillLook(li, l, !$(".lookbox", li).hidden);
+  current = undefined; tick();
+  if (now) patch(l, { look });
 }
 
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
@@ -373,8 +412,9 @@ async function patch(l, changes) {
     Object.assign(l, out);
     linesRev = -1;           // the server bumped its revision; the next poll picks it up
     const li = $(`.line[data-id="${l.id}"]`);
-    if (li && !editing()) li.replaceWith(lineEl(l, !$(".flagbox", li).hidden));
+    if (li && !editing()) li.replaceWith(lineEl(l, !$(".flagbox", li).hidden, !$(".lookbox", li).hidden));
     updateFixbar();
+    if ("look" in changes || "start" in changes || "end" in changes) { current = undefined; tick(); }
   } catch (ex) { alert(ex.message); }
 }
 
@@ -392,6 +432,21 @@ ol.addEventListener("click", e => {
     return;
   }
   if (e.target.closest(".time")) { video.currentTime = l.start + 0.01; video.play(); return; }
+  if (e.target.closest(".lookbtn")) {
+    const li = e.target.closest(".line"), box = $(".lookbox", li);
+    fillLook(li, l, box.hidden);
+    if (!box.hidden) { video.pause(); video.currentTime = Math.min(l.end - 0.05, l.start + 0.3); }   // show the line on the video
+    return;
+  }
+  const sb = e.target.closest(".lookbox .seg button");
+  if (sb) { setLook(l, { [sb.closest(".seg").dataset.k]: sb.dataset.v }); video.pause(); video.currentTime = Math.min(l.end - 0.05, l.start + 0.3); return; }
+  if (e.target.closest(".look-color-reset")) { setLook(l, { color: "" }); return; }
+  if (e.target.closest(".look-reset")) { setLook(l, {}, false); l.look = {}; patch(l, { look: {} }); return; }
+  if (e.target.closest(".look-apply")) {
+    const others = lines.filter(x => picked.has(x.id) && x.id !== l.id);
+    Promise.all(others.map(x => { x.look = { ...l.look }; return patch(x, { look: x.look }); })).then(() => { current = undefined; tick(); });
+    return;
+  }
   if (e.target.closest(".flag")) {
     const box = $(".flagbox", e.target.closest(".line"));
     if (l.flag) { box.hidden = false; $(".note", box).focus(); return; }
@@ -429,9 +484,20 @@ ol.addEventListener("click", e => {
   }
 });
 ol.addEventListener("change", e => {
-  if (!e.target.classList.contains("who")) return;
   const l = lineOf(e.target);
-  if (l) patch(l, { speaker: e.target.value });
+  if (!l) return;
+  if (e.target.classList.contains("who")) patch(l, { speaker: e.target.value });
+  else if (e.target.classList.contains("look-size")) setLook(l, { size: +e.target.value });
+  else if (e.target.classList.contains("look-color")) setLook(l, { color: e.target.value });
+  else if (e.target.classList.contains("look-bold")) setLook(l, { bold: e.target.checked });
+});
+ol.addEventListener("input", e => {             // see it on the video while you slide
+  const l = lineOf(e.target);
+  if (!l) return;
+  if (e.target.classList.contains("look-size")) {
+    setLook(l, { size: +e.target.value }, false);
+    $(".look-size-out", e.target.closest(".lookbox")).textContent = `${Math.round(e.target.value * 100)}%`;
+  } else if (e.target.classList.contains("look-color")) setLook(l, { color: e.target.value }, false);
 });
 ol.addEventListener("focusout", e => {
   const l = lineOf(e.target);
@@ -511,7 +577,7 @@ let fontFacesAdded = false;
 function addFontFaces(faces) {
   if (fontFacesAdded || !faces.length) return;
   fontFacesAdded = true;
-  const css = faces.map(f => `@font-face { font-family: "${f.family}"; src: url("/api/fonts/${encodeURIComponent(f.file)}") format("truetype");` +
+  const css = faces.map(f => `@font-face { font-family: "${f.family}"; src: url("/api/fonts/${encodeURIComponent(f.file)}");` +
     ` font-weight: ${f.weight}; font-display: swap; }`).join("\n");
   const el = document.createElement("style"); el.textContent = css; document.head.append(el);
 }
@@ -817,31 +883,80 @@ function placeOverlay() {
 video.addEventListener("loadedmetadata", placeOverlay);
 new ResizeObserver(placeOverlay).observe($("#player"));
 
+// Where a line sits: like the rest, or its own place (then it's drawn in a box of its own). Same as style.py place_of.
+function placeOf(l, st) {
+  const lk = l.look || {}, pos = lk.position || st.position;
+  return `${pos}:${lk.position === "custom" ? lk.y : st.y}`;
+}
+
 function drawCaption(on) {
-  const st = fullStyle(), boxEl = $("#ovBox");
-  boxEl.replaceChildren(); boxEl.style.background = "none"; boxEl.style.padding = "0";
+  const st = fullStyle(), own = $("#ovOwn");
+  own.replaceChildren();
+  fillBox($("#ovBox"), [], st);
   if (!on.length || !st) return;
-  const show = $("input[name=show]:checked").value;
-  const zhPx = Math.min(frame.vw, frame.vh) * frame.scale * 0.058 * st.size;
-  const thPx = show === "both" ? zhPx * st.th_scale : zhPx;
-  const colour = id => ((job.speakers || []).find(p => p.id === id) || {}).color;
-  const rows = [];
+  const home = placeOf({}, st), groups = new Map();
   for (const l of on) {
-    const th = l.kind === "sound" ? "" : (l.th || ""), zh = l.zh || "", own = colour(l.speaker);
-    const pair = [];
-    if (show !== "zh" && th) pair.push([th, thPx, true]);
-    if (show !== "th" && zh) pair.push([zh, zhPx, false]);
-    if (st.order === "zh_above") pair.reverse();
-    pair.forEach(r => rows.push([...r, own]));
+    const k = placeOf(l, st);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(l);
   }
-  rows.forEach(([text, px, isTh, own], i) => {
+  for (const [k, group] of groups) {
+    if (k === home) { fillBox($("#ovBox"), group, st); continue; }
+    const pos = k.split(":")[0], y = +k.split(":")[1];
+    const wrap = document.createElement("div"), box = document.createElement("div");
+    wrap.className = "ov-own"; box.className = "ov-box";
+    wrap.append(box); own.append(wrap);
+    const pb = $("#player").getBoundingClientRect();
+    Object.assign(wrap.style, { left: `${frame.left + frame.w * 0.06}px`, width: `${frame.w * 0.88}px` });
+    if (pos === "top") wrap.style.top = `${frame.top + frame.h * 0.05}px`;
+    else wrap.style.bottom = `${pb.height - (frame.top + frame.h * (pos === "custom" ? y : 0.94))}px`;
+    fillBox(box, group, st);
+    if (pos === "custom") { box.classList.add("draggable"); box.onpointerdown = e => dragLine(e, group[0], box); }
+  }
+}
+
+function fillBox(boxEl, group, st) {
+  boxEl.replaceChildren(); boxEl.style.background = "none"; boxEl.style.padding = "0";
+  if (!group.length || !st) return;
+  const which = $("input[name=show]:checked").value;
+  const basePx = Math.min(frame.vw, frame.vh) * frame.scale * 0.058 * st.size;
+  const rows = [];
+  let biggest = 0;
+  for (const l of group) {
+    const lk = l.look || {};
+    if (lk.show === "none" || (lk.show && which !== "both" && lk.show !== which)) continue;
+    const mine = lk.show && which === "both" ? lk.show : which;
+    const zhPx = basePx * (lk.size || 1), thPx = mine === "both" ? zhPx * st.th_scale : zhPx;
+    biggest = Math.max(biggest, zhPx);
+    const th = l.kind === "sound" ? "" : (l.th || ""), zh = l.zh || "", colour = lk.color || ownColour(l);
+    const pair = [];
+    if (mine !== "zh" && th) pair.push([th, thPx, true]);
+    if (mine !== "th" && zh) pair.push([zh, zhPx, false]);
+    if (st.order === "zh_above") pair.reverse();
+    pair.forEach(r => rows.push([...r, colour, lk.bold, mine]));
+  }
+  rows.forEach(([text, px, isTh, colour, bold, mine], i) => {
     const el = document.createElement("div");
     el.className = "ov-row"; el.textContent = text;
-    Object.assign(el.style, rowCss(st, px, isTh && show === "both"), { marginTop: i ? `${zhPx * 0.12}px` : "0" });
-    if (own) el.style.color = own;
+    Object.assign(el.style, rowCss(st, px, isTh && mine === "both"), { marginTop: i ? `${biggest * 0.12}px` : "0" });
+    if (colour) el.style.color = colour;
+    if (bold !== undefined) el.style.fontWeight = bold ? "700" : "500";
     boxEl.append(el);
   });
-  if (st.box && rows.length) Object.assign(boxEl.style, { background: st.box_color, padding: `${zhPx * 0.19}px ${zhPx * 0.32}px`, borderRadius: `${zhPx * 0.25}px` });
+  if (st.box && rows.length) Object.assign(boxEl.style, { background: st.box_color, padding: `${biggest * 0.19}px ${biggest * 0.32}px`, borderRadius: `${biggest * 0.25}px` });
+}
+
+// drag one line that has its own place
+function dragLine(e, l, el) {
+  e.preventDefault(); e.stopPropagation(); video.pause();
+  const pb = $("#player").getBoundingClientRect(), wrap = el.parentElement;
+  el.setPointerCapture(e.pointerId);
+  let y = l.look.y;
+  el.onpointermove = ev => {
+    y = Math.max(0.08, Math.min(0.99, Math.round(((ev.clientY - pb.top - frame.top + el.offsetHeight / 2) / frame.h) * 1000) / 1000));
+    wrap.style.bottom = `${pb.height - (frame.top + frame.h * y)}px`;
+  };
+  el.onpointerup = () => { el.onpointermove = null; setLook(l, { y }); };
 }
 
 // drag the captions (Where: Drag it)

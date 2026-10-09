@@ -196,6 +196,22 @@ if CommandLine.arguments.count > 1 && CommandLine.arguments[1] == "fonts" {
     for f in NSFontManager.shared.availableFontFamilies { print(f) }
     exit(0)
 }
+// "fontfiles <family>…": where each family's fonts are, so the page can be given them (Safari only lets
+// pages use the fonts every Mac has). One JSON object per font: family, ps (PostScript name), weight
+// (CSS 100-900), path.
+if CommandLine.arguments.count > 1 && CommandLine.arguments[1] == "fontfiles" {
+    for fam in CommandLine.arguments.dropFirst(2) {
+        for m in NSFontManager.shared.availableMembers(ofFontFamily: fam) ?? [] {
+            guard let ps = m.first as? String, let w = m[2] as? Int else { continue }
+            let font = CTFontCreateWithName(ps as CFString, 12, nil)
+            guard let url = CTFontCopyAttribute(font, kCTFontURLAttribute) as? URL else { continue }
+            let css = [100, 100, 200, 300, 300, 400, 500, 600, 600, 700, 700, 800, 800, 900, 900, 900][max(0, min(15, w))]
+            let row: [String: Any] = ["family": fam, "ps": ps, "weight": css, "path": url.path]
+            if let d = try? JSONSerialization.data(withJSONObject: row), let j = String(data: d, encoding: .utf8) { print(j) }
+        }
+    }
+    exit(0)
+}
 setvbuf(stdout, nil, _IOLBF, 0)
 // fonts in ~/Library/Fonts, registered for this process so they draw even right after being installed
 let userFonts = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Fonts")

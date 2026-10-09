@@ -44,6 +44,10 @@ THEMES = {
                "outline": 0.13, "outline_color": "#4A3B5C", "shadow": 0.0},
     "wenkai": {"label": "文楷 Brush", "zh_font": "LXGW WenKai TC", "bold": True, "color": "#FFFDF5",
                "th_color": "#FFFDF5", "outline": 0.09, "outline_color": "#2B2420", "shadow": 0.06},
+    "gensen": {"label": "源泉 Soft round", "zh_font": "GenSenRounded2 TW", "bold": True, "color": "#FFFFFF",
+               "th_color": "#FFFFFF", "outline": 0.12, "outline_color": "#3D6E9E", "shadow": 0.0},
+    "jason": {"label": "清松 Diary", "zh_font": "JasonHandWriting1", "color": "#FFFDF7", "th_color": "#FFFDF7",
+              "outline": 0.11, "outline_color": "#6B4A3A", "shadow": 0.03},
     "night": {"label": "夜空 Night glow", "color": "#E8F0FF", "th_color": "#E8F0FF", "outline": 0.05,
               "outline_color": "#1D2550", "shadow": 0.22},
 }
@@ -61,6 +65,10 @@ ZH_FONTS = [
     ("Iansui", "芫荽 (casual handwriting) · free"), ("ChenYuluoyan 2.0", "辰宇落雁體 (thin handwriting) · free"),
     ("Chiron Hei HK", "昭源黑體 (clean) · free"), ("Noto Serif TC", "思源宋體 (book) · free"),
     ("Cactus Classical Serif", "仙人掌明體 (old book) · free"),
+    ("GenSenRounded2 TW", "源泉圓體 (soft round) · free"), ("Chiron GoRound TC", "昭源圓體 (clean round) · free"),
+    ("JasonHandWriting1", "清松手寫體 (cute handwriting) · free"), ("LXGW Marker Gothic", "霞鶩漫黑 (marker pen) · free"),
+    ("Chocolate Classical Sans", "朱古力黑體 (retro) · free"), ("WDXL Lubrifont TC", "滑油字 (chunky, loud) · free"),
+    ("Cubic 11", "俐方體11號 (pixel, game) · free"),
 ]
 # The free fonts setup installs (family, file in ~/Library/Fonts, weights). Safari won't let a page use
 # fonts the user installed (anti-fingerprinting), so the app serves these to the page itself.
@@ -73,12 +81,72 @@ FREE_FONTS = [
     ("Chiron Hei HK", "ChironHeiHK[wght].ttf", "200 900"),
     ("Noto Serif TC", "NotoSerifTC[wght].ttf", "200 900"),
     ("Cactus Classical Serif", "CactusClassicalSerif-Regular.ttf", "400"),
+    ("GenSenRounded2 TW", "GenSenRounded2TW-R.otf", "400"),
+    ("GenSenRounded2 TW", "GenSenRounded2TW-B.otf", "700"),
+    ("Chiron GoRound TC", "ChironGoRoundTC[wght].ttf", "200 900"),
+    ("JasonHandWriting1", "JasonHandwriting1-Regular.ttf", "400"),
+    ("LXGW Marker Gothic", "LXGWMarkerGothic-Regular.ttf", "400"),
+    ("Chocolate Classical Sans", "ChocolateClassicalSans-Regular.ttf", "400"),
+    ("WDXL Lubrifont TC", "WDXLLubrifontTC-Regular.ttf", "400"),
+    ("Cubic 11", "Cubic_11.ttf", "400"),
 ]
 USER_FONTS = Path.home() / "Library" / "Fonts"
 
 
 def free_font_faces():
     return [{"family": fam, "file": f, "weight": w} for fam, f, w in FREE_FONTS if (USER_FONTS / f).exists()]
+
+
+# Most of macOS's Chinese fonts (圓體, 娃娃體, 手札體, 楷體…) are extras the Mac downloads, and Safari won't let a
+# page use them either: the page would quietly show its fallback. So the app hands them to the page too, each
+# as a single font file (many come in collections, .ttc, which browsers don't read), made the first time.
+SYSTEM_FONT_DIR = models.CACHE.parent / "fonts"
+_system_faces = None
+
+
+def system_font_faces():
+    """[{family, file, weight}] for the listed Mac fonts (regular and bold of each), for the page's @font-face."""
+    global _system_faces
+    if _system_faces is not None:
+        return _system_faces
+    free = {fam for fam, _, _ in FREE_FONTS}
+    fams = [f for f, _ in ZH_FONTS + TH_FONTS if f not in free and f != "PingFang TC"]
+    try:
+        p = subprocess.run([str(renderer._binary()), "fontfiles", *fams], capture_output=True, text=True, timeout=60)
+        members = [json.loads(x) for x in p.stdout.splitlines() if x.startswith("{")]
+    except Exception:
+        return []
+    faces = []
+    for fam in fams:
+        mine = [m for m in members if m["family"] == fam]
+        for want in (400, 700):
+            m = min(mine, key=lambda m: (abs(m["weight"] - want), m["weight"]), default=None)
+            if m and (want == 400 or m["weight"] >= 600) and not any(f["ps"] == m["ps"] for f in faces):
+                faces.append({"family": fam, "file": m["ps"] + Path(m["path"]).suffix.replace(".ttc", ".ttf"),
+                              "weight": str(want), "ps": m["ps"], "path": m["path"]})
+    _system_faces = faces
+    return faces
+
+
+def system_font_file(name):
+    """The single font file for one of system_font_faces(), made from its collection the first time."""
+    face = next((f for f in system_font_faces() if f["file"] == name), None)
+    if not face:
+        return None
+    src = Path(face["path"])
+    if src.suffix.lower() != ".ttc":
+        return src if src.exists() else None
+    out = SYSTEM_FONT_DIR / name
+    if not out.exists():
+        from fontTools.ttLib import TTCollection
+        SYSTEM_FONT_DIR.mkdir(parents=True, exist_ok=True)
+        for font in TTCollection(str(src), lazy=True):
+            if font["name"].getDebugName(6) == face["ps"]:
+                tmp = out.with_suffix(".part")
+                font.save(str(tmp))
+                tmp.rename(out)
+                break
+    return out if out.exists() else None
 
 
 TH_FONTS = [
@@ -102,37 +170,81 @@ def base_px(w, h, style):
     return min(w, h) * 0.058 * float(style["size"])
 
 
+LOOK_POSITIONS = ("bottom", "top", "custom")
+LOOK_SHOW = ("zh", "th", "none")
+
+
+def clean_look(look):
+    """One line's own look, on top of the video's style: position (bottom | top | custom, with y), size
+    (× the style's), color, bold, show (zh | th | none: only that language, or hide the line). {} = as all."""
+    look = look or {}
+    out = {}
+    if look.get("position") in LOOK_POSITIONS:
+        out["position"] = look["position"]
+        if look["position"] == "custom":
+            out["y"] = round(min(0.99, max(0.08, float(look.get("y") if look.get("y") is not None else 0.5))), 3)
+    if look.get("size") is not None and abs(float(look["size"]) - 1) > 0.01:
+        out["size"] = round(min(2.5, max(0.4, float(look["size"]))), 2)
+    if isinstance(look.get("color"), str) and look["color"].startswith("#") and len(look["color"]) in (7, 9):
+        out["color"] = look["color"]
+    if look.get("bold") in (True, False):
+        out["bold"] = look["bold"]
+    if look.get("show") in LOOK_SHOW:
+        out["show"] = look["show"]
+    return out
+
+
+def place_of(line, style):
+    """Where a line sits: (position, y). A line with its own position is drawn as its own block."""
+    look = line.get("look") or {}
+    pos = look.get("position") or style["position"]
+    y = look.get("y") if look.get("position") == "custom" else style.get("y")
+    return pos, round(float(y if y is not None else 0.94), 3)
+
+
 def caption_block(line, which, w, h, style, speakers=None):
     """Caption line(s) on screen together -> one renderer block. `line` may be a list: people talking
-    at once each get their own rows, earliest first, in their own colour. which: zh | th | both."""
+    at once each get their own rows, earliest first, in their own colour. which: zh | th | both.
+    A line's own look (size, colour, bold, which language) changes just its rows."""
     s = style
     group = line if isinstance(line, list) else [line]
     colours = {p["id"]: p.get("color") for p in speakers or [] if p.get("color")}
-    zh_px = base_px(w, h, s)
-    th_px = zh_px * float(s["th_scale"]) if which == "both" else zh_px
 
-    def row(text, fam, px, col):
-        return {"text": text, "font": fam, "size": round(px, 1), "color": col, "bold": bool(s["bold"]),
+    def row(text, fam, px, col, bold):
+        return {"text": text, "font": fam, "size": round(px, 1), "color": col, "bold": bool(bold),
                 "stroke": round(px * float(s["outline"]), 1), "stroke_color": s["outline_color"],
                 "shadow": round(px * float(s["shadow"]), 1)}
 
-    rows = []
+    rows, biggest = [], 0
     for l in sorted(group, key=lambda x: x.get("start", 0)):
+        look = l.get("look") or {}
+        show = look.get("show")
+        if show == "none":
+            continue
+        mine = which if not show or which != "both" else show          # "only Chinese" on a both video
+        if show and which != "both" and show != which:
+            continue                                                   # this line's language isn't in this video
         th, zh = (l.get("th") or "").strip(), (l.get("zh") or "").strip()
         if l.get("kind") == "sound":
             th = ""
-        own = colours.get(l.get("speaker"))
-        zh_row = row(zh, s["zh_font"], zh_px, own or s["color"]) if which in ("zh", "both") and zh else None
-        th_row = row(th, s["th_font"], th_px, own or (s["th_color"] if which == "both" else s["color"])) \
-            if which in ("th", "both") and th else None
+        zh_px = base_px(w, h, s) * float(look.get("size") or 1)
+        th_px = zh_px * float(s["th_scale"]) if mine == "both" else zh_px
+        biggest = max(biggest, zh_px)
+        own = look.get("color") or colours.get(l.get("speaker"))
+        bold = look.get("bold", s["bold"])
+        zh_row = row(zh, s["zh_font"], zh_px, own or s["color"], bold) if mine in ("zh", "both") and zh else None
+        th_row = row(th, s["th_font"], th_px, own or (s["th_color"] if mine == "both" else s["color"]), bold) \
+            if mine in ("th", "both") and th else None
         pair = (th_row, zh_row) if s["order"] == "th_above" else (zh_row, th_row)
         rows += [r for r in pair if r]
     if not rows:
         return None
-    if s["position"] == "top":
+    zh_px = biggest
+    pos, py = place_of(group[0], s)
+    if pos == "top":
         y, anchor = 0.05, "top"
-    elif s["position"] == "custom":
-        y, anchor = float(s["y"]), "bottom"
+    elif pos == "custom":
+        y, anchor = py, "bottom"
     else:
         y, anchor = 0.94, "bottom"
     box = {"color": s["box_color"], "pad": round(zh_px * 0.32), "radius": round(zh_px * 0.25)} if s["box"] else None
@@ -256,8 +368,11 @@ def frames(lines, touches, which, w, h, style, folder, on_progress=None, speaker
     for i, (a, b, on) in enumerate(spans):
         blocks = []
         talking = [x for kind, x in on if kind == "line"]
-        if talking:
-            blk = caption_block(talking, which, w, h, s, speakers)
+        places = {}
+        for x in talking:                     # a line placed somewhere of its own gets its own block
+            places.setdefault(place_of(x, s), []).append(x)
+        for group in places.values():
+            blk = caption_block(group, which, w, h, s, speakers)
             if blk:
                 blocks.append(blk)
         blocks += [b for b in (touch_block(x, w, h, s) for kind, x in on if kind == "touch") if b]

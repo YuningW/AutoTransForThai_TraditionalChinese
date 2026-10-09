@@ -213,6 +213,22 @@ textarea.field { resize: vertical; }
 .flag-types button[aria-checked="true"] { background: var(--flag); border-color: var(--flag); color: #fff; }
 .timing button { border-radius: 6px; }
 .flag-actions { display: flex; justify-content: flex-end; }
+.lookbtn { border: 0; background: none; color: var(--ink-3); font-size: 13px; font-weight: 700; padding: 0 4px; line-height: 1; opacity: .5; }
+.line:hover .lookbtn, .lookbtn:focus-visible, .lookbtn[aria-expanded="true"] { opacity: 1; }
+.line.has-look .lookbtn { color: var(--edited); opacity: 1; }
+.lookbox { grid-column: 2 / 4; display: flex; flex-direction: column; gap: 8px; padding: 10px; margin-top: 6px; border-radius: 8px; background: var(--sheet); border: 1px solid var(--rule); font-size: 13px; }
+.look-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.look-k { width: 52px; color: var(--ink-3); }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button, .look-color-reset, .look-actions button { border: 1px solid var(--rule); background: var(--paper, transparent); border-radius: 6px; padding: 3px 10px; font-size: 13px; color: var(--ink-2); }
+.seg button[aria-checked="true"] { background: var(--ink); border-color: var(--ink); color: var(--sheet); }
+.look-size { width: 160px; }
+.look-color { width: 36px; height: 26px; padding: 0; border: 1px solid var(--rule); border-radius: 6px; background: none; }
+.look-bold-l { display: inline-flex; gap: 4px; align-items: center; color: var(--ink-2); }
+.look-actions { display: flex; justify-content: flex-end; gap: 8px; }
+#ovOwn { position: absolute; inset: 0; pointer-events: none; }
+.ov-own { position: absolute; text-align: center; pointer-events: none; line-height: 1.25; }
+.ov-own .ov-box.draggable { cursor: ns-resize; outline: 1px dashed rgba(255,255,255,.6); outline-offset: 4px; }
 .unflag { color: var(--ink-2); }
 
 .fixbar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--ink); color: var(--sheet); border-radius: 0 0 12px 12px; }

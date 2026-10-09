@@ -799,6 +799,12 @@ def edit_line(jid, lid, changes):
         if "speaker" in changes:
             l["speaker"] = changes["speaker"] or None
             l.pop("speaker_guess", None)
+        if "look" in changes:                 # this line's own size, colour, position…; {} = like all the others
+            look = style.clean_look(changes["look"])
+            if look:
+                l["look"] = look
+            else:
+                l.pop("look", None)
         if l["end"] <= l["start"]:
             l["end"] = round(l["start"] + 0.5, 3)
         save_lines(jid, ls)

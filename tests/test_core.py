@@ -203,3 +203,21 @@ class TrackShift(unittest.TestCase):
         late = [{"start": l["start"] + 2.5, "end": l["end"] + 2.5} for l in ls]
         self.assertAlmostEqual(jobs.track_shift(late, ls), -2.5)
         self.assertEqual(jobs.track_shift(ls, ls), 0.0)
+
+
+class LineLook(unittest.TestCase):
+    def test_one_line_bigger_coloured_and_moved(self):
+        s = style.merged({})
+        plain = {"start": 0, "end": 2, "th": "หิว", "zh": "好餓"}
+        loud = {"start": 0.5, "end": 2, "th": "อร่อย", "zh": "好好吃",
+                "look": style.clean_look({"size": 1.5, "color": "#FF66AA", "bold": True, "position": "top", "show": "zh"})}
+        a = style.caption_block([plain], "both", 1920, 1080, s)
+        b = style.caption_block([loud], "both", 1920, 1080, s)
+        self.assertEqual([r["text"] for r in b["rows"]], ["好好吃"])          # only the Chinese for this one
+        self.assertAlmostEqual(b["rows"][0]["size"], a["rows"][1]["size"] * 1.5, places=0)
+        self.assertEqual((b["rows"][0]["color"], b["rows"][0]["bold"], b["anchor"]), ("#FF66AA", True, "top"))
+        self.assertNotEqual(style.place_of(plain, s), style.place_of(loud, s))
+
+    def test_hidden_line_and_bad_values(self):
+        self.assertIsNone(style.caption_block([{"start": 0, "end": 1, "zh": "嗨", "look": {"show": "none"}}], "zh", 1920, 1080, style.merged({})))
+        self.assertEqual(style.clean_look({"size": 1.0, "color": "red", "position": "custom", "y": 5}), {"position": "custom", "y": 0.99})

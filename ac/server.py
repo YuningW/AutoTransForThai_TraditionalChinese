@@ -101,6 +101,7 @@ class LineIn(BaseModel):
     end: float | None = None
     flag: str | None = None
     note: str | None = None
+    look: dict | None = None
 
 
 @app.patch("/api/jobs/{jid}/lines/{lid}")
@@ -333,9 +334,13 @@ def remove_touch(jid: str, tid: str):
 def font_file(name: str):
     """One of the free fonts (only those), for the page's @font-face: Safari won't use installed fonts."""
     known = {f for _, f, _ in style.FREE_FONTS}
-    if name not in known or not (style.USER_FONTS / name).exists():
-        raise HTTPException(404, "Not one of the free fonts.")
-    return FileResponse(style.USER_FONTS / name, media_type="font/ttf",
+    if name in known and (style.USER_FONTS / name).exists():
+        path = style.USER_FONTS / name
+    else:
+        path = style.system_font_file(name)          # one of the Mac's own fonts the page can't use by itself
+        if not path:
+            raise HTTPException(404, "Not one of the caption fonts.")
+    return FileResponse(path, media_type="font/otf" if path.suffix.lower() == ".otf" else "font/ttf",
                         headers={"Cache-Control": "max-age=604800"})
 
 
@@ -352,7 +357,7 @@ def get_settings():
         "claude_models": [{"key": k, **v} for k, v in models.CLAUDE.items()],
         "style": style.merged(s.get("style")), "style_default": style.DEFAULT,
         "themes": [{"key": k, "label": v["label"], "style": style.merged({"theme": k})} for k, v in style.THEMES.items()],
-        "fonts": _fonts(), "font_faces": style.free_font_faces(),
+        "fonts": _fonts(), "font_faces": style.free_font_faces() + [{k: f[k] for k in ("family", "file", "weight")} for f in style.system_font_faces()],
     }
 
 
