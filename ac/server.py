@@ -290,6 +290,21 @@ def fix_weak_spots(jid: str):
     return jobs.load(jid)
 
 
+@app.get("/api/jobs/{jid}/history")
+def history(jid: str):
+    return jobs.history(jid)
+
+
+@app.post("/api/jobs/{jid}/undo")
+def undo(jid: str):
+    return {"undid": jobs.undo(jid), **jobs.history(jid)}
+
+
+@app.post("/api/jobs/{jid}/redo-change")          # (/redo is "redo the captions with what it has learned")
+def redo_change(jid: str):
+    return {"redid": jobs.undo(jid, redo=True), **jobs.history(jid)}
+
+
 @app.post("/api/jobs/{jid}/clear-flags")
 def clear_flags(jid: str):
     return {"cleared": jobs.clear_flags(jid)}

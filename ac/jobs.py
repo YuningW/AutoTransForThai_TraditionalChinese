@@ -45,6 +45,49 @@ def _lock(jid):
     return _locks.setdefault(jid, threading.RLock())
 
 
+def _push(folder, text, why):
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{time.time():.6f}.json").write_text(json.dumps({"why": why, "lines": json.loads(text)}, ensure_ascii=False))
+    for f in sorted(folder.glob("*.json"))[:-UNDO_KEEP]:
+        f.unlink(missing_ok=True)
+
+
+def history(jid):
+    """What Undo and Redo would do: {"undo": why | None, "redo": why | None}."""
+    d = job_dir(jid) / "history"
+    out = {}
+    for k in ("undo", "redo"):
+        f = max((d / k).glob("*.json"), default=None) if (d / k).exists() else None
+        try:
+            out[k] = json.loads(f.read_text())["why"] if f else None
+        except (OSError, ValueError):
+            out[k] = None
+    return out
+
+
+def undo(jid, redo=False):
+    """Back one change (or forward again). The other stack gets the captions as they are now."""
+    if load(jid).get("busy"):
+        raise JobError("Wait for the current step to finish first.")
+    d = job_dir(jid)
+    src, dst = (d / "history" / ("redo" if redo else "undo")), (d / "history" / ("undo" if redo else "redo"))
+    with _lock(jid):
+        f = max(src.glob("*.json"), default=None) if src.exists() else None
+        if not f:
+            raise JobError("Nothing to redo." if redo else "Nothing to undo.")
+        snap = json.loads(f.read_text())
+        _push(dst, (d / "lines.json").read_text(), snap["why"])
+        f.unlink()
+        tmp = d / "lines.json.tmp"
+        tmp.write_text(json.dumps(snap["lines"], ensure_ascii=False, indent=0))
+        tmp.replace(d / "lines.json")
+        job = load(jid)
+        job["lines_rev"] = job.get("lines_rev", 0) + 1
+        job["counts"] = _counts(snap["lines"])
+        save(job)
+    return snap["why"]
+
+
 def job_dir(jid):
     if not re.fullmatch(r"[0-9a-f]{12}", jid or ""):
         raise JobError("Unknown job.")
@@ -91,9 +134,20 @@ def lines(jid):
     return json.loads(f.read_text()) if f.exists() else []
 
 
-def save_lines(jid, ls):
+UNDO_KEEP = 80                 # changes you can undo, per video
+
+
+def save_lines(jid, ls, why=None, keep_redo=False):
+    """Write the captions. What was there before is kept so it can be undone (why: what this change is, in words)."""
     d = job_dir(jid)
     with _lock(jid):
+        old = d / "lines.json"
+        if old.exists():
+            if why is None:
+                why = STATE_DOING.get(load(jid).get("state"), "a change")
+            _push(d / "history" / "undo", old.read_text(), why)
+            if not keep_redo:
+                shutil.rmtree(d / "history" / "redo", ignore_errors=True)    # a new change: nothing to redo
         tmp = d / "lines.json.tmp"
         tmp.write_text(json.dumps(ls, ensure_ascii=False, indent=0))
         tmp.replace(d / "lines.json")
@@ -891,7 +945,10 @@ def edit_line(jid, lid, changes):
             l["end"] = round(l["start"] + 0.5, 3)
         if "start" in changes:
             ls.sort(key=lambda x: (x["start"], x["end"]))      # moved on the timeline: keep the order by time
-        save_lines(jid, ls)
+        kind = ("change the timing" if {"start", "end"} & set(changes) else "edit a line's words" if {"th", "zh"} & set(changes)
+                else "flag a line" if {"flag", "note"} & set(changes) else "colour some words" if "paint" in changes
+                else "change a line's look" if "look" in changes else "assign who says it" if "speaker" in changes else "edit a line")
+        save_lines(jid, ls, why=kind)
         return l
 
 
@@ -1389,7 +1446,7 @@ def add_line(jid, start, end=None, th="", zh=""):
                "note": "", "status": "edited"}
         ls.append(new)
         ls.sort(key=lambda l: l["start"])
-        save_lines(jid, ls)
+        save_lines(jid, ls, why="add a caption")
         return new
 
 
@@ -1405,7 +1462,7 @@ def split_speakers(jid, lid):
         new = {**{k: v for k, v in l.items() if k not in ("explain", "feedback", "th_before", "zh_before", "heard", "attempts")},
                "id": max(x["id"] for x in ls) + 1, "th": "", "zh": "", "speaker": other, "status": "edited", "conf": 1.0}
         ls.insert(ls.index(l) + 1, new)
-        save_lines(jid, ls)
+        save_lines(jid, ls, why="add a line for the other person")
         return new
 
 
@@ -1428,7 +1485,7 @@ def set_speakers(jid, people):
             for l in ls:
                 if l.get("speaker") and l["speaker"] not in ids:
                     l["speaker"] = None
-            save_lines(jid, ls)
+            save_lines(jid, ls, why="change the people")
         update(jid, speakers=clean)
     memory.remember_people(clean)
     return load(jid)
@@ -1443,7 +1500,7 @@ def assign_speaker(jid, ids, speaker):
             if l["id"] in ids:
                 l["speaker"] = speaker or None
                 l.pop("speaker_guess", None)
-        save_lines(jid, ls)
+        save_lines(jid, ls, why="assign who says it")
     return len(ids)
 
 
@@ -1584,7 +1641,7 @@ def replace_text(jid, find, repl, where="zh", remember=False):
                 l["status"] = "edited"
                 n_lines += 1
         if n:
-            save_lines(jid, ls)
+            save_lines(jid, ls, why="find & replace")
     learned = None
     if remember and n:
         lang = {"zh": "Chinese", "th": "Thai", "both": "the captions"}[where]
@@ -1611,7 +1668,7 @@ def cut_line(jid, lid, at):
         second = {**keep, "id": max(x["id"] for x in ls) + 1, "start": round(at, 3), "th": th2, "zh": zh2, "status": "edited", "timed": "you"}
         i = ls.index(l)
         ls[i:i + 1] = [first, second]
-        save_lines(jid, ls)
+        save_lines(jid, ls, why="split a line")
         return [first, second]
 
 
@@ -1633,7 +1690,7 @@ def join_line(jid, lid):
         if not a.get("speaker") and b.get("speaker"):
             a["speaker"] = b["speaker"]
         del ls[i + 1]
-        save_lines(jid, ls)
+        save_lines(jid, ls, why="join two lines")
         return a
 
 
@@ -1646,7 +1703,7 @@ def clear_flags(jid):
             if l.get("flag") or l.get("note"):
                 n += bool(l.get("flag"))
                 l["flag"], l["note"] = None, ""
-        save_lines(jid, ls)
+        save_lines(jid, ls, why="clear the flags")
     return n
 
 
@@ -1655,7 +1712,7 @@ def delete_line(jid, lid):
         ls = lines(jid)
         if not any(l["id"] == lid for l in ls):
             raise JobError("That line is gone.")
-        save_lines(jid, [l for l in ls if l["id"] != lid])
+        save_lines(jid, [l for l in ls if l["id"] != lid], why="delete a line")
 
 
 # ---------------------------------------------------------------- a stretch of the video, with your note
@@ -1685,7 +1742,7 @@ def _retime_range_job(jid, start, end):
         for l in ls:
             if l["id"] in ids:
                 l.pop("timed", None)          # you asked for these to be lined up again, even ones you timed
-        save_lines(jid, ls)
+        save_lines(jid, ls, why="line up a stretch's timing")
     moved = _retime(jid, quiet=False, only=ids)
     update(jid, busy=False, state="ready", label="", progress=None)
     log(jid, f"Lined up {_mmss(start)}–{_mmss(end)} with when it's said: {moved} of {len(ids)} lines moved.", "done")

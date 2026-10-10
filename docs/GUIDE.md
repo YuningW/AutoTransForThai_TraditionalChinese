@@ -40,6 +40,8 @@ The captions sit next to the video and follow it as it plays. Click a line's tim
 - **Keyboard**: Space plays and pauses, ←/→ move a second (Shift: 5), ↑/↓ go to the previous or next line, **[** and **]** set where the line starts and ends, Enter edits it, F flags it. Press **?** for the full list.
 - **Try again**: if something stopped half-way (for example Claude's usage limit), it carries on from that step.
 
+**Undo**: **↶** (at the start of the toolbar) or **⌘Z** undoes the last change to the captions: a deleted line, edited words, moved timing, split/join, find & replace, colours, flags, even a fix or Line up the timing. **⇧⌘Z** redoes. Hover over ↶ to see what it would undo; the last 80 changes per video are kept. Deleting a line also shows a note with an **Undo** button. (While you're typing in a line, ⌘Z undoes your typing as usual.)
+
 ## 3. Make it look right
 
 **Caption style** sets the look for the whole video:

@@ -333,3 +333,21 @@ class PersonSize(unittest.TestCase):
         base = px({"start": 0, "end": 1, "zh": "嗨"})
         self.assertAlmostEqual(px({"start": 0, "end": 1, "zh": "嗨", "speaker": "m"}), base * 1.5, places=0)
         self.assertAlmostEqual(px({"start": 0, "end": 1, "zh": "嗨", "speaker": "m", "look": {"size": 0.8}}), base * 0.8, places=0)
+
+
+class UndoRedo(unittest.TestCase):
+    def test_delete_then_undo_then_redo(self):
+        import json, uuid
+        from ac import jobs, paths
+        jid = uuid.uuid4().hex[:12]
+        d = paths.JOBS / jid; d.mkdir(parents=True)
+        (d / "job.json").write_text(json.dumps({"id": jid, "state": "ready", "busy": False, "helpers": []}))
+        jobs.save_lines(jid, [{"id": 1, "start": 0, "end": 1, "th": "ก", "zh": "嗨"}, {"id": 2, "start": 1, "end": 2, "th": "ข", "zh": "好"}])
+        jobs.delete_line(jid, 2)
+        self.assertEqual([l["id"] for l in jobs.lines(jid)], [1])
+        self.assertEqual(jobs.history(jid)["undo"], "delete a line")
+        self.assertEqual(jobs.undo(jid), "delete a line")
+        self.assertEqual([l["id"] for l in jobs.lines(jid)], [1, 2])
+        self.assertEqual(jobs.history(jid)["redo"], "delete a line")
+        jobs.undo(jid, redo=True)
+        self.assertEqual([l["id"] for l in jobs.lines(jid)], [1])

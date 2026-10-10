@@ -84,6 +84,9 @@ textarea.field { resize: vertical; }
 .tl-line.flagged { border-color: var(--flag); box-shadow: inset 0 3px 0 var(--flag); }
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 50; background: var(--ink); color: var(--sheet); padding: 8px 16px; border-radius: 18px; font-size: 14px; box-shadow: 0 6px 20px rgba(20, 25, 60, .25); pointer-events: none; }
 .toast[hidden] { display: none; }
+.toast { pointer-events: auto; display: flex; align-items: center; gap: 12px; }
+#toastAct { border: 0; background: none; color: var(--caption, #ffd84d); font-weight: 700; padding: 0; cursor: pointer; }
+.undo-btn { font-size: 16px; padding: 4px 11px; }
 .update-bar { position: sticky; top: 57px; z-index: 5; padding: 10px 20px; background: #fff4d6; color: #5c4400; border-bottom: 1px solid #f0d58a; font-size: 14px; }
 .top { display: flex; align-items: center; gap: 16px; padding: 10px 20px; border-bottom: 1px solid var(--rule); background: var(--sheet); position: sticky; top: 0; z-index: 5; }
 .brand { display: flex; align-items: center; gap: 10px; background: none; border: 0; font-weight: 700; font-size: 16px; padding: 4px 0; }

@@ -208,7 +208,7 @@ async function refresh(jid) {
     if (firstVideo && j.media?.duration) { video.src = `/api/jobs/${jid}/video`; loadWave(jid); }
     if (j.lines_rev !== linesRev) {
       if (editing()) dirtyWhileEditing = true;
-      else { lines = await api("GET", `/api/jobs/${jid}/lines`); linesRev = j.lines_rev; renderLines(); renderRange(); }
+      else { lines = await api("GET", `/api/jobs/${jid}/lines`); linesRev = j.lines_rev; renderLines(); renderRange(); updateUndo(); }
     }
   } catch (ex) {
     $("#jobError").textContent = ex.message;
@@ -546,7 +546,7 @@ async function patch(l, changes) {
     linesRev = -1;           // the server bumped its revision; the next poll picks it up
     const li = $(`.line[data-id="${l.id}"]`);
     if (li && !editing()) li.replaceWith(lineEl(l, !$(".flagbox", li).hidden, !$(".lookbox", li).hidden));
-    updateFixbar(); updateTooFast();
+    updateFixbar(); updateTooFast(); updateUndo();
     if ("look" in changes || "paint" in changes || "start" in changes || "end" in changes) { current = undefined; tick(); }
   } catch (ex) { alert(ex.message); }
 }
@@ -605,9 +605,9 @@ ol.addEventListener("click", e => {
     return;
   }
   if (e.target.closest(".delline")) {
-    if (!confirm("Delete this line?")) return;
     api("DELETE", `/api/jobs/${job.id}/lines/${l.id}`).then(() => {
       lines = lines.filter(x => x.id !== l.id); e.target.closest(".line").remove(); updateFixbar(); current = undefined; tick();
+      toast("Line deleted", "Undo", () => undoRedo(false)); updateUndo();
     }).catch(ex => alert(ex.message));
     return;
   }
@@ -2294,7 +2294,7 @@ $("#findGo").onclick = async () => {
 /* ============================================================ splitting, joining, keyboard */
 
 async function reloadLines() {
-  lines = await api("GET", `/api/jobs/${job.id}/lines`); linesRev = -1; renderLines(); drawTimeline(video.currentTime, true);
+  lines = await api("GET", `/api/jobs/${job.id}/lines`); linesRev = -1; renderLines(); drawTimeline(video.currentTime, true); updateUndo();
 }
 async function cutLine(l) {
   try { await api("POST", `/api/jobs/${job.id}/lines/${l.id}/cut`, { at: Math.round(video.currentTime * 1000) / 1000 }); await reloadLines(); }
@@ -2330,10 +2330,40 @@ document.addEventListener("change", e => { if (e.target.tagName === "SELECT") se
 
 // a small note that a shortcut did something
 let toastTimer = null;
-function toast(text) {
-  const t = $("#toast"); t.textContent = text; t.hidden = false;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 1400);
+function toast(text, action, fn) {       // a short note; maybe with one button (e.g. Undo)
+  const t = $("#toast"), a = $("#toastAct");
+  $("#toastText").textContent = text; t.hidden = false;
+  a.hidden = !action; a.textContent = action || ""; a.onclick = () => { t.hidden = true; fn(); };
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, action ? 6000 : 1400);
 }
+
+/* Undo / redo: every change to the captions is kept (per video, the last 80) */
+async function updateUndo() {
+  if (!job) return;
+  try {
+    const h = await api("GET", `/api/jobs/${job.id}/history`);
+    const b = $("#undoBtn");
+    b.disabled = !h.undo || !!job.busy;
+    b.title = h.undo ? `Undo: ${h.undo} (⌘Z)` : "Nothing to undo";
+    b.dataset.redo = h.redo || "";
+  } catch { /* fine */ }
+}
+async function undoRedo(redo) {
+  try {
+    const r = await api("POST", `/api/jobs/${job.id}/${redo ? "redo-change" : "undo"}`);
+    await reloadLines(); updateUndo();
+    toast(redo ? `Redid: ${r.redid}` : `Undid: ${r.undid}`, redo ? (r.undo ? "Undo" : null) : (r.redo ? "Redo" : null), () => undoRedo(!redo));
+  } catch (ex) { toast(ex.message); }
+}
+$("#undoBtn").onclick = () => undoRedo(false);
+document.addEventListener("keydown", e => {
+  if (!job || $("#jobView").hidden || !(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+  const el = e.target;
+  if (el.isContentEditable || el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !/^(radio|checkbox|range|color)$/.test(el.type))) return;   // typing: the text's own undo
+  if (document.querySelector("dialog[open]")) return;
+  e.preventDefault();
+  undoRedo(e.shiftKey);
+});
 
 document.addEventListener("keydown", e => {
   if (!job || $("#jobView").hidden || e.metaKey || e.ctrlKey || e.altKey) return;
