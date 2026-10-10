@@ -2386,6 +2386,12 @@ $("#tabs").addEventListener("keydown", e => {
 showTab((() => { try { return localStorage.getItem("ac-tab"); } catch { return null; } })() || "stylePanel");
 $$(".stage-rest > details.panel > summary").forEach(s => s.addEventListener("click", e => e.preventDefault()));   // tabs open them
 
+// Style → people's own fonts live with each person (People tab)
+$("#toPeopleFonts").onclick = () => {
+  showTab("peoplePanel");
+  const f = $("#peopleList .pfont"); if (f) { f.scrollIntoView({ block: "center" }); f.focus(); }
+};
+
 // More ▾ closes after a choice, or a click anywhere else
 $("#moreMenu").addEventListener("click", e => { if (e.target.closest(".more-list button")) $("#moreMenu").open = false; });
 document.addEventListener("click", e => { if (!e.target.closest("#moreMenu")) $("#moreMenu").open = false; });
