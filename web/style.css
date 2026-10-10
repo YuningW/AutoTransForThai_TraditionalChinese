@@ -451,6 +451,7 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .listen-close .secondary { font-size: 13px; padding: 4px 11px; }
 #rangeLoop[aria-pressed="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
 .listen-close .seg-switch span { padding: 3px 10px; font-size: 12.5px; }
+.helper-kind { width: auto; padding: 3px 8px; font-size: 12.5px; }
 .reasons { display: flex; flex-wrap: wrap; gap: 6px; }
 .reasons:empty { display: none; }
 .reasons button { border: 1px solid var(--rule); background: var(--sheet); border-radius: 16px; padding: 4px 11px; font-size: 13px; color: var(--ink-2); }

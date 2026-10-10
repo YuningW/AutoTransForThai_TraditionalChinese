@@ -192,6 +192,15 @@ async def add_helper(jid: str, kind: str = Form(...), label: str = Form(""), tex
     return jobs.add_helper(jid, kind, label, got, text)
 
 
+class HelperKindIn(BaseModel):
+    kind: str
+
+
+@app.patch("/api/jobs/{jid}/helpers/{hid}")
+def helper_kind(jid: str, hid: str, body: HelperKindIn):
+    return jobs.set_helper_kind(jid, hid, body.kind)
+
+
 @app.delete("/api/jobs/{jid}/helpers/{hid}")
 def remove_helper(jid: str, hid: str):
     jobs.remove_helper(jid, hid)

@@ -314,3 +314,12 @@ class Reel(unittest.TestCase):
         self.assertEqual(jobs._spans(job, [], {"reel": True}), [(30.0, 33.0), (5.0, 8.0)])
         ls = [{"start": 6, "end": 7, "th": "a"}, {"start": 31, "end": 32, "th": "b"}]
         self.assertEqual([(x["th"], x["start"]) for x in jobs._joined(ls, [(30.0, 33.0), (5.0, 8.0)])], [("b", 1.0), ("a", 4.0)])
+
+
+class HelperLanguage(unittest.TestCase):
+    def test_what_the_text_is(self):
+        from ac import jobs
+        self.assertEqual(jobs.text_language("1\n00:00:06,221 --> 00:00:07,947\nI don't want to see anyone else\n"), "en")
+        self.assertEqual(jobs.text_language("ไม่อยากเจอใครเลยค่ะ วันนี้"), "th")
+        self.assertEqual(jobs.text_language("我不想見到任何人，今天"), "zh")
+        self.assertIsNone(jobs.text_language("12 34"))

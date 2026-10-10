@@ -268,14 +268,22 @@ function renderJob() {
   $("#helperList").replaceChildren(...hs.map(h => {
     const li = document.createElement("li");
     const s = document.createElement("span");
-    const what = h.kind === "original" ? "Thai" : "Translation";
     const n = (h.pictures || []).length;
     s.innerHTML = `<b></b> <small></small>`;
     s.querySelector("b").textContent = h.label;
-    s.querySelector("small").textContent = `${what}${n ? `, ${n} picture${n > 1 ? "s" : ""}` : ""}${h.used ? "" : ", not used yet"}`;
+    s.querySelector("small").textContent = `${n ? `${n} picture${n > 1 ? "s" : ""}` : ""}${h.used ? "" : `${n ? ", " : ""}not used yet`}`;
+    // what it is: you can always correct it (it's used that way from the next redo)
+    const kind = document.createElement("select"); kind.className = "field helper-kind"; kind.setAttribute("aria-label", `What “${h.label}” is`);
+    kind.append(new Option("Thai: what they say", "original"), new Option("A translation (English, Chinese…)", "translation"));
+    if (h.kind === "auto") kind.prepend(new Option("Reading the pictures…", "auto"));
+    kind.value = h.kind;
+    kind.onchange = async () => {
+      try { job = { ...job, ...(await api("PATCH", `/api/jobs/${job.id}/helpers/${h.id}`, { kind: kind.value })) }; renderJob(); toast("Changed: press Redo the captions with this help to use it"); }
+      catch (ex) { alert(ex.message); }
+    };
     const x = document.createElement("button"); x.type = "button"; x.textContent = "Remove";
     x.onclick = async () => { await api("DELETE", `/api/jobs/${job.id}/helpers/${h.id}`); refresh(job.id); };
-    li.append(s, x); return li;
+    li.append(s, kind, x); return li;
   }));
   $("#redoAll").hidden = !hs.some(h => !h.used) || !!job.busy || !(job.counts && job.counts.lines);
   $("#findVideoSubs").disabled = !!job.busy || !job.media?.duration;

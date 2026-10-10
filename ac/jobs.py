@@ -417,9 +417,23 @@ def _isolate_voice(jid):
 
 # ---------------------------------------------------------------- helpers from you
 
+HELPER_LABELS = {"th": "Thai captions", "en": "English subtitles", "zh": "Chinese subtitles"}
+
+
+def text_language(text):
+    """th, en or zh: which script most of the text is in (timestamps and numbers aside), or None if too little."""
+    body = re.sub(r"\d{1,2}:\d{2}:\d{2}[,.]\d+\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d+|\d+", " ", text or "")
+    th = len(re.findall(r"[\u0E00-\u0E7F]", body))
+    zh = len(re.findall(r"[\u3400-\u9FFF]", body))
+    en = len(re.findall(r"[A-Za-z]", body)) / 3          # Latin letters per word-ish, to weigh fairly against Thai/Chinese
+    best = max((th, "th"), (zh, "zh"), (en, "en"))
+    return best[1] if best[0] >= 8 else None
+
+
 def add_helper(jid, kind, label, files, text):
-    """files: [(filename, bytes)]. kind: "original" (Thai transcript) | "translation"."""
-    if kind not in ("original", "translation"):
+    """files: [(filename, bytes)]. kind: "original" (Thai: what they say) | "translation" | "auto" (from the text).
+    Text that plainly isn't what the kind says (an English SRT added as Thai) is filed where it belongs."""
+    if kind not in ("original", "translation", "auto"):
         raise JobError("Say whether this is the original Thai or a translation.")
     d = job_dir(jid) / "helpers"
     d.mkdir(exist_ok=True)
@@ -438,7 +452,11 @@ def add_helper(jid, kind, label, files, text):
     text = "\n\n".join(t for t in [*texts, (text or "").strip()] if t)
     if not saved and not text:
         raise JobError("Add a picture, a file or some text.")
-    h = {"id": hid, "kind": kind, "label": (label or "").strip() or ("CapCut / original captions" if kind == "original" else "Translation"),
+    lang = text_language(text)
+    if lang:                                   # the text says what it is: Thai is what they say, others translate it
+        kind = "original" if lang == "th" else "translation"
+    named = HELPER_LABELS.get(lang) or ("Thai captions" if kind == "original" else "Translation" if kind == "translation" else "Screenshots")
+    h = {"id": hid, "kind": kind, "label": (label or "").strip() or named, "language": lang,
          "pictures": saved, "text": text, "items": captions.parse_srt(text) if captions.looks_like_srt(text) else None,
          "read": not saved, "used": False, "added": time.time()}
     with _lock(jid):
@@ -501,6 +519,21 @@ def _find_subs_job(jid):
         else "This video has no subtitles of its own (no caption tracks, and nothing readable in the picture).", "done")
 
 
+def set_helper_kind(jid, hid, kind):
+    """You say what a piece of help is: Thai (what they say) or a translation. It's used that way from the next redo."""
+    if kind not in ("original", "translation"):
+        raise JobError("Thai (original) or translation?")
+    with _lock(jid):
+        job = load(jid)
+        for h in job["helpers"]:
+            if h["id"] == hid:
+                h["kind"], h["used"] = kind, False
+                if h.get("label") in ("CapCut / original captions", "Translation", "Thai captions", "Screenshots"):
+                    h["label"] = HELPER_LABELS.get(h.get("language") or "", "Thai captions" if kind == "original" else "Translation")
+        save(job)
+    return load(jid)
+
+
 def remove_helper(jid, hid):
     with _lock(jid):
         job = load(jid)
@@ -528,6 +561,10 @@ def _read_helpers(jid):
                 if hh["id"] == h["id"]:
                     hh.update(read=True, language=lang, text=(hh.get("text", "") + "\n" + text).strip(),
                               items=timed if len(timed) > len(items) * 0.8 else hh.get("items"))
+                    if lang in ("th", "en", "zh"):          # screenshots: now we know what they are
+                        hh["kind"] = "original" if lang == "th" else "translation"
+                        if hh.get("label") == "Screenshots" and lang in HELPER_LABELS:
+                            hh["label"] = HELPER_LABELS[lang]
             save(job)
         log(jid, f"Read {len(items)} lines from “{h['label']}”.")
 

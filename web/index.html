@@ -463,9 +463,10 @@
       <div class="panel-body">
         <ul class="helpers" id="helperList"></ul>
         <div class="add-helper">
-          <select id="helperKind" class="field">
-            <option value="original">Thai captions (CapCut, .srt, text)</option>
-            <option value="translation">Someone else's translation</option>
+          <select id="helperKind" class="field" aria-label="What this help is">
+            <option value="auto">Work it out from the text (recommended)</option>
+            <option value="original">Thai: what they say (CapCut, .srt, text)</option>
+            <option value="translation">A translation (English, Chinese…)</option>
           </select>
           <label class="pick"><input type="file" id="helperFiles" multiple accept="image/*,.srt,.txt,.vtt" hidden>Add screenshots or files</label>
           <textarea id="helperText" class="field small" rows="2" placeholder="…or paste text"></textarea>
