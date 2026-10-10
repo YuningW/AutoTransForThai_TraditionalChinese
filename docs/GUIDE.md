@@ -19,6 +19,8 @@ You can start more videos while one is working: each runs on its own and the Cla
 
 ## The video page
 
+The video and the timeline stay pinned at the top while you scroll the panels. On a wide screen (1500 px or more) the page uses three columns: video and timeline, the tabs, the captions.
+
 Under the video: the timeline, a small switch for which captions show on the video (中文 + Thai, 中文, Thai), and the main actions (**+ Caption**, **+ Emoji**, **Fix a stretch…**, **Find & replace**, and **More** for the rest). Below them, tabs: **Style · People · Emoji · Text & logo · Save · Help · Log**; the last one you used opens next time. **Quit** (top right) closes AutoCaption.
 
 ## 2. Check and fix the captions
@@ -80,7 +82,7 @@ Your usual people are remembered for new videos.
 The **Clips** tab collects scenes and saves them together, in any order:
 - While the video plays, press **I** where a scene starts and **O** where it ends (or the buttons), or make a clip from ticked lines.
 - Fine-tune each clip: drag its edges or the whole band on the timeline (green bands along the top), type an exact time like `12:34.5`, press **↑ ↓** in a time box (0.1 s; Shift: 1 s), or **⇤ now** / **now ⇥** to use the playhead.
-- Name clips, move them up in the order, play one (▶) or all (**▶ Play all**).
+- Name clips, move them up in the order, play one (▶) or all (**▶ Play all**); the clip playing turns orange, in the list and on the timeline. **Smooth joins** (in Save) fades where clips meet.
 - **Save these clips…** opens Save with **What to save → My clips**; smooth joins, size and vertical work as usual.
 
 ## 7. Save

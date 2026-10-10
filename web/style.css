@@ -142,8 +142,10 @@ textarea.field { resize: vertical; }
 .job { display: grid; grid-template-columns: minmax(340px, 46%) minmax(0, 1fr); gap: 24px; padding: 20px; max-width: 1600px; margin: 0 auto; align-items: start; }
 .stage { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 92px); overflow: auto; padding-bottom: 8px; }
 /* the video stays in view while the panels under it scroll */
-.player { position: sticky; top: 0; z-index: 1; flex: none; background: #000; border-radius: 10px; overflow: hidden; line-height: 0; }
-.player video { width: 100%; max-height: 62vh; display: block; background: #000; }
+.pinned { position: sticky; top: 0; z-index: 4; flex: none; display: flex; flex-direction: column; gap: 8px; background: var(--paper); padding-bottom: 6px; }
+.stage-rest { display: flex; flex-direction: column; gap: 12px; }
+.player { position: relative; z-index: 1; flex: none; background: #000; border-radius: 10px; overflow: hidden; line-height: 0; }
+.player video { width: 100%; max-height: min(62vh, calc(100vh - 340px)); display: block; background: #000; }
 /* same fonts and proportions as the burned-in captions (style.py); app.js sizes it to the picture */
 .overlay { position: absolute; text-align: center; pointer-events: none; line-height: 1.25; }
 .ov-box { display: inline-block; max-width: 100%; pointer-events: auto; }
@@ -184,7 +186,9 @@ textarea.field { resize: vertical; }
 .clip-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .clip-list:empty::before { content: "No clips yet: play the video and press I where a scene starts, O where it ends."; color: var(--ink-3); font-size: 13px; }
 .clip-list li { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 6px 8px; align-items: center; padding: 8px; border: 1px solid var(--rule); border-left: 4px solid #2ea05a; border-radius: 8px; background: var(--sheet); font-size: 13px; }
-.clip-list li.playing { background: color-mix(in srgb, #2ea05a 10%, var(--sheet)); }
+.clip-list li.playing { background: color-mix(in srgb, #f5a623 16%, var(--sheet)); border-left-color: #f5a623; }
+.clip-list li.playing .clip-n { color: #d4880f; }
+.tl-clip.playing { background: color-mix(in srgb, #f5a623 50%, transparent); border-color: #f5a623; color: #7a4b00; }
 .clip-list .clip-n { font-weight: 700; color: #2ea05a; min-width: 1.4em; }
 .clip-list .clip-label { padding: 4px 8px; font-size: 13px; }
 .clip-list .clip-times { grid-column: 2 / 6; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -604,3 +608,14 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 @keyframes mv-across { from { transform: translate(calc(-50% + var(--x0)), -50%); } to { transform: translate(calc(-50% + var(--x1)), -50%); } }
 .touch.mv-float, .touch.mv-wiggle, .touch.mv-flip, .touch.mv-pulse { animation-timing-function: ease-in-out; }
 @media (prefers-reduced-motion: reduce) { .touch.mv { animation-duration: calc(var(--p, 2s) * 3); } }
+
+/* wide screens: three columns, nothing wasted: video + timeline | the tabs | the captions */
+@media (min-width: 1500px) {
+  .job { max-width: none; grid-template-columns: minmax(520px, 1.5fr) minmax(380px, .9fr) minmax(420px, 1fr); }
+  .stage { display: contents; }
+  .pinned, .stage-rest { position: sticky; top: 76px; align-self: start; max-height: calc(100vh - 92px); overflow: auto; }
+  .pinned { grid-column: 1; }
+  .stage-rest { grid-column: 2; padding-bottom: 8px; }
+  .script { grid-column: 3; }
+  .player video { max-height: calc(100vh - 290px); }
+}

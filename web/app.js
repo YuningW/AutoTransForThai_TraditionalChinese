@@ -880,6 +880,7 @@ function savedSeconds() {
 function showSizes() {
   if (!job) return;
   $("#pvGo").hidden = !(partOn() || peopleOn() || clipsOn());
+  $("#fadeRow").hidden = !(peopleOn() || clipsOn());
   if (pv.on) stopPreview();
   const sec = savedSeconds(), vertical = shapeNow().vertical;
   const px = vertical ? 1080 * 1920 : (job.media?.width || 1920) * (job.media?.height || 1080);
@@ -1287,6 +1288,7 @@ function tick() {
   previewTick(t);
   loopTick(t);
   railNowTick();
+  markPlayingClip(t);
   $$(".now-t").forEach(x => { x.textContent = fmtTime(t); });
   const on = lines.length ? linesAt(t) : [];
   const key = on.map(x => x.id).join(",");
@@ -2448,7 +2450,7 @@ function renderClips(timesOnly) {
     return;
   }
   $("#clipList").replaceChildren(...cs.map((c, i) => {
-    const li = document.createElement("li"); li.dataset.id = c.id;
+    const li = document.createElement("li"); li.dataset.id = c.id; li.classList.toggle("playing", c.id === playingClip);
     const btn = (label, title, f) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.onclick = f; return b; };
     const n = document.createElement("span"); n.className = "clip-n"; n.textContent = i + 1;
     const name = document.createElement("input"); name.className = "field clip-label"; name.value = c.label || "";
@@ -2488,6 +2490,18 @@ function renderClips(timesOnly) {
   }));
   showSizes();
 }
+// the clip being played (or under the playhead) stands out, in the list and on the timeline
+let playingClip = null;
+function markPlayingClip(t) {
+  let id = null;
+  if (job?.reel?.length) {
+    const inPreview = pv.on && pv.spans[pv.i] && job.reel.find(c => Math.abs(c.start - pv.spans[pv.i][0]) < 0.01 && Math.abs(c.end - pv.spans[pv.i][1]) < 0.01);
+    id = inPreview ? inPreview.id : (job.reel.find(c => t >= c.start && t < c.end) || {}).id || null;
+  }
+  if (id === playingClip) return;
+  playingClip = id;
+  $$("#clipList li, .tl-clip").forEach(el => el.classList.toggle("playing", !!id && el.dataset.id === id));
+}
 let clipBandsKey = "";
 function drawClipBands(pps) {
   const bands = reel().map((c, i) => ({ ...c, n: i + 1 }));
@@ -2499,6 +2513,7 @@ function drawClipBands(pps) {
     const el = document.createElement("div"); el.className = `tl-clip${c.id === "pending" ? " pending" : ""}`; el.dataset.id = c.id;
     Object.assign(el.style, { left: `${(c.start - tl.from) * pps}px`, width: `${Math.max(6, (c.end - c.start) * pps)}px` });
     el.textContent = c.n; el.title = `Clip ${c.n}: ${fmtTime(c.start)}–${fmtTime(c.end)}${c.label ? ` · ${c.label}` : ""}`;
+    if (c.id === playingClip) el.classList.add("playing");
     if (c.id !== "pending") { const l = document.createElement("i"), r = document.createElement("i"); l.className = "h l"; r.className = "h r"; el.append(l, r); }
     return el;
   }));

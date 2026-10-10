@@ -88,6 +88,7 @@
 <!-- ============================================================ job -->
 <main id="jobView" class="job" hidden>
   <section class="stage">
+    <div class="pinned" id="pinned">
     <div class="player" id="player">
       <video id="video" controls playsinline preload="metadata"></video>
       <div class="overlay" id="overlay"><div class="ov-box" id="ovBox"></div></div>
@@ -120,6 +121,9 @@
       <button class="ghost" type="button" id="pvNext" aria-label="Next part">⏭</button>
       <button class="secondary" type="button" id="pvStop">Stop preview</button>
     </div>
+    </div>
+
+    <div class="stage-rest" id="stageRest">
 
     <div class="tools" id="tools">
       <button class="secondary" type="button" id="addLineHere" title="Add a caption at the playhead">+ Caption <span class="now-t">0:00.0</span></button>
@@ -401,8 +405,8 @@
           <span class="muted" id="whoLen"></span>
           <ol class="cut-list" id="cutList" aria-label="The parts that will be saved"></ol>
           <button class="secondary" type="button" id="peopleToClips" title="Open these parts in the Clips tab to trim them precisely: drag their edges on the timeline, type exact times, reorder">Edit these as clips…</button>
-          <label class="check"><input type="checkbox" id="fadeJoins" checked> <span>Smooth joins<small>A quarter-second fade where parts meet, so cuts don't jump or click.</small></span></label>
         </div>
+        <label class="check" id="fadeRow" hidden><input type="checkbox" id="fadeJoins" checked> <span>Smooth joins<small>A quarter-second fade where parts or clips meet, so cuts don't jump or click.</small></span></label>
         <button class="secondary" type="button" id="pvGo" hidden>▶ Preview what will be saved</button>
         <div class="part-box" id="partBox" hidden>
           <div class="range-ends">
@@ -468,6 +472,7 @@
       <summary>What it did</summary>
       <ul class="log" id="log"></ul>
     </details>
+    </div>
   </section>
 
   <section class="script" aria-label="Captions">
