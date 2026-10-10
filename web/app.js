@@ -654,8 +654,55 @@ ol.addEventListener("keydown", e => {
 function updateFixbar() {
   const n = lines.filter(l => l.flag).length;
   $("#fixbar").hidden = n === 0;
-  $("#flagCount").textContent = `${n} line${n > 1 ? "s" : ""} flagged. It will listen again where needed, fix them, and remember what your notes teach it.`;
+  $("#flagCount").textContent = `${n} flagged`;
+  $("#flagCount").title = "It listens again where needed, fixes them, and remembers what your notes teach it.";
+  renderRail();
 }
+
+// Flagged lines down the right edge (the whole video, top to bottom): see where they are, click one to go there
+function railBox() {
+  const s = $(".script").getBoundingClientRect();
+  const top = Math.max(s.top, 66) + 44, bottom = Math.min(innerHeight, s.bottom) - ($("#fixbar").hidden ? 12 : 64);
+  return { left: s.right + 6, top, height: Math.max(60, bottom - top) };
+}
+function renderRail() {
+  const rail = $("#flagRail"), flagged = lines.filter(l => l.flag), dur = video.duration || job?.media?.duration || 0;
+  rail.hidden = !flagged.length || !dur || $("#jobView").hidden;
+  if (rail.hidden) return;
+  const b = railBox();
+  Object.assign(rail.style, { left: `${Math.min(innerWidth - 16, b.left)}px`, top: `${b.top}px`, height: `${b.height}px` });
+  $$("button", rail).forEach(x => x.remove());
+  rail.append(...flagged.map(l => {
+    const m = document.createElement("button"); m.type = "button";
+    m.style.top = `${(l.start / dur) * 100}%`;
+    m.title = `${fmtTime(l.start)} ⚑ ${l.note || l.flag}\n${l.zh || l.th}`;
+    m.setAttribute("aria-label", `Flagged line at ${fmtTime(l.start)}`);
+    m.onclick = () => goToLine(l);
+    return m;
+  }));
+  railNowTick();
+}
+function railNowTick() {
+  const dur = video.duration || job?.media?.duration;
+  if (!$("#flagRail").hidden && dur) $("#railNow").style.top = `${(video.currentTime / dur) * 100}%`;
+}
+function goToLine(l) {
+  video.pause(); video.currentTime = l.start + 0.01;
+  const li = $(`.line[data-id="${l.id}"]`);
+  if (li) { li.scrollIntoView({ block: "center" }); li.classList.add("jumped"); setTimeout(() => li.classList.remove("jumped"), 1200); }
+}
+function stepFlag(d) {                 // previous / next flagged line from where you are
+  const f = lines.filter(l => l.flag).sort((a, b) => a.start - b.start);
+  if (!f.length) return;
+  const t = video.currentTime;
+  const n = d > 0 ? (f.find(l => l.start > t + 0.05) || f[0]) : ([...f].reverse().find(l => l.start < t - 0.05) || f[f.length - 1]);
+  goToLine(n);
+  toast(`Flagged line ${f.indexOf(n) + 1} of ${f.length}`);
+}
+$("#flagPrev").onclick = () => stepFlag(-1);
+$("#flagNext").onclick = () => stepFlag(1);
+addEventListener("resize", renderRail);
+addEventListener("scroll", () => { if (!$("#flagRail").hidden) renderRail(); }, { passive: true });
 // Fixes can use their own Claude model and effort (e.g. Opus for a hard stretch while Models says Sonnet).
 // One choice for both Fix a stretch and Fix flagged lines, remembered on this Mac; "" = as under Models.
 function fixClaude() {
@@ -668,9 +715,11 @@ function renderClaudePicks() {
   const effOf = k => (settings.efforts.find(e => e.key === k) || {}).label || k;
   $$("[data-claude-pick]").forEach(box => {
     const m = $("[data-pick=model]", box), e = $("[data-pick=effort]", box);
-    m.replaceChildren(new Option(`As in Models (${nameOf(settings.claude_model).replace("Claude ", "")})`, ""),
+    m.replaceChildren(new Option(`${nameOf(settings.claude_model).replace("Claude ", "")} · as set`, ""),
       ...settings.claude_models.map(x => new Option(x.label.replace("Claude ", ""), x.key)));
-    e.replaceChildren(new Option(`As in Models (${effOf(settings.claude_effort || "auto")})`, ""),
+    m.title = "Claude model for this fix. \"as set\" = the one under Models";
+    e.title = "How hard Claude thinks for this fix. \"as set\" = the setting under Models";
+    e.replaceChildren(new Option(`${effOf(settings.claude_effort || "auto")} · as set`, ""),
       ...settings.efforts.map(x => new Option(x.label, x.key)));
     m.value = now.model || ""; e.value = now.effort || "";
     m.onchange = e.onchange = () => {
@@ -1223,6 +1272,7 @@ function tick() {
   const t = video.currentTime;
   previewTick(t);
   loopTick(t);
+  railNowTick();
   $$(".now-t").forEach(x => { x.textContent = fmtTime(t); });
   const on = lines.length ? linesAt(t) : [];
   const key = on.map(x => x.id).join(",");
@@ -2006,7 +2056,7 @@ function drawTimeline(t, force) {
     const row = l.start < rowEnd - 0.05 ? 1 : 0;
     if (!row) rowEnd = l.end;
     const el = document.createElement("div");
-    el.className = `tl-line${readSpeed(l) ? " fast" : ""}${row ? " row1" : ""}${linesAt(t).includes(l) ? " now" : ""}${tl.drag?.l === l ? " moving" : ""}`;
+    el.className = `tl-line${l.flag ? " flagged" : ""}${readSpeed(l) ? " fast" : ""}${row ? " row1" : ""}${linesAt(t).includes(l) ? " now" : ""}${tl.drag?.l === l ? " moving" : ""}`;
     el.dataset.id = l.id;
     el.style.left = `${(l.start - tl.from) * pps}px`;
     el.style.width = `${Math.max(6, (l.end - l.start) * pps)}px`;
@@ -2239,6 +2289,7 @@ document.addEventListener("keydown", e => {
     case "]": if (l) { patch(l, { end: Math.round(t * 1000) / 1000 }).then(() => drawTimeline(t, true)); toast(`Ends at ${fmtTime(t)}`); } break;
     case "s": case "S": if (l) { cutLine(l); toast("Split at the playhead"); } break;
     case "m": case "M": if (l) { joinLine(l); toast("Joined with the next line"); } break;
+    case "n": case "N": stepFlag(e.shiftKey ? -1 : 1); break;
     case "f": case "F": if (l) { const li = $(`.line[data-id="${l.id}"]`); li?.scrollIntoView({ block: "center" }); $(".flag", li)?.click(); } break;
     case "Enter": if (l) { video.pause(); const z = $(`.line[data-id="${l.id}"] .zh`); z?.scrollIntoView({ block: "center" }); z?.focus(); } break;
     case "Delete": case "Backspace": if (l) $(`.line[data-id="${l.id}"] .delline`)?.click(); break;
@@ -2288,7 +2339,7 @@ async function route() {
   clearTimeout(pollTimer);
   job = null;
   video.pause();
-  $("#jobView").hidden = true; $("#startView").hidden = false;
+  $("#jobView").hidden = true; $("#startView").hidden = false; $("#flagRail").hidden = true;
   $("#topTitle").textContent = ""; document.title = "AutoCaption";
   loadJobList();
 }

@@ -461,6 +461,7 @@
       <button class="ghost" type="button" id="bulkClear">Clear selection</button>
     </div>
     <div class="fixbar" id="fixbar" hidden>
+      <span class="flag-nav"><button type="button" class="ghost" id="flagPrev" title="Previous flagged line" aria-label="Previous flagged line">⬆</button><button type="button" class="ghost" id="flagNext" title="Next flagged line" aria-label="Next flagged line">⬇</button></span>
       <span id="flagCount"></span>
       <span class="fix-claude" data-claude-pick>
         <select class="field" data-pick="model" aria-label="Claude model for fixing these lines"></select>
@@ -516,6 +517,7 @@
     <tr><td><kbd>M</kbd></td><td>Join the line with the next one</td></tr>
     <tr><td><kbd>Enter</kbd></td><td>Edit the line's Chinese (<kbd>Shift</kbd> <kbd>Tab</kbd> for the Thai, <kbd>Enter</kbd> to finish)</td></tr>
     <tr><td><kbd>F</kbd></td><td>Flag the line</td></tr>
+    <tr><td><kbd>N</kbd></td><td>Next flagged line (with <kbd>Shift</kbd>: previous)</td></tr>
     <tr><td><kbd>Delete</kbd></td><td>Delete the line</td></tr>
     <tr><td><kbd>L</kbd></td><td>Loop the stretch (in Fix a stretch)</td></tr>
     <tr><td><kbd>?</kbd></td><td>This list</td></tr>
@@ -609,6 +611,7 @@
 </template>
 
 <div class="toast" id="toast" role="status" hidden></div>
+<nav class="flag-rail" id="flagRail" aria-label="Flagged lines" hidden><i class="rail-now" id="railNow"></i></nav>
 <div class="paint-bar" id="paintBar" role="toolbar" aria-label="Colour these words" hidden>
   <span class="paint-k">Colour</span>
   <span id="paintPeople"></span>
