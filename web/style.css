@@ -204,6 +204,12 @@ body.resizing { cursor: col-resize; user-select: none; }
 .clip-list .clip-t { width: 6.5em; padding: 3px 6px; font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
 .clip-list button { border: 1px solid var(--rule); background: var(--paper); border-radius: 6px; padding: 2px 7px; font-size: 12px; color: var(--ink-2); }
 .clip-list .clip-len { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.clip-list .clip-star { border: 0; background: none; font-size: 18px; line-height: 1; padding: 0 2px; color: var(--ink-3); }
+.clip-list .clip-star[aria-pressed="true"] { color: #f2b705; }
+.clip-list li.starred { border-left-color: #f2b705; }
+.clip-list.star-only li:not(.starred) { opacity: .45; }
+.star-only { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.tl-clip.starred::before { content: "★"; position: absolute; right: 9px; top: 0; color: #f2b705; font-size: 11px; }
 .tl-parts { position: absolute; inset: 0; pointer-events: none; }
 .pv-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, #2f80ed 12%, var(--sheet)); border: 1px solid color-mix(in srgb, #2f80ed 40%, var(--rule)); font-size: 14px; }
 .pv-bar[hidden] { display: none; }

@@ -864,8 +864,8 @@ function showPeoplePick() {
 }
 function partNow() {                  // null: the whole video; false: not ready (says why)
   if (clipsOn()) {
-    if (!reelSpans().length) { alert("Add clips first: open the Clips tab and press I where a scene starts, O where it ends."); return false; }
-    return { reel: true };
+    if (!reelSpans().length) { alert(starOnly() ? "No ★ clips yet: star the ones you want in the Clips tab, or turn off ★ only." : "Add clips first: open the Clips tab and press I where a scene starts, O where it ends."); return false; }
+    return { reel: true, starred: starOnly() };
   }
   if (peopleOn()) {
     if (!whoPicked.size || !peopleSpans().length) { alert("Tick the people to keep (and at least one part). Their lines need to be marked as theirs (the chip on each line)."); return false; }
@@ -2390,7 +2390,9 @@ $("#lines").addEventListener("click", e => { const w = e.target.closest(".why");
 
 // Kept with the video (job.reel), in the order you put them. I starts a clip at the playhead, O ends it.
 const reel = () => (job.reel = job.reel || []);
-const reelSpans = () => reel().filter(c => c.end - c.start >= 0.3).map(c => [c.start, c.end]);
+const starOnly = () => $("#starOnly").checked;
+const usedClips = () => reel().filter(c => c.end - c.start >= 0.3 && (c.star || !starOnly()));
+const reelSpans = () => usedClips().map(c => [c.start, c.end]);
 function clipsOn() { return $("input[name=part]:checked")?.value === "clips"; }
 let clipStart = null, reelTimer = null;
 function reelChanged() { renderClips(); clearTimeout(reelTimer); reelTimer = setTimeout(saveReel, 500); }
@@ -2442,7 +2444,12 @@ $("#peopleToClips").onclick = () => {
   showTab("clipsPanel");
   toast(`${made.length} parts are now clips: trim them here`);
 };
-$("#clipPlay").onclick = () => { if (reelSpans().length) playClips(reelSpans()); };
+$("#clipPlay").onclick = () => { if (reelSpans().length) playClips(reelSpans()); else if (starOnly()) toast("No ★ clips yet"); };
+$("#starOnly").addEventListener("change", () => {
+  try { localStorage.setItem("ac-star-only", $("#starOnly").checked ? "1" : ""); } catch { /* fine */ }
+  renderClips(); drawTimeline(video.currentTime, true);
+});
+try { $("#starOnly").checked = localStorage.getItem("ac-star-only") === "1"; } catch { /* fine */ }
 $("#clipSave").onclick = () => {
   $('input[name=part][value="clips"]').checked = true; showPart(); showPeoplePick(); showTab("exportPanel");
   $("#export").scrollIntoView({ block: "center" });
@@ -2454,7 +2461,12 @@ function renderClips(timesOnly) {
   $("#clipCount").textContent = cs.length || "";
   $("#clipsHere").textContent = cs.length ? `(${cs.length})` : "";
   const len = cs.reduce((s, c) => s + Math.max(0, c.end - c.start), 0);
-  $("#clipTotal").textContent = cs.length ? `${cs.length} clip${cs.length > 1 ? "s" : ""}, ${fmtTime(len).replace(/\.\d$/, "")} in all` : "";
+  const stars = cs.filter(c => c.star), used = usedClips(), usedLen = used.reduce((s, c) => s + c.end - c.start, 0);
+  $("#clipTotal").textContent = !cs.length ? "" : starOnly()
+    ? `★ ${stars.length} of ${cs.length} clips, ${fmtTime(usedLen).replace(/\.\d$/, "")}`
+    : `${cs.length} clip${cs.length > 1 ? "s" : ""}${stars.length ? ` (★ ${stars.length})` : ""}, ${fmtTime(len).replace(/\.\d$/, "")} in all`;
+  $("#clipList").classList.toggle("star-only", starOnly());
+  $("#clipsHere").textContent = cs.length ? (starOnly() ? `(★ ${stars.length})` : `(${cs.length})`) : "";
   if (timesOnly) {                        // while dragging on the timeline: just the numbers
     cs.forEach(c => { const li = $(`#clipList li[data-id="${c.id}"]`); if (!li) return;
       if (document.activeElement !== $(".clip-t.s", li)) $(".clip-t.s", li).value = fmtTime(c.start);
@@ -2466,6 +2478,12 @@ function renderClips(timesOnly) {
     const li = document.createElement("li"); li.dataset.id = c.id; li.classList.toggle("playing", c.id === playingClip);
     const btn = (label, title, f) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.onclick = f; return b; };
     const n = document.createElement("span"); n.className = "clip-n"; n.textContent = i + 1;
+    li.classList.toggle("starred", !!c.star);
+    const star = document.createElement("button"); star.type = "button"; star.className = "clip-star";
+    star.textContent = c.star ? "★" : "☆"; star.setAttribute("aria-pressed", String(!!c.star));
+    star.title = c.star ? "A favourite (click to unstar)" : "Mark as a favourite";
+    star.onclick = () => { c.star = !c.star || undefined; reelChanged(); drawTimeline(video.currentTime, true); };
+    n.append(star);
     const name = document.createElement("input"); name.className = "field clip-label"; name.value = c.label || "";
     name.placeholder = lines.filter(l => l.end > c.start && l.start < c.end).map(l => l.zh || l.th)[0] || `Clip ${i + 1}`;
     name.oninput = () => { c.label = name.value; clearTimeout(reelTimer); reelTimer = setTimeout(saveReel, 600); };
@@ -2524,13 +2542,14 @@ let clipBandsKey = "";
 function drawClipBands(pps) {
   const bands = reel().map((c, i) => ({ ...c, n: i + 1 }));
   if (clipStart !== null) bands.push({ id: "pending", start: clipStart, end: Math.max(clipStart + 0.1, video.currentTime), n: "…" });
-  const key = JSON.stringify(bands.map(b => [b.id, b.start, b.end, b.label])) + tl.from.toFixed(2) + pps;
+  const key = JSON.stringify(bands.map(b => [b.id, b.start, b.end, b.label, b.star])) + tl.from.toFixed(2) + pps;
   if (key === clipBandsKey) return;                 // nothing moved: leave them be
   clipBandsKey = key;
   $("#tlClips").replaceChildren(...bands.filter(c => c.end > tl.from && c.start < tl.from + tl.span).map(c => {
     const el = document.createElement("div"); el.className = `tl-clip${c.id === "pending" ? " pending" : ""}`; el.dataset.id = c.id;
     Object.assign(el.style, { left: `${(c.start - tl.from) * pps}px`, width: `${Math.max(6, (c.end - c.start) * pps)}px` });
-    el.textContent = c.n; el.title = `Clip ${c.n}: ${fmtTime(c.start)}–${fmtTime(c.end)}${c.label ? ` · ${c.label}` : ""}`;
+    el.textContent = c.n; el.title = `Clip ${c.n}${c.star ? " ★" : ""}: ${fmtTime(c.start)}–${fmtTime(c.end)}${c.label ? ` · ${c.label}` : ""}`;
+    if (c.star) el.classList.add("starred");
     if (c.id === playingClip) el.classList.add("playing");
     if (c.id !== "pending") { const l = document.createElement("i"), r = document.createElement("i"); l.className = "h l"; r.className = "h r"; el.append(l, r); }
     return el;

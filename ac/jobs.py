@@ -1025,11 +1025,12 @@ def _spans(job, ls, part):
     if not part:
         return None
     dur = (job.get("media") or {}).get("duration") or 1e9
-    if part.get("reel"):                      # your clips (the Clips tab), in the order you put them
-        spans = [(max(0.0, float(c["start"])), min(dur, float(c["end"]))) for c in job.get("reel") or []]
+    if part.get("reel"):                      # your clips (the Clips tab), in the order you put them; maybe ★ only
+        spans = [(max(0.0, float(c["start"])), min(dur, float(c["end"]))) for c in _reel_used(job, part)]
         spans = [(round(a, 3), round(b, 3)) for a, b in spans if b - a >= 0.3]
         if not spans:
-            raise JobError("Add clips first (the Clips tab: I to start a clip, O to end it).")
+            raise JobError("No ★ clips yet: star the ones you want, or turn off ★ only." if part.get("starred") else
+                           "Add clips first (the Clips tab: I to start a clip, O to end it).")
         return spans
     if part.get("spans"):                     # the list of parts as you left it on the page (some dropped or nudged)
         spans = []
@@ -1062,6 +1063,11 @@ def _spans(job, ls, part):
     return [(round(a, 3), round(b, 3))]
 
 
+def _reel_used(job, part):
+    """The clips a save uses: all of them, or only the ★ ones."""
+    return [c for c in job.get("reel") or [] if c.get("star") or not (part or {}).get("starred")]
+
+
 def set_reel(jid, clips):
     """Your clips (the Clips tab): [{"id", "start", "end", "label"}], in the order you want them."""
     dur = (load(jid).get("media") or {}).get("duration") or 1e9
@@ -1073,7 +1079,7 @@ def set_reel(jid, clips):
             continue
         if b - a >= 0.1:
             clean.append({"id": str(c.get("id") or uuid.uuid4().hex[:6])[:12], "start": round(a, 3), "end": round(b, 3),
-                          "label": str(c.get("label") or "")[:60]})
+                          "label": str(c.get("label") or "")[:60], **({"star": True} if c.get("star") else {})})
     with _lock(jid):
         job = load(jid)
         job["reel"] = clean[:200]
@@ -1119,7 +1125,7 @@ def export(jid, srt=True, burn="zh", shape=None, part=None):
             p = folder / f"{base}.{suffix}.srt"
             p.write_text(captions.srt(ls, which), encoding="utf-8")
             files.append({"kind": f"srt-{which}", "path": str(p)})
-    remember = None if not spans else {"reel": True} if part.get("reel") else \
+    remember = None if not spans else {"reel": True, "starred": bool(part.get("starred"))} if part.get("reel") else \
         {"people": part["people"], "spans": [list(s) for s in spans]} if part.get("people") else \
         {"start": spans[0][0], "end": spans[0][1]}
     update(jid, exports=files, export_folder=str(folder), part=remember)
@@ -1128,7 +1134,7 @@ def export(jid, srt=True, burn="zh", shape=None, part=None):
         shape = shape or {}
         update(jid, shape=shape)                 # remembered for this video
         if part and part.get("reel"):            # one file per clip: named after your clips
-            shape = {**shape, "names": [c.get("label") or "" for c in job.get("reel") or [] if c["end"] - c["start"] >= 0.3]}
+            shape = {**shape, "names": [c.get("label") or "" for c in _reel_used(job, part) if c["end"] - c["start"] >= 0.3]}
         _run(jid, _burn_job, burn, folder, base, files, shape, spans)
     return load(jid)
 
