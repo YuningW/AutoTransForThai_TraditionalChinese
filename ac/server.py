@@ -207,10 +207,19 @@ def helper_picture(jid: str, name: str):
 
 
 class ExportIn(BaseModel):
-    srt: bool = True
+    srt: bool | list[str] = True   # True: all three; or which: ["zh", "both", "th"]; [] for none
     burn: str = "zh"          # zh | both | th | none
     shape: dict | None = None  # {"vertical": true, "fit": "fill" | "fit", "pos": 0..1}
-    part: dict | None = None   # {"start", "end"}: just this part of the video
+    part: dict | None = None   # {"start", "end"}: just this part; {"people": [...]}; {"reel": true}: your clips
+
+
+class ReelIn(BaseModel):
+    clips: list[dict]
+
+
+@app.put("/api/jobs/{jid}/reel")
+def put_reel(jid: str, body: ReelIn):
+    return jobs.set_reel(jid, body.clips)
 
 
 @app.post("/api/jobs/{jid}/export")

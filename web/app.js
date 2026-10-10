@@ -199,7 +199,7 @@ async function refresh(jid) {
     const j = await api("GET", `/api/jobs/${jid}`);
     const firstVideo = !job || (!job.media?.duration && j.media?.duration);
     const first = !job;
-    if (job && job.id === j.id) { j.style = job.style; j.speakers = job.speakers; }   // the page owns these while you edit
+    if (job && job.id === j.id) { j.style = job.style; j.speakers = job.speakers; j.reel = job.reel; }   // the page owns these while you edit
     job = j;
     renderJob();
     if (first) { renderStylePanel(); renderPeople(); placeOverlay(); picked.clear(); renderSavedLogos(); loadShape(); }
@@ -766,7 +766,11 @@ $("#export").onclick = async () => {
     await saveStyleNow();
     const part = partNow();
     if (part === false) return;
-    await api("POST", `/api/jobs/${job.id}/export`, { srt: true, burn, shape: shapeNow(), part });
+    if (clipsOn()) await saveReel();
+    const srt = $$("input[name=srt]:checked").map(b => b.value);
+    try { localStorage.setItem("ac-srt", JSON.stringify(srt)); } catch { /* fine */ }
+    if (burn === "none" && !srt.length) { alert("Nothing to save: tick an SRT file or choose a video to burn."); return; }
+    await api("POST", `/api/jobs/${job.id}/export`, { srt, burn, shape: shapeNow(), part });
     refresh(job.id);
   } catch (ex) { alert(ex.message); }
 };
@@ -851,6 +855,10 @@ function showPeoplePick() {
   drawTimeline(video.currentTime, true);
 }
 function partNow() {                  // null: the whole video; false: not ready (says why)
+  if (clipsOn()) {
+    if (!reelSpans().length) { alert("Add clips first: open the Clips tab and press I where a scene starts, O where it ends."); return false; }
+    return { reel: true };
+  }
   if (peopleOn()) {
     if (!whoPicked.size || !peopleSpans().length) { alert("Tick the people to keep (and at least one part). Their lines need to be marked as theirs (the chip on each line)."); return false; }
     return { people: [...whoPicked], spans: peopleSpans().map(([a, b]) => [Math.round(a * 1000) / 1000, Math.round(b * 1000) / 1000]) };
@@ -864,13 +872,14 @@ function partNow() {                  // null: the whole video; false: not ready
 // how big the saved video will be, roughly: the bitrates are media.py SIZES (+ sound); full ≈ like the original
 function savedSeconds() {
   const full = job?.media?.duration || 0;
+  if (clipsOn()) return reelSpans().reduce((s, [a, b]) => s + b - a, 0);
   if (peopleOn()) return peopleSpans().reduce((s, [a, b]) => s + b - a, 0);
   if (partOn() && part.start != null && part.end != null) return Math.max(0, part.end - part.start);
   return full;
 }
 function showSizes() {
   if (!job) return;
-  $("#pvGo").hidden = !(partOn() || peopleOn());
+  $("#pvGo").hidden = !(partOn() || peopleOn() || clipsOn());
   if (pv.on) stopPreview();
   const sec = savedSeconds(), vertical = shapeNow().vertical;
   const px = vertical ? 1080 * 1920 : (job.media?.width || 1920) * (job.media?.height || 1080);
@@ -917,6 +926,7 @@ $("#partTicked").onclick = () => {
 };
 /* preview: play just what will be saved, part after part, skipping the rest */
 function savedSpans() {               // null when the whole video is saved
+  if (clipsOn()) return reelSpans();
   if (peopleOn()) return peopleSpans();
   if (partOn() && part.start != null && part.end != null && part.end > part.start) return [[part.start, part.end]];
   return null;
@@ -996,7 +1006,11 @@ function loadShape() {           // what you chose last time for this video
   part.start = job.part?.start ?? null; part.end = job.part?.end ?? null;     // what you saved last time
   whoPicked.clear(); (job.part?.people || []).forEach(id => whoPicked.add(id));
   cuts.key = ""; cuts.list = []; cuts.restore = job.part?.spans || null;   // dropped parts stay out, nudged ends stay moved
-  $(`input[name=part][value="${job.part?.people ? "people" : job.part ? "part" : "all"}"]`).checked = true;
+  $(`input[name=part][value="${job.part?.reel ? "clips" : job.part?.people ? "people" : job.part ? "part" : "all"}"]`).checked = true;
+  let srtPick = ["zh", "both", "th"];
+  try { srtPick = JSON.parse(localStorage.getItem("ac-srt") || "null") || srtPick; } catch { /* fine */ }
+  $$("input[name=srt]").forEach(b => { b.checked = srtPick.includes(b.value); });
+  renderClips();
   showPart(); showPeoplePick();
 }
 $$("input[name=shape], input[name=fit], input[name=vsize]").forEach(r => r.addEventListener("change", showShape));
@@ -2027,7 +2041,8 @@ function drawTimeline(t, force) {
   tlClamp();
   const W = tlWidth(), pps = W / tl.span;
   $("#tlHead").style.left = `${(t - tl.from) * pps}px`;
-  const spans = savedSpans() || [];       // what will be saved, shaded
+  const spans = clipsOn() ? [] : savedSpans() || [];       // what will be saved, shaded (clips have their own bands)
+  drawClipBands(pps);
   const pkey = spans.map(s => s.join("-")).join(",");
   if (pkey + pps + tl.from !== tl.partKey) {
     tl.partKey = pkey + pps + tl.from;
@@ -2094,6 +2109,14 @@ function drawWave(W, pps) {
 
 $("#tlView").addEventListener("pointerdown", e => {
   if (e.button !== 0) return;
+  const band = e.target.closest(".tl-clip");
+  if (band && !band.classList.contains("pending")) {
+    const c = reel().find(x => x.id === band.dataset.id);
+    const mode = e.target.classList.contains("l") ? "start" : e.target.classList.contains("r") ? "end" : "move";
+    tl.drag = { clip: c, mode, x0: e.clientX, t0: tlTime(e.clientX), s0: c.start, e0: c.end, moved: false };
+    $("#tlView").setPointerCapture(e.pointerId); video.pause();
+    return;
+  }
   const block = e.target.closest(".tl-line");
   const l = block && lines.find(x => x.id === +block.dataset.id);
   const mode = !l ? "pan" : e.target.classList.contains("l") ? "start" : e.target.classList.contains("r") ? "end" : "move";
@@ -2106,6 +2129,15 @@ $("#tlView").addEventListener("pointermove", e => {
   if (!d) return;
   if (Math.abs(e.clientX - d.x0) > 3) d.moved = true;
   if (!d.moved) return;
+  if (d.clip) {                                       // a clip: move it or pull an edge (0.05 s steps)
+    const dt = tlTime(e.clientX) - d.t0, snap = v => Math.round(v * 20) / 20, c = d.clip, full = video.duration || 1e9;
+    if (d.mode === "move") { const len = d.e0 - d.s0; c.start = Math.max(0, Math.min(full - len, snap(d.s0 + dt))); c.end = c.start + len; }
+    else if (d.mode === "start") c.start = Math.max(0, Math.min(d.e0 - 0.2, snap(d.s0 + dt)));
+    else c.end = Math.min(full, Math.max(d.s0 + 0.2, snap(d.e0 + dt)));
+    video.currentTime = d.mode === "end" ? c.end - 0.05 : c.start + 0.01;
+    drawTimeline(video.currentTime, true); renderClips(true);
+    return;
+  }
   const dt = tlTime(e.clientX) - d.t0, snap = v => Math.round(v * 20) / 20;
   if (d.mode === "pan") { tl.from = d.from0 - (e.clientX - d.x0) / tlWidth() * tl.span; tlClamp(); }
   else if (d.mode === "move") { const len = d.e0 - d.s0; d.l.start = Math.max(0, snap(d.s0 + dt)); d.l.end = d.l.start + len; }
@@ -2118,6 +2150,12 @@ $("#tlView").addEventListener("pointerup", e => {
   const d = tl.drag;
   tl.drag = null;
   if (!d) return;
+  if (d.clip) {
+    if (!d.moved) { video.currentTime = d.clip.start + 0.01; showTab("clipsPanel"); }
+    else clipTimesChanged();
+    drawTimeline(video.currentTime, true);
+    return;
+  }
   if (!d.moved) {                                     // a click: go there (and to that line in the list)
     video.currentTime = d.l ? d.l.start + 0.01 : Math.max(0, tlTime(e.clientX));
     if (d.l) $(`.line[data-id="${d.l.id}"]`)?.scrollIntoView({ block: "center" });
@@ -2294,6 +2332,8 @@ document.addEventListener("keydown", e => {
     case "Enter": if (l) { video.pause(); const z = $(`.line[data-id="${l.id}"] .zh`); z?.scrollIntoView({ block: "center" }); z?.focus(); } break;
     case "Delete": case "Backspace": if (l) $(`.line[data-id="${l.id}"] .delline`)?.click(); break;
     case "?": $("#keys").showModal(); break;
+    case "i": case "I": clipIn(); break;
+    case "o": case "O": clipOut(); break;
     case "l": case "L": if (!$("#rangeBox").hidden) $("#rangeLoop").click(); else done = false; break;
     default: done = false;
   }
@@ -2330,6 +2370,122 @@ $("#keysBtn2").onclick = () => $("#keys").showModal();
 
 // a line's note (what it fixed, what it first heard) shows one line until you click it
 $("#lines").addEventListener("click", e => { const w = e.target.closest(".why"); if (w && !w.classList.contains("open")) w.classList.add("open"); });
+
+/* ============================================================ clips: the scenes you like, as one video */
+
+// Kept with the video (job.reel), in the order you put them. I starts a clip at the playhead, O ends it.
+const reel = () => (job.reel = job.reel || []);
+const reelSpans = () => reel().filter(c => c.end - c.start >= 0.3).map(c => [c.start, c.end]);
+function clipsOn() { return $("input[name=part]:checked")?.value === "clips"; }
+let clipStart = null, reelTimer = null;
+function reelChanged() { renderClips(); clearTimeout(reelTimer); reelTimer = setTimeout(saveReel, 500); }
+function clipTimesChanged() { renderClips(true); clearTimeout(reelTimer); reelTimer = setTimeout(saveReel, 500); }   // keeps focus
+async function saveReel() {
+  clearTimeout(reelTimer);
+  try { await api("PUT", `/api/jobs/${job.id}/reel`, { clips: reel() }); } catch (ex) { alert(ex.message); }
+}
+function clipIn() {
+  clipStart = video.currentTime;
+  $("#clipPending").textContent = `Starts at ${fmtTime(clipStart)}: press O (End it here) where it ends.`;
+  toast(`Clip starts at ${fmtTime(clipStart)}`);
+  drawTimeline(video.currentTime, true);
+}
+function clipOut() {
+  const t = video.currentTime;
+  if (clipStart === null || t - clipStart < 0.3) {
+    toast(clipStart === null ? "Press I where the scene starts first" : "The end must be after the start");
+    return;
+  }
+  reel().push({ id: Math.random().toString(36).slice(2, 8), start: Math.round(clipStart * 1000) / 1000, end: Math.round(t * 1000) / 1000, label: "" });
+  clipStart = null; $("#clipPending").textContent = "";
+  toast(`Clip ${reel().length} added (${fmtTime(t - reel()[reel().length - 1].start)})`);
+  reelChanged(); drawTimeline(t, true);
+}
+$("#clipIn").onclick = clipIn;
+$("#clipOut").onclick = clipOut;
+$("#clipTicked").onclick = () => {
+  const ticked = lines.filter(l => picked.has(l.id));
+  if (!ticked.length) { alert("Tick lines in the list first (Shift-click ticks a range)."); return; }
+  reel().push({ id: Math.random().toString(36).slice(2, 8), start: Math.max(0, ticked[0].start - 0.3), end: ticked[ticked.length - 1].end + 0.5, label: "" });
+  reelChanged(); drawTimeline(video.currentTime, true);
+};
+function playClips(spans) { stopPreview(false); pv.on = true; pv.spans = spans; pv.i = 0; previewJump(); video.play(); }
+$("#clipPlay").onclick = () => { if (reelSpans().length) playClips(reelSpans()); };
+$("#clipSave").onclick = () => {
+  $('input[name=part][value="clips"]').checked = true; showPart(); showPeoplePick(); showTab("exportPanel");
+  $("#export").scrollIntoView({ block: "center" });
+};
+
+// the list: name, exact times (type them, or ↑ ↓ for 0.1 s, Shift 1 s), to the playhead, order, play, remove
+function renderClips(timesOnly) {
+  const cs = reel(), full = video.duration || job?.media?.duration || 1e9;
+  $("#clipCount").textContent = cs.length || "";
+  $("#clipsHere").textContent = cs.length ? `(${cs.length})` : "";
+  const len = cs.reduce((s, c) => s + Math.max(0, c.end - c.start), 0);
+  $("#clipTotal").textContent = cs.length ? `${cs.length} clip${cs.length > 1 ? "s" : ""}, ${fmtTime(len).replace(/\.\d$/, "")} in all` : "";
+  if (timesOnly) {                        // while dragging on the timeline: just the numbers
+    cs.forEach(c => { const li = $(`#clipList li[data-id="${c.id}"]`); if (!li) return;
+      if (document.activeElement !== $(".clip-t.s", li)) $(".clip-t.s", li).value = fmtTime(c.start);
+      if (document.activeElement !== $(".clip-t.e", li)) $(".clip-t.e", li).value = fmtTime(c.end);
+      $(".clip-len", li).textContent = `${(c.end - c.start).toFixed(1)} s`; });
+    return;
+  }
+  $("#clipList").replaceChildren(...cs.map((c, i) => {
+    const li = document.createElement("li"); li.dataset.id = c.id;
+    const btn = (label, title, f) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.onclick = f; return b; };
+    const n = document.createElement("span"); n.className = "clip-n"; n.textContent = i + 1;
+    const name = document.createElement("input"); name.className = "field clip-label"; name.value = c.label || "";
+    name.placeholder = lines.filter(l => l.end > c.start && l.start < c.end).map(l => l.zh || l.th)[0] || `Clip ${i + 1}`;
+    name.oninput = () => { c.label = name.value; clearTimeout(reelTimer); reelTimer = setTimeout(saveReel, 600); };
+    const time = (k, cls) => {
+      const box = document.createElement("input"); box.className = `field clip-t ${cls}`; box.value = fmtTime(c[k]);
+      box.setAttribute("aria-label", k === "start" ? `Clip ${i + 1} starts` : `Clip ${i + 1} ends`);
+      const set = v => {
+        if (v == null) { box.value = fmtTime(c[k]); return; }
+        c[k] = Math.round(Math.max(0, Math.min(full, v)) * 1000) / 1000;
+        if (c.end - c.start < 0.2) { if (k === "start") c.start = c.end - 0.2; else c.end = c.start + 0.2; }
+        box.value = fmtTime(c[k]); video.currentTime = k === "end" ? c.end - 0.05 : c.start + 0.01;
+        clipTimesChanged(); drawTimeline(video.currentTime, true);
+      };
+      box.onchange = () => set(parseTime(box.value));
+      box.onkeydown = e => {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.preventDefault();
+          set(c[k] + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 1 : 0.1));
+          box.focus(); box.select();
+        } else if (e.key === "Enter") box.blur();
+      };
+      return box;
+    };
+    const times = document.createElement("div"); times.className = "clip-times";
+    const lenEl = document.createElement("span"); lenEl.className = "clip-len"; lenEl.textContent = `${(c.end - c.start).toFixed(1)} s`;
+    times.append(btn("⇤ now", "Start at the playhead", () => { c.start = Math.min(video.currentTime, c.end - 0.2); clipTimesChanged(); drawTimeline(video.currentTime, true); }),
+      time("start", "s"), "→", time("end", "e"),
+      btn("now ⇥", "End at the playhead", () => { c.end = Math.max(video.currentTime, c.start + 0.2); clipTimesChanged(); drawTimeline(video.currentTime, true); }), lenEl);
+    li.append(n, name,
+      btn("▶", "Play this clip", () => playClips([[c.start, c.end]])),
+      btn("↑", "Earlier in the reel", () => { if (i > 0) { [cs[i - 1], cs[i]] = [cs[i], cs[i - 1]]; reelChanged(); } }),
+      btn("✕", "Remove this clip", () => { cs.splice(i, 1); reelChanged(); drawTimeline(video.currentTime, true); }),
+      times);
+    return li;
+  }));
+  showSizes();
+}
+let clipBandsKey = "";
+function drawClipBands(pps) {
+  const bands = reel().map((c, i) => ({ ...c, n: i + 1 }));
+  if (clipStart !== null) bands.push({ id: "pending", start: clipStart, end: Math.max(clipStart + 0.1, video.currentTime), n: "…" });
+  const key = JSON.stringify(bands.map(b => [b.id, b.start, b.end, b.label])) + tl.from.toFixed(2) + pps;
+  if (key === clipBandsKey) return;                 // nothing moved: leave them be
+  clipBandsKey = key;
+  $("#tlClips").replaceChildren(...bands.filter(c => c.end > tl.from && c.start < tl.from + tl.span).map(c => {
+    const el = document.createElement("div"); el.className = `tl-clip${c.id === "pending" ? " pending" : ""}`; el.dataset.id = c.id;
+    Object.assign(el.style, { left: `${(c.start - tl.from) * pps}px`, width: `${Math.max(6, (c.end - c.start) * pps)}px` });
+    el.textContent = c.n; el.title = `Clip ${c.n}: ${fmtTime(c.start)}–${fmtTime(c.end)}${c.label ? ` · ${c.label}` : ""}`;
+    if (c.id !== "pending") { const l = document.createElement("i"), r = document.createElement("i"); l.className = "h l"; r.className = "h r"; el.append(l, r); }
+    return el;
+  }));
+}
 
 /* ============================================================ routing */
 

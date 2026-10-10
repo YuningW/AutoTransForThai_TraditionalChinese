@@ -101,6 +101,7 @@
         <div class="tl-ticks" id="tlTicks"></div>
         <div class="tl-lines" id="tlLines"></div>
         <div class="tl-parts" id="tlParts"></div>
+        <div class="tl-clips" id="tlClips"></div>
         <div class="tl-head" id="tlHead"></div>
       </div>
       <div class="tl-bar">
@@ -203,6 +204,7 @@
       <button type="button" role="tab" data-tab="peoplePanel">People</button>
       <button type="button" role="tab" data-tab="touchPanel">Emoji <span class="count" id="touchCount"></span></button>
       <button type="button" role="tab" data-tab="brandPanel">Text &amp; logo <span class="count" id="brandCount"></span></button>
+      <button type="button" role="tab" data-tab="clipsPanel">Clips <span class="count" id="clipCount"></span></button>
       <button type="button" role="tab" data-tab="exportPanel">Save</button>
       <button type="button" role="tab" data-tab="helpersPanel">Help <span class="count" id="helperCount"></span></button>
       <button type="button" role="tab" data-tab="logPanel">Log</button>
@@ -359,6 +361,25 @@
       </div>
     </details>
 
+    <details class="panel" id="clipsPanel">
+      <summary>Clips</summary>
+      <div class="panel-body">
+        <p class="muted small">Collect the scenes you like and save them as one video, in any order. While it plays, press <kbd>I</kbd> where a scene starts and <kbd>O</kbd> where it ends. Then fine-tune: drag a clip's edges on the timeline (the green bands), type an exact time, or press ↑ ↓ in a time box (0.1 s; with Shift 1 s).</p>
+        <div class="clip-actions">
+          <button class="secondary" type="button" id="clipIn">Start a clip here <kbd>I</kbd></button>
+          <button class="secondary" type="button" id="clipOut">End it here <kbd>O</kbd></button>
+          <button class="ghost" type="button" id="clipTicked" title="One clip from the first ticked line to the last">From ticked lines</button>
+          <span class="muted small" id="clipPending"></span>
+        </div>
+        <ol class="clip-list" id="clipList"></ol>
+        <div class="clip-foot">
+          <span class="muted" id="clipTotal"></span>
+          <button class="secondary" type="button" id="clipPlay">▶ Play all</button>
+          <button class="primary" type="button" id="clipSave">Save these clips…</button>
+        </div>
+      </div>
+    </details>
+
     <details class="panel" id="exportPanel">
       <summary>Save captions</summary>
       <div class="panel-body">
@@ -373,6 +394,7 @@
           <label><input type="radio" name="part" value="all" checked> The whole video</label>
           <label><input type="radio" name="part" value="part"> Just a part</label>
           <label><input type="radio" name="part" value="people"> Only when these people talk</label>
+          <label><input type="radio" name="part" value="clips"> My clips <span class="muted small" id="clipsHere"></span></label>
         </div>
         <div class="part-box" id="peopleBox" hidden>
           <div class="who-picks" id="whoPicks"></div>
@@ -411,7 +433,13 @@
           <label><input type="radio" name="vsize" value="480"> Smallest, 480p <small class="muted" data-est="480"></small></label>
         </div>
         <p class="muted" id="fitHint" hidden>Drag the frame on the video to choose which part stays. Captions sit higher, clear of the app's buttons.</p>
-        <p class="muted">Uses the caption style above, the emoji and notes you kept, and your text and logo. SRT files (Thai, Chinese, both) are always saved too. They go to <span id="outDir">~/Movies/AutoCaption</span>.</p>
+        <div class="opt-row">
+          <span>SRT files</span>
+          <label><input type="checkbox" name="srt" value="zh"> 中文</label>
+          <label><input type="checkbox" name="srt" value="both"> 中文 + Thai</label>
+          <label><input type="checkbox" name="srt" value="th"> Thai</label>
+        </div>
+        <p class="muted">The video uses the caption style, your emoji and notes, and your text and logo. Files go to <span id="outDir">~/Movies/AutoCaption</span>.</p>
         <button class="primary" id="export" type="button">Save</button>
         <ul class="exports" id="exports"></ul>
       </div>
@@ -520,6 +548,7 @@
     <tr><td><kbd>N</kbd></td><td>Next flagged line (with <kbd>Shift</kbd>: previous)</td></tr>
     <tr><td><kbd>Delete</kbd></td><td>Delete the line</td></tr>
     <tr><td><kbd>L</kbd></td><td>Loop the stretch (in Fix a stretch)</td></tr>
+    <tr><td><kbd>I</kbd> <kbd>O</kbd></td><td>Start a clip here / end it here (Clips)</td></tr>
     <tr><td><kbd>?</kbd></td><td>This list</td></tr>
   </table>
 </dialog>

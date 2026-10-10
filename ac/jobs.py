@@ -1025,6 +1025,12 @@ def _spans(job, ls, part):
     if not part:
         return None
     dur = (job.get("media") or {}).get("duration") or 1e9
+    if part.get("reel"):                      # your clips (the Clips tab), in the order you put them
+        spans = [(max(0.0, float(c["start"])), min(dur, float(c["end"]))) for c in job.get("reel") or []]
+        spans = [(round(a, 3), round(b, 3)) for a, b in spans if b - a >= 0.3]
+        if not spans:
+            raise JobError("Add clips first (the Clips tab: I to start a clip, O to end it).")
+        return spans
     if part.get("spans"):                     # the list of parts as you left it on the page (some dropped or nudged)
         spans = []
         for a, b in sorted((max(0.0, float(a)), min(dur, float(b))) for a, b in part["spans"]):
@@ -1056,6 +1062,25 @@ def _spans(job, ls, part):
     return [(round(a, 3), round(b, 3))]
 
 
+def set_reel(jid, clips):
+    """Your clips (the Clips tab): [{"id", "start", "end", "label"}], in the order you want them."""
+    dur = (load(jid).get("media") or {}).get("duration") or 1e9
+    clean = []
+    for c in clips or []:
+        try:
+            a, b = max(0.0, float(c["start"])), min(dur, float(c["end"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if b - a >= 0.1:
+            clean.append({"id": str(c.get("id") or uuid.uuid4().hex[:6])[:12], "start": round(a, 3), "end": round(b, 3),
+                          "label": str(c.get("label") or "")[:60]})
+    with _lock(jid):
+        job = load(jid)
+        job["reel"] = clean[:200]
+        save(job)
+    return clean
+
+
 def _joined(items, spans):
     """Lines or touches in the stretches, each stretch moved to follow the one before (as in the saved video)."""
     out, at = [], 0.0
@@ -1080,19 +1105,23 @@ def export(jid, srt=True, burn="zh", shape=None, part=None):
         ls = _joined(ls, spans)
         if not ls:
             raise JobError("There are no captions in that part.")
-        if part.get("people"):
+        if part.get("reel"):
+            base = f"{base} (clips)"
+        elif part.get("people"):
             names = [p.get("name") or "?" for p in job.get("speakers") or [] if p["id"] in part["people"]]
             base = f"{base} ({' + '.join(names)} only)"
         else:
             base = f"{base} {_mmss(spans[0][0]).replace(':', '.')}-{_mmss(spans[0][1]).replace(':', '.')}"
     files = []
-    if srt:
-        for which, suffix in (("th", "th"), ("zh", "zh-TW"), ("both", "zh-TW+th")):
+    wanted = ("th", "zh", "both") if srt is True else tuple(srt or ())     # which SRT files (none is fine)
+    for which, suffix in (("th", "th"), ("zh", "zh-TW"), ("both", "zh-TW+th")):
+        if which in wanted:
             p = folder / f"{base}.{suffix}.srt"
             p.write_text(captions.srt(ls, which), encoding="utf-8")
             files.append({"kind": f"srt-{which}", "path": str(p)})
-    remember = None if not spans else {"people": part["people"], "spans": [list(s) for s in spans]} \
-        if part.get("people") else {"start": spans[0][0], "end": spans[0][1]}
+    remember = None if not spans else {"reel": True} if part.get("reel") else \
+        {"people": part["people"], "spans": [list(s) for s in spans]} if part.get("people") else \
+        {"start": spans[0][0], "end": spans[0][1]}
     update(jid, exports=files, export_folder=str(folder), part=remember)
     if burn in ("zh", "both", "th"):
         _begin(jid, "burning", "Drawing the captions")

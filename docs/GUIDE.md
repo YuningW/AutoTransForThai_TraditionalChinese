@@ -75,9 +75,17 @@ Your usual people are remembered for new videos.
 - **Making logos stand out**: give a logo an outline, soft shadow, badge or circle. The colour is picked to contrast with the logo.
 - **Movement**: anything can float, wiggle, flip, pulse, spin, fly around or fly across, at the speed you choose.
 
-## 6. Save
+## 6. Clips: the scenes you like, as one video
 
-**Save** writes SRT files (Thai, Chinese, and both) and, if you like, a copy of the video with captions, emoji, notes, text and logo burned in. They go to `~/Movies/AutoCaption/<video title>/`.
+The **Clips** tab collects scenes and saves them together, in any order:
+- While the video plays, press **I** where a scene starts and **O** where it ends (or the buttons), or make a clip from ticked lines.
+- Fine-tune each clip: drag its edges or the whole band on the timeline (green bands along the top), type an exact time like `12:34.5`, press **↑ ↓** in a time box (0.1 s; Shift: 1 s), or **⇤ now** / **now ⇥** to use the playhead.
+- Name clips, move them up in the order, play one (▶) or all (**▶ Play all**).
+- **Save these clips…** opens Save with **What to save → My clips**; smooth joins, size and vertical work as usual.
+
+## 7. Save
+
+**Save** writes the SRT files you tick (中文, 中文 + Thai, Thai, or none) and, if you like, a copy of the video with captions, emoji, notes, text and logo burned in. They go to `~/Movies/AutoCaption/<video title>/`.
 
 **What to save**:
 - **The whole video**.

@@ -171,6 +171,26 @@ textarea.field { resize: vertical; }
 .tl-line .h { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
 .tl-line .h.l { left: 0; } .tl-line .h.r { right: 0; }
 .tl-line .h:hover { background: color-mix(in srgb, var(--c, #6b7bd6) 50%, transparent); }
+/* clips: green bands along the top of the timeline; drag them or their edges */
+.tl-clips { position: absolute; inset: 0 0 auto 0; height: 18px; pointer-events: none; }
+.tl-clip { position: absolute; top: 1px; height: 16px; border-radius: 4px; background: color-mix(in srgb, #2ea05a 35%, transparent); border: 1.5px solid #2ea05a; box-sizing: border-box; pointer-events: auto; cursor: grab; font: 600 10px/13px system-ui; color: #1c6b3b; padding-left: 8px; overflow: hidden; white-space: nowrap; }
+.tl-clip .h { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; }
+.tl-clip .h.l { left: 0; } .tl-clip .h.r { right: 0; }
+.tl-clip .h:hover { background: color-mix(in srgb, #2ea05a 60%, transparent); }
+.tl-clip.pending { border-style: dashed; background: none; }
+.clip-actions, .clip-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.clip-foot { justify-content: flex-end; }
+.clip-foot .muted { margin-right: auto; font-size: 13px; }
+.clip-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.clip-list:empty::before { content: "No clips yet: play the video and press I where a scene starts, O where it ends."; color: var(--ink-3); font-size: 13px; }
+.clip-list li { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 6px 8px; align-items: center; padding: 8px; border: 1px solid var(--rule); border-left: 4px solid #2ea05a; border-radius: 8px; background: var(--sheet); font-size: 13px; }
+.clip-list li.playing { background: color-mix(in srgb, #2ea05a 10%, var(--sheet)); }
+.clip-list .clip-n { font-weight: 700; color: #2ea05a; min-width: 1.4em; }
+.clip-list .clip-label { padding: 4px 8px; font-size: 13px; }
+.clip-list .clip-times { grid-column: 2 / 6; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.clip-list .clip-t { width: 6.5em; padding: 3px 6px; font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
+.clip-list button { border: 1px solid var(--rule); background: var(--paper); border-radius: 6px; padding: 2px 7px; font-size: 12px; color: var(--ink-2); }
+.clip-list .clip-len { color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .tl-parts { position: absolute; inset: 0; pointer-events: none; }
 .pv-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, #2f80ed 12%, var(--sheet)); border: 1px solid color-mix(in srgb, #2f80ed 40%, var(--rule)); font-size: 14px; }
 .pv-bar[hidden] { display: none; }

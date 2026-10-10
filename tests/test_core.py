@@ -305,3 +305,12 @@ class PaintedWords(unittest.TestCase):
         th, zh = rows[0], rows[1]                              # Thai above Chinese by default
         self.assertEqual(zh["paint"], [[10, 2, "#FF66AA"]])     # the second 好笑; the missing words are skipped
         self.assertEqual(th["paint"], [[7, 6, "#33AAFF"]])
+
+
+class Reel(unittest.TestCase):
+    def test_clips_keep_your_order(self):
+        from ac import jobs
+        job = {"media": {"duration": 60}, "reel": [{"start": 30, "end": 33}, {"start": 5, "end": 8}, {"start": 50, "end": 50.1}]}
+        self.assertEqual(jobs._spans(job, [], {"reel": True}), [(30.0, 33.0), (5.0, 8.0)])
+        ls = [{"start": 6, "end": 7, "th": "a"}, {"start": 31, "end": 32, "th": "b"}]
+        self.assertEqual([(x["th"], x["start"]) for x in jobs._joined(ls, [(30.0, 33.0), (5.0, 8.0)])], [("b", 1.0), ("a", 4.0)])
