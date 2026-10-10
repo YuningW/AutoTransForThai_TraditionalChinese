@@ -2514,6 +2514,11 @@ function markPlayingClip(t) {
   if (id === playingClip) return;
   playingClip = id;
   $$("#clipList li, .tl-clip").forEach(el => el.classList.toggle("playing", !!id && el.dataset.id === id));
+  // the list follows: the clip playing comes into view (unless you're typing in the list)
+  const li = id && $(`#clipList li[data-id="${id}"]`);
+  if (li && !$("#clipsPanel").hidden && !li.closest("#clipList").contains(document.activeElement)) {
+    li.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
 }
 let clipBandsKey = "";
 function drawClipBands(pps) {

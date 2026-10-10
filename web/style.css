@@ -194,6 +194,9 @@ body.resizing { cursor: col-resize; user-select: none; }
 .clip-list li { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 6px 8px; align-items: center; padding: 8px; border: 1px solid var(--rule); border-left: 4px solid #2ea05a; border-radius: 8px; background: var(--sheet); font-size: 13px; }
 .clip-list li.playing { background: color-mix(in srgb, #f5a623 16%, var(--sheet)); border-left-color: #f5a623; }
 .clip-list li.playing .clip-n { color: #d4880f; }
+.clip-list li { position: relative; }
+.clip-list li.playing::after { content: "▶ playing"; position: absolute; top: -9px; right: 10px; padding: 1px 8px; border-radius: 9px; background: #f5a623; color: #3d2600; font-size: 11px; font-weight: 700; }
+.clip-list li.playing { box-shadow: 0 0 0 2px #f5a623; }
 .tl-clip.playing { background: color-mix(in srgb, #f5a623 50%, transparent); border-color: #f5a623; color: #7a4b00; }
 .clip-list .clip-n { font-weight: 700; color: #2ea05a; min-width: 1.4em; }
 .clip-list .clip-label { padding: 4px 8px; font-size: 13px; }
