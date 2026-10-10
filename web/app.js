@@ -997,10 +997,10 @@ addEventListener("keydown", e => { if (e.key === "Escape" && pv.on) stopPreview(
 let cropPos = 0.5;
 function shapeNow() {
   const vertical = $("input[name=shape]:checked").value === "vertical";
-  const size = $("input[name=vsize]:checked").value, fade = $("#fadeJoins").checked;
+  const size = $("input[name=vsize]:checked").value, fade = $("#fadeJoins").checked, no_music = $("#noMusic").checked;
   const apart = (peopleOn() || clipsOn()) && $("input[name=apart]:checked").value === "1";
-  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size, fade, apart }
-    : { size, fade, apart };
+  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size, fade, apart, no_music }
+    : { size, fade, apart, no_music };
 }
 function showShape() {
   const s = shapeNow();
@@ -1023,6 +1023,7 @@ function loadShape() {           // what you chose last time for this video
   $(`input[name=fit][value="${s.fit === "fit" ? "fit" : "fill"}"]`).checked = true;
   cropPos = s.pos ?? 0.5;
   $("#fadeJoins").checked = s.fade !== false;
+  $("#noMusic").checked = !!s.no_music;
   $(`input[name=apart][value="${s.apart ? "1" : ""}"]`).checked = true;
   $(`input[name=vsize][value="${["720", "480"].includes(s.size) ? s.size : "full"}"]`).checked = true;
   showShape();
@@ -2566,8 +2567,11 @@ function renderClips(timesOnly) {
     times.append(btn("⇤ now", "Start at the playhead", () => { c.start = Math.min(video.currentTime, c.end - 0.2); clipTimesChanged(); drawTimeline(video.currentTime, true); }),
       time("start", "s"), "→", time("end", "e"),
       btn("now ⇥", "End at the playhead", () => { c.end = Math.max(video.currentTime, c.start + 0.2); clipTimesChanged(); drawTimeline(video.currentTime, true); }), lenEl);
+    const music = btn("♪", "", () => { c.no_music = !c.no_music || undefined; reelChanged(); });
+    music.className = "clip-music"; music.setAttribute("aria-pressed", String(!!c.no_music));
+    music.title = c.no_music ? "Music will be taken out of this clip when saved (click to keep it)" : "Take the background music out of this clip when saved";
     li.append(n, name,
-      btn("▶", "Play this clip", () => playClips([[c.start, c.end]])),
+      btn("▶", "Play this clip", () => playClips([[c.start, c.end]])), music,
       btn("↑", "Earlier in the reel", () => { if (i > 0) { [cs[i - 1], cs[i]] = [cs[i], cs[i - 1]]; reelChanged(); } }),
       btn("✕", "Remove this clip", () => { cs.splice(i, 1); reelChanged(); drawTimeline(video.currentTime, true); }),
       times);

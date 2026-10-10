@@ -1173,7 +1173,8 @@ def set_reel(jid, clips):
             continue
         if b - a >= 0.1:
             clean.append({"id": str(c.get("id") or uuid.uuid4().hex[:6])[:12], "start": round(a, 3), "end": round(b, 3),
-                          "label": str(c.get("label") or "")[:60], **({"star": True} if c.get("star") else {})})
+                          "label": str(c.get("label") or "")[:60], **({"star": True} if c.get("star") else {}),
+                          **({"no_music": True} if c.get("no_music") else {})})
     with _lock(jid):
         job = load(jid)
         job["reel"] = clean[:200]
@@ -1227,8 +1228,9 @@ def export(jid, srt=True, burn="zh", shape=None, part=None):
         _begin(jid, "burning", "Drawing the captions")
         shape = shape or {}
         update(jid, shape=shape)                 # remembered for this video
-        if part and part.get("reel"):            # one file per clip: named after your clips
-            shape = {**shape, "names": [c.get("label") or "" for c in _reel_used(job, part) if c["end"] - c["start"] >= 0.3]}
+        if part and part.get("reel"):            # one file per clip: named after your clips; some without music
+            used = [c for c in _reel_used(job, part) if c["end"] - c["start"] >= 0.3]
+            shape = {**shape, "names": [c.get("label") or "" for c in used], "no_music_each": [bool(c.get("no_music")) for c in used]}
         _run(jid, _burn_job, burn, folder, base, files, shape, spans)
     return load(jid)
 
@@ -1269,6 +1271,14 @@ def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
         lst = style.frames(ls, still, which, W, H, st, frames_dir,
                            lambda p: update(jid, progress=round(done + share * 0.3 * p, 3)), job.get("speakers"))
         moves = style.sprites(moving, W, H, st, frames_dir, b - a)
+        voices = None
+        each = (shape or {}).get("no_music_each") or []
+        if (shape or {}).get("no_music") or (i < len(each) and each[i]):     # take the music out of this part
+            voices = work / f"{i:04d}_voices.wav"
+            what = "Taking the music out" + (f" (part {i + 1} of {len(spans)})" if len(spans) > 1 else "")
+            _step(jid, "burning", what)
+            with _gpu_turn(jid):
+                _sub(jid, ["ac.voice", "--keep", str(d / job["source"]), str(voices), f"{a:.3f}", f"{b:.3f}"], what)
         update(jid, label="Burning captions into the video" + (f" (part {i + 1} of {len(spans)})" if len(spans) > 1 else ""))
         if apart:                              # its own file, numbered in your order, named after the clip
             tag = re.sub(r'[\\/:*?"<>|\n\r\t]+', " ", names[i] if i < len(names) else "").strip()[:40]
@@ -1277,7 +1287,7 @@ def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
             dst = out if len(spans) == 1 else work / f"{i:04d}.mp4"
         media.burn(d / job["source"], lst, dst, b - a, lambda p: update(jid, progress=round(done + share * (0.3 + 0.7 * p), 3)),
                    moves, plan, start=a, size=(shape or {}).get("size", "full"), canvas=(W, H),
-                   fade=(fade and i > 0, fade and i < len(spans) - 1))
+                   fade=(fade and i > 0, fade and i < len(spans) - 1), audio=voices)
         pieces.append(dst)
         done += share
     if len(pieces) > 1 and not apart:

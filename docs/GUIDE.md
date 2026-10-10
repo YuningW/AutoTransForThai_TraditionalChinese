@@ -84,6 +84,7 @@ Your usual people are remembered for new videos.
 The **Clips** tab collects scenes and saves them together, in any order:
 - While the video plays, press **I** where a scene starts and **O** where it ends (or the buttons), or make a clip from ticked lines.
 - Fine-tune each clip: drag its edges or the whole band on the timeline (green bands along the top), type an exact time like `12:34.5`, press **↑ ↓** in a time box (0.1 s; Shift: 1 s), or **⇤ now** / **now ⇥** to use the playhead.
+- **♪** on a clip takes the background music out of it when saved (only the voices stay, separated with BS-Roformer at full quality); **Save → Take out the background music** does it for everything you save.
 - **☆ / ★** marks a clip as a favourite (gold ★ on its timeline band too); with **★ only** on, Play all, the preview and Save use only your ★ clips, and the others are dimmed but kept.
 - Name clips, move them up in the order, play one (▶) or all (**▶ Play all**); the clip playing turns orange, in the list and on the timeline. **Smooth joins** (in Save) fades where clips meet.
 - **Save these clips…** opens Save with **What to save → My clips**; smooth joins, size and vertical work as usual.

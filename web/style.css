@@ -194,7 +194,7 @@ body.resizing { cursor: col-resize; user-select: none; }
 .clip-foot .muted { margin-right: auto; font-size: 13px; }
 .clip-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .clip-list:empty::before { content: "No clips yet: play the video and press I where a scene starts, O where it ends."; color: var(--ink-3); font-size: 13px; }
-.clip-list li { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 6px 8px; align-items: center; padding: 8px; border: 1px solid var(--rule); border-left: 4px solid #2ea05a; border-radius: 8px; background: var(--sheet); font-size: 13px; }
+.clip-list li { display: grid; grid-template-columns: auto 1fr auto auto auto auto; gap: 6px 8px; align-items: center; padding: 8px; border: 1px solid var(--rule); border-left: 4px solid #2ea05a; border-radius: 8px; background: var(--sheet); font-size: 13px; }
 .clip-list li.playing { background: color-mix(in srgb, #f5a623 16%, var(--sheet)); border-left-color: #f5a623; }
 .clip-list li.playing .clip-n { color: #d4880f; }
 .clip-list li { position: relative; }
@@ -203,10 +203,12 @@ body.resizing { cursor: col-resize; user-select: none; }
 .tl-clip.playing { background: color-mix(in srgb, #f5a623 50%, transparent); border-color: #f5a623; color: #7a4b00; }
 .clip-list .clip-n { font-weight: 700; color: #2ea05a; min-width: 1.4em; }
 .clip-list .clip-label { padding: 4px 8px; font-size: 13px; }
-.clip-list .clip-times { grid-column: 2 / 6; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.clip-list .clip-times { grid-column: 2 / 7; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .clip-list .clip-t { width: 6.5em; padding: 3px 6px; font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
 .clip-list button { border: 1px solid var(--rule); background: var(--paper); border-radius: 6px; padding: 2px 7px; font-size: 12px; color: var(--ink-2); }
 .clip-list .clip-len { color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.clip-list .clip-music { font-size: 12px; }
+.clip-list .clip-music[aria-pressed="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); text-decoration: line-through; }
 .clip-list .clip-star { border: 0; background: none; font-size: 18px; line-height: 1; padding: 0 2px; color: var(--ink-3); }
 .clip-list .clip-star[aria-pressed="true"] { color: #f2b705; }
 .clip-list li.starred { border-left-color: #f2b705; }
