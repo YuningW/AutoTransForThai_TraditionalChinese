@@ -1127,12 +1127,16 @@ def export(jid, srt=True, burn="zh", shape=None, part=None):
         _begin(jid, "burning", "Drawing the captions")
         shape = shape or {}
         update(jid, shape=shape)                 # remembered for this video
+        if part and part.get("reel"):            # one file per clip: named after your clips
+            shape = {**shape, "names": [c.get("label") or "" for c in job.get("reel") or [] if c["end"] - c["start"] >= 0.3]}
         _run(jid, _burn_job, burn, folder, base, files, shape, spans)
     return load(jid)
 
 
 def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
-    fade = (shape or {}).get("fade", True) and spans and len(spans) > 1      # smooth joins between parts
+    apart = bool((shape or {}).get("apart")) and spans and len(spans) > 1   # one file per part/clip (for iMovie)
+    fade = (shape or {}).get("fade", True) and spans and len(spans) > 1 and not apart      # smooth joins between parts
+    names = (shape or {}).get("names") or []
     job = load(jid)
     d = job_dir(jid)
     m = job["media"]
@@ -1166,19 +1170,26 @@ def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
                            lambda p: update(jid, progress=round(done + share * 0.3 * p, 3)), job.get("speakers"))
         moves = style.sprites(moving, W, H, st, frames_dir, b - a)
         update(jid, label="Burning captions into the video" + (f" (part {i + 1} of {len(spans)})" if len(spans) > 1 else ""))
-        dst = out if len(spans) == 1 else work / f"{i:04d}.mp4"
+        if apart:                              # its own file, numbered in your order, named after the clip
+            tag = re.sub(r'[\\/:*?"<>|\n\r\t]+', " ", names[i] if i < len(names) else "").strip()[:40]
+            dst = folder / f"{base} {i + 1:02d}{' ' + tag if tag else ''} ({label}).mp4"
+        else:
+            dst = out if len(spans) == 1 else work / f"{i:04d}.mp4"
         media.burn(d / job["source"], lst, dst, b - a, lambda p: update(jid, progress=round(done + share * (0.3 + 0.7 * p), 3)),
                    moves, plan, start=a, size=(shape or {}).get("size", "full"), canvas=(W, H),
                    fade=(fade and i > 0, fade and i < len(spans) - 1))
         pieces.append(dst)
         done += share
-    if len(pieces) > 1:
+    if len(pieces) > 1 and not apart:
         update(jid, label="Joining the parts", progress=None)
         media.join(pieces, out)
     shutil.rmtree(work, ignore_errors=True)
-    files = files + [{"kind": f"video-{which}", "path": str(out)}]
+    saved = pieces if apart else [out]
+    files = files + [{"kind": f"video-{which}", "path": str(p)} for p in saved]
     update(jid, busy=False, state="ready", label="", progress=None, exports=files)
-    log(jid, f"Saved the captioned video to {str(out).replace(str(Path.home()), '~')}.", "done")
+    where = str(folder).replace(str(Path.home()), "~")
+    log(jid, f"Saved {len(saved)} captioned clips, one file each, to {where}." if apart else
+             f"Saved the captioned video to {str(out).replace(str(Path.home()), '~')}.", "done")
 
 
 # ---------------------------------------------------------------- style and touches

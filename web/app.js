@@ -888,7 +888,9 @@ function savedSeconds() {
 function showSizes() {
   if (!job) return;
   $("#pvGo").hidden = !(partOn() || peopleOn() || clipsOn());
-  $("#fadeRow").hidden = !(peopleOn() || clipsOn());
+  const apart = $("input[name=apart]:checked").value === "1";
+  $("#apartRow").hidden = !(peopleOn() || clipsOn());
+  $("#fadeRow").hidden = !(peopleOn() || clipsOn()) || apart;
   if (pv.on) stopPreview();
   const sec = savedSeconds(), vertical = shapeNow().vertical;
   const px = vertical ? 1080 * 1920 : (job.media?.width || 1920) * (job.media?.height || 1080);
@@ -987,7 +989,9 @@ let cropPos = 0.5;
 function shapeNow() {
   const vertical = $("input[name=shape]:checked").value === "vertical";
   const size = $("input[name=vsize]:checked").value, fade = $("#fadeJoins").checked;
-  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size, fade } : { size, fade };
+  const apart = (peopleOn() || clipsOn()) && $("input[name=apart]:checked").value === "1";
+  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size, fade, apart }
+    : { size, fade, apart };
 }
 function showShape() {
   const s = shapeNow();
@@ -1010,6 +1014,7 @@ function loadShape() {           // what you chose last time for this video
   $(`input[name=fit][value="${s.fit === "fit" ? "fit" : "fill"}"]`).checked = true;
   cropPos = s.pos ?? 0.5;
   $("#fadeJoins").checked = s.fade !== false;
+  $(`input[name=apart][value="${s.apart ? "1" : ""}"]`).checked = true;
   $(`input[name=vsize][value="${["720", "480"].includes(s.size) ? s.size : "full"}"]`).checked = true;
   showShape();
   part.start = job.part?.start ?? null; part.end = job.part?.end ?? null;     // what you saved last time
@@ -1022,7 +1027,7 @@ function loadShape() {           // what you chose last time for this video
   renderClips();
   showPart(); showPeoplePick();
 }
-$$("input[name=shape], input[name=fit], input[name=vsize]").forEach(r => r.addEventListener("change", showShape));
+$$("input[name=shape], input[name=fit], input[name=vsize], input[name=apart]").forEach(r => r.addEventListener("change", showShape));
 $("#cropWin").addEventListener("pointerdown", e => {
   e.preventDefault(); video.pause();
   const el = $("#cropWin"), x0 = e.clientX, p0 = cropPos, room = frame.w - el.offsetWidth;

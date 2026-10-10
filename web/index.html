@@ -408,6 +408,11 @@
           <ol class="cut-list" id="cutList" aria-label="The parts that will be saved"></ol>
           <button class="secondary" type="button" id="peopleToClips" title="Open these parts in the Clips tab to trim them precisely: drag their edges on the timeline, type exact times, reorder">Edit these as clips…</button>
         </div>
+        <div class="opt-row" id="apartRow" hidden>
+          <span>Clips as</span>
+          <label><input type="radio" name="apart" value="" checked> One video</label>
+          <label><input type="radio" name="apart" value="1"> One file per clip <small class="muted">(to arrange in iMovie)</small></label>
+        </div>
         <label class="check" id="fadeRow" hidden><input type="checkbox" id="fadeJoins" checked> <span>Smooth joins<small>A quarter-second fade where parts or clips meet, so cuts don't jump or click.</small></span></label>
         <button class="secondary" type="button" id="pvGo" hidden>▶ Preview what will be saved</button>
         <div class="part-box" id="partBox" hidden>
