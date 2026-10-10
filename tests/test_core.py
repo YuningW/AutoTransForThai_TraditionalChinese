@@ -277,3 +277,19 @@ class WeakSpots(unittest.TestCase):
             jobs.load, jobs.lines = old
         self.assertEqual([(a, b) for a, b, _ in spots], [(9.2, 14.8)])
         self.assertIn("wasn't sure", spots[0][2])
+
+
+class ClaudeForOneFix(unittest.TestCase):
+    def test_choice_stays_in_its_own_run(self):
+        import threading
+        from ac import models
+        seen = {}
+
+        def fix():
+            models.use("claude-opus-5-5", "xhigh")
+            seen["fix"] = (models.claude_model(), models.claude_effort("high"))
+        t = threading.Thread(target=fix); t.start(); t.join()
+        seen["other"] = models.claude_model()
+        self.assertEqual(seen["fix"], ("claude-opus-5-5", "xhigh"))
+        self.assertNotEqual(seen["other"], None)
+        self.assertEqual(models.in_use(), (None, None))            # this thread never chose

@@ -140,9 +140,11 @@ def _chunks(lines, n=CHUNK):
 
 def _parallel(fn, items):
     jid = getattr(procs.current, "jid", None)
+    chosen = models.in_use()
 
-    def run(item):                       # worker threads belong to the same job (for Stop)
+    def run(item):                       # worker threads belong to the same job (for Stop), with its model/effort
         procs.current.jid = jid
+        models.use(*chosen)
         return fn(item)
     with ThreadPoolExecutor(max_workers=3) as ex:
         return list(ex.map(run, items))

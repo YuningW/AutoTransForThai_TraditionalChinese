@@ -121,9 +121,14 @@ def edit_line(jid: str, lid: int, body: LineIn):
     return jobs.edit_line(jid, lid, body.model_dump(exclude_unset=True))
 
 
+class FixIn(BaseModel):
+    model: str | None = None
+    effort: str | None = None
+
+
 @app.post("/api/jobs/{jid}/fix")
-def fix(jid: str):
-    jobs.fix_flagged(jid)
+def fix(jid: str, body: FixIn | None = None):
+    jobs.fix_flagged(jid, body.model if body else None, body.effort if body else None)
     return jobs.load(jid)
 
 
@@ -324,6 +329,8 @@ class RangeIn(BaseModel):
     end: float
     note: str = ""
     timing_only: bool = False     # just line up the timing there (no listening again, no Claude)
+    model: str | None = None      # this fix only: a Claude model and effort (else the ones under Models)
+    effort: str | None = None
 
 
 @app.post("/api/jobs/{jid}/video-subs")
@@ -340,7 +347,7 @@ def fill_skipped(jid: str):
 
 @app.post("/api/jobs/{jid}/review")
 def review(jid: str, body: RangeIn):
-    jobs.review_range(jid, body.start, body.end, body.note, body.timing_only)
+    jobs.review_range(jid, body.start, body.end, body.note, body.timing_only, body.model, body.effort)
     return jobs.load(jid)
 
 

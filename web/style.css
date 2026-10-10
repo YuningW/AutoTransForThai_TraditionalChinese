@@ -377,6 +377,10 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .weak-head .muted { flex: 1; font-size: 13px; }
 .weak-list li { grid-template-columns: auto 1fr auto auto; }
 .weak-list .cut-text { white-space: normal; }
+.fix-claude { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.fix-claude label { display: flex; gap: 6px; align-items: center; }
+.fix-claude select { width: auto; padding: 4px 8px; font-size: 13px; }
+.fixbar .fix-claude { flex-wrap: nowrap; gap: 4px; }
 .reasons { display: flex; flex-wrap: wrap; gap: 6px; }
 .reasons:empty { display: none; }
 .reasons button { border: 1px solid var(--rule); background: var(--sheet); border-radius: 16px; padding: 4px 11px; font-size: 13px; color: var(--ink-2); }

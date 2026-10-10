@@ -7,6 +7,7 @@ format; ensure() converts them once to MLX (the Mac GPU format) and keeps them i
 import json
 import os
 import shutil
+import threading
 from pathlib import Path
 
 from . import paths
@@ -158,11 +159,25 @@ EFFORTS = {
 QUICK = "typhoon-turbo"
 
 
+# One fix can use its own Claude model and effort (chosen in Fix a stretch / Fix flagged lines): set for the
+# job's thread with use(), carried into Claude's worker threads by brain._parallel.
+_one_run = threading.local()
+
+
+def use(model=None, effort=None):
+    _one_run.model = model if model in CLAUDE else None
+    _one_run.effort = effort if effort in EFFORTS else None
+
+
+def in_use():
+    return getattr(_one_run, "model", None), getattr(_one_run, "effort", None)
+
+
 def claude_effort(step_default=None):
     """The --effort to pass for a step, or None. Haiku 4.5 has no effort setting."""
     if claude_model().startswith("claude-haiku"):
         return None
-    e = paths.load_settings().get("claude_effort") or "auto"
+    e = getattr(_one_run, "effort", None) or paths.load_settings().get("claude_effort") or "auto"
     return step_default if e == "auto" else e
 
 
@@ -171,5 +186,5 @@ def listen_key():
 
 
 def claude_model():
-    m = paths.load_settings().get("claude_model")
+    m = getattr(_one_run, "model", None) or paths.load_settings().get("claude_model")
     return m if m in CLAUDE else paths.CLAUDE_MODEL

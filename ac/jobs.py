@@ -780,16 +780,25 @@ def _fix(jid, targets, learn=True):
     return changed, neighbours
 
 
-def fix_flagged(jid):
+def _with_claude(model, effort):
+    """For this run only: the Claude model and effort you picked for it (else the ones under Models). Says which."""
+    models.use(model, effort)
+    m = models.CLAUDE.get(models.claude_model(), {}).get("label", models.claude_model())
+    e = models.claude_effort("high")
+    return f"{m}, effort {models.EFFORTS.get(e, {}).get('label', e or 'n/a')}"
+
+
+def fix_flagged(jid, model=None, effort=None):
     ls = lines(jid)
     flagged = [{**l, "by": "user"} for l in ls if l.get("flag")]
     if not flagged:
         raise JobError("Flag at least one line first (the ⚑ button on a line).")
     _begin(jid, "fixing", f"Fixing {len(flagged)} lines")
-    _run(jid, _fix_job, flagged)
+    _run(jid, _fix_job, flagged, model, effort)
 
 
-def _fix_job(jid, flagged):
+def _fix_job(jid, flagged, model=None, effort=None):
+    log(jid, f"Fixing {len(flagged)} flagged lines with {_with_claude(model, effort)}.")
     n, extra = _fix(jid, flagged, learn=True)
     update(jid, busy=False, state="ready", label="", progress=None)
     msg = f"Changed {n} of the {len(flagged)} lines you flagged"
@@ -1543,7 +1552,7 @@ def delete_line(jid, lid):
 
 # ---------------------------------------------------------------- a stretch of the video, with your note
 
-def review_range(jid, start, end, note, timing_only=False):
+def review_range(jid, start, end, note, timing_only=False, model=None, effort=None):
     start, end = max(0.0, float(start)), float(end)
     if end - start < 0.5:
         raise JobError("Mark a stretch of at least half a second (From here / To here).")
@@ -1554,7 +1563,7 @@ def review_range(jid, start, end, note, timing_only=False):
         _run(jid, _retime_range_job, start, end)
         return
     _begin(jid, "reviewing", f"Listening again to {_mmss(start)}–{_mmss(end)}")
-    _run(jid, _review_job, start, end, (note or "").strip())
+    _run(jid, _review_job, start, end, (note or "").strip(), model, effort)
 
 
 def _in_range(ls, start, end):
@@ -1574,7 +1583,8 @@ def _retime_range_job(jid, start, end):
     log(jid, f"Lined up {_mmss(start)}–{_mmss(end)} with when it's said: {moved} of {len(ids)} lines moved.", "done")
 
 
-def _review_job(jid, start, end, note):
+def _review_job(jid, start, end, note, model=None, effort=None):
+    log(jid, f"Fixing {_mmss(start)}–{_mmss(end)} with {_with_claude(model, effort)}.")
     before = {l["id"] for l in lines(jid)}
     gone, new, explain = _review_work(jid, start, end, note)
     fresh = {l["id"] for l in lines(jid)} - before

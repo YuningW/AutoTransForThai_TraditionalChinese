@@ -171,6 +171,10 @@
       <div class="reasons" id="fixReasons" role="group" aria-label="What's wrong here (tap one or more)"></div>
       <div class="reasons mine" id="fixMine" aria-label="Your notes from before"></div>
       <input class="field" id="rangeNote" placeholder="Anything else? (optional) e.g. she says “พี่มิ้ลค์” here">
+      <div class="fix-claude" data-claude-pick>
+        <label>Claude <select class="field" data-pick="model" aria-label="Claude model for this fix"></select></label>
+        <label>Effort <select class="field" data-pick="effort" aria-label="How hard Claude thinks for this fix"></select></label>
+      </div>
       <div class="range-actions">
         <button class="primary" type="button" id="rangeGo" disabled>Listen again and fix</button>
         <button class="ghost" type="button" id="rangeCancel">Cancel</button>
@@ -449,6 +453,10 @@
     </div>
     <div class="fixbar" id="fixbar" hidden>
       <span id="flagCount"></span>
+      <span class="fix-claude" data-claude-pick>
+        <select class="field" data-pick="model" aria-label="Claude model for fixing these lines"></select>
+        <select class="field" data-pick="effort" aria-label="How hard Claude thinks"></select>
+      </span>
       <button class="primary" id="fixNow" type="button">Fix flagged lines</button>
     </div>
   </section>

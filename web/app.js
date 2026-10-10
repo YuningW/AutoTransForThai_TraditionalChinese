@@ -576,8 +576,32 @@ function updateFixbar() {
   $("#fixbar").hidden = n === 0;
   $("#flagCount").textContent = `${n} line${n > 1 ? "s" : ""} flagged. It will listen again where needed, fix them, and remember what your notes teach it.`;
 }
+// Fixes can use their own Claude model and effort (e.g. Opus for a hard stretch while Models says Sonnet).
+// One choice for both Fix a stretch and Fix flagged lines, remembered on this Mac; "" = as under Models.
+function fixClaude() {
+  try { return JSON.parse(localStorage.getItem("ac-fix-claude") || "{}"); } catch { return {}; }
+}
+function renderClaudePicks() {
+  if (!settings) return;
+  const now = fixClaude();
+  const nameOf = k => (settings.claude_models.find(m => m.key === k) || {}).label || k;
+  const effOf = k => (settings.efforts.find(e => e.key === k) || {}).label || k;
+  $$("[data-claude-pick]").forEach(box => {
+    const m = $("[data-pick=model]", box), e = $("[data-pick=effort]", box);
+    m.replaceChildren(new Option(`As in Models (${nameOf(settings.claude_model).replace("Claude ", "")})`, ""),
+      ...settings.claude_models.map(x => new Option(x.label.replace("Claude ", ""), x.key)));
+    e.replaceChildren(new Option(`As in Models (${effOf(settings.claude_effort || "auto")})`, ""),
+      ...settings.efforts.map(x => new Option(x.label, x.key)));
+    m.value = now.model || ""; e.value = now.effort || "";
+    m.onchange = e.onchange = () => {
+      try { localStorage.setItem("ac-fix-claude", JSON.stringify({ model: m.value, effort: e.value })); } catch { /* fine */ }
+      renderClaudePicks();
+    };
+  });
+}
 $("#fixNow").onclick = async () => {
-  try { await api("POST", `/api/jobs/${job.id}/fix`); refresh(job.id); } catch (ex) { alert(ex.message); }
+  try { await api("POST", `/api/jobs/${job.id}/fix`, { model: fixClaude().model || null, effort: fixClaude().effort || null }); refresh(job.id); }
+  catch (ex) { alert(ex.message); }
 };
 $("#findVideoSubs").onclick = async () => {
   try { await api("POST", `/api/jobs/${job.id}/video-subs`); refresh(job.id); } catch (ex) { alert(ex.message); }
@@ -872,6 +896,7 @@ let settings = null;
 async function loadSettings() {
   settings = await api("GET", "/api/settings");
   addFontFaces(settings.font_faces || []);
+  setTimeout(renderClaudePicks, 0);
   const fill = (sel, list) => sel.replaceChildren(...list.map(f => {
     const o = document.createElement("option"); o.value = f.family; o.textContent = f.label;
     o.style.fontFamily = `"${f.family}"`; return o;
@@ -1721,7 +1746,8 @@ $("#rangeNote").addEventListener("input", () => renderRange());
 $("#rangeGo").onclick = async () => {
   const typed = $("#rangeNote").value.trim();
   try {
-    await api("POST", `/api/jobs/${job.id}/review`, { start: range.from, end: range.to, note: fixNote(), timing_only: timingOnly() });
+    await api("POST", `/api/jobs/${job.id}/review`, { start: range.from, end: range.to, note: fixNote(), timing_only: timingOnly(),
+      model: fixClaude().model || null, effort: fixClaude().effort || null });
     if (typed) {                     // remembered on this Mac, so it's one tap next time
       const m = myNotes(); m[typed] = { n: (m[typed]?.n || 0) + 1, at: Date.now() };
       try { localStorage.setItem("ac-fix-notes", JSON.stringify(Object.fromEntries(Object.entries(m).sort((a, b) => b[1].at - a[1].at).slice(0, 30)))); } catch { /* fine */ }
