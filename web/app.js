@@ -2113,13 +2113,35 @@ function lineHere() {
   return best;
 }
 
+// After you click a button, tab, menu, slider or the video, the keyboard goes back to the shortcuts (otherwise
+// Space presses that button again, arrows switch tabs, letters change a speaker menu, the video eats arrows).
+// Moving around with Tab (keyboard only) keeps the focus where it is.
+let viaKeyboard = false;
+document.addEventListener("keydown", e => { if (e.key === "Tab") viaKeyboard = true; }, true);
+document.addEventListener("pointerdown", () => { viaKeyboard = false; }, true);
+function handBack() {
+  const a = document.activeElement;
+  if (viaKeyboard || !a || a === document.body || !a.closest("#jobView, header")) return;
+  if (/^(BUTTON|SUMMARY|VIDEO|SELECT)$/.test(a.tagName) || (a.tagName === "INPUT" && /^(radio|checkbox|range)$/.test(a.type))) a.blur();
+}
+document.addEventListener("pointerup", () => setTimeout(handBack, 0));
+document.addEventListener("change", e => { if (e.target.tagName === "SELECT") setTimeout(handBack, 0); });
+
+// a small note that a shortcut did something
+let toastTimer = null;
+function toast(text) {
+  const t = $("#toast"); t.textContent = text; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 1400);
+}
+
 document.addEventListener("keydown", e => {
   if (!job || $("#jobView").hidden || e.metaKey || e.ctrlKey || e.altKey) return;
   const el = e.target;
-  const typing = el.isContentEditable || /^(TEXTAREA|SELECT|VIDEO)$/.test(el.tagName) ||
+  const typing = el.isContentEditable || /^(TEXTAREA|SELECT)$/.test(el.tagName) ||
     (el.tagName === "INPUT" && !/^(radio|checkbox|range|color)$/.test(el.type));
   if (typing || document.querySelector("dialog[open]")) return;
-  if (/^(BUTTON|INPUT|SUMMARY)$/.test(el.tagName) && (e.key === " " || e.key === "Enter")) return;   // let buttons do their own thing
+  if (el.tagName === "INPUT" && el.type === "range" && e.key.startsWith("Arrow")) return;            // a slider you're moving
+  if (/^(BUTTON|INPUT|SUMMARY)$/.test(el.tagName) && (e.key === " " || e.key === "Enter")) return;   // Tab-focused: press it
   const l = lineHere(), t = video.currentTime;
   const go = s => { video.currentTime = Math.max(0, Math.min(video.duration || 1e9, s)); };
   let done = true;
@@ -2133,10 +2155,10 @@ document.addEventListener("keydown", e => {
       if (n) { go(n.start + 0.01); $(`.line[data-id="${n.id}"]`)?.scrollIntoView({ block: "center" }); }
       break;
     }
-    case "[": if (l) patch(l, { start: Math.round(t * 1000) / 1000 }).then(() => drawTimeline(t, true)); break;
-    case "]": if (l) patch(l, { end: Math.round(t * 1000) / 1000 }).then(() => drawTimeline(t, true)); break;
-    case "s": case "S": if (l) cutLine(l); break;
-    case "m": case "M": if (l) joinLine(l); break;
+    case "[": if (l) { patch(l, { start: Math.round(t * 1000) / 1000 }).then(() => drawTimeline(t, true)); toast(`Starts at ${fmtTime(t)}`); } break;
+    case "]": if (l) { patch(l, { end: Math.round(t * 1000) / 1000 }).then(() => drawTimeline(t, true)); toast(`Ends at ${fmtTime(t)}`); } break;
+    case "s": case "S": if (l) { cutLine(l); toast("Split at the playhead"); } break;
+    case "m": case "M": if (l) { joinLine(l); toast("Joined with the next line"); } break;
     case "f": case "F": if (l) { const li = $(`.line[data-id="${l.id}"]`); li?.scrollIntoView({ block: "center" }); $(".flag", li)?.click(); } break;
     case "Enter": if (l) { video.pause(); const z = $(`.line[data-id="${l.id}"] .zh`); z?.scrollIntoView({ block: "center" }); z?.focus(); } break;
     case "Delete": case "Backspace": if (l) $(`.line[data-id="${l.id}"] .delline`)?.click(); break;
