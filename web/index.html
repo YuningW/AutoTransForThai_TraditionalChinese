@@ -168,6 +168,15 @@
         <button class="secondary" type="button" id="rangeTo">To here</button>
         <button class="ghost" type="button" id="rangePlay">Play it</button>
       </div>
+      <div class="listen-close" role="group" aria-label="Listen closely">
+        <button class="secondary" type="button" id="rangeLoop" aria-pressed="false" title="Play the stretch over and over (L)">⟳ Loop</button>
+        <span class="seg-switch" role="radiogroup" aria-label="Speed">
+          <label><input type="radio" name="rate" value="1" checked><span>1×</span></label>
+          <label><input type="radio" name="rate" value="0.75"><span>0.75×</span></label>
+          <label><input type="radio" name="rate" value="0.5"><span>0.5×</span></label>
+        </span>
+        <span class="muted small">Slower keeps their voices at the normal pitch.</span>
+      </div>
       <div class="reasons" id="fixReasons" role="group" aria-label="What's wrong here (tap one or more)"></div>
       <div class="reasons mine" id="fixMine" aria-label="Your notes from before"></div>
       <input class="field" id="rangeNote" placeholder="Anything else? (optional) e.g. she says “พี่มิ้ลค์” here">
@@ -508,6 +517,7 @@
     <tr><td><kbd>Enter</kbd></td><td>Edit the line's Chinese (<kbd>Shift</kbd> <kbd>Tab</kbd> for the Thai, <kbd>Enter</kbd> to finish)</td></tr>
     <tr><td><kbd>F</kbd></td><td>Flag the line</td></tr>
     <tr><td><kbd>Delete</kbd></td><td>Delete the line</td></tr>
+    <tr><td><kbd>L</kbd></td><td>Loop the stretch (in Fix a stretch)</td></tr>
     <tr><td><kbd>?</kbd></td><td>This list</td></tr>
   </table>
 </dialog>

@@ -1142,6 +1142,7 @@ function linesAt(t) {
 function tick() {
   const t = video.currentTime;
   previewTick(t);
+  loopTick(t);
   $$(".now-t").forEach(x => { x.textContent = fmtTime(t); });
   const on = lines.length ? linesAt(t) : [];
   const key = on.map(x => x.id).join(",");
@@ -1696,17 +1697,43 @@ function renderRange() {
 $("#markRange").onclick = () => {
   const box = $("#rangeBox"); box.hidden = !box.hidden;
   if (!box.hidden) { range.from = range.from ?? video.currentTime; $("#rangeNote").focus(); }
+  else endListening();
   renderRange();
 };
 $("#rangeFrom").onclick = () => { range.from = video.currentTime; if (range.to !== null && range.to < range.from) range.to = null; renderRange(); };
 $("#rangeTo").onclick = () => { range.to = video.currentTime; if (range.from !== null && range.to < range.from) [range.from, range.to] = [range.to, range.from]; renderRange(); };
-$("#rangeCancel").onclick = () => { $("#rangeBox").hidden = true; range.from = range.to = null; fixPicked.clear(); renderReasons(); renderRange(); };
+$("#rangeCancel").onclick = () => { endListening(); $("#rangeBox").hidden = true; range.from = range.to = null; fixPicked.clear(); renderReasons(); renderRange(); };
 $("#rangePlay").onclick = () => {
   if (range.from === null) return;
+  setLoop(false);
   video.currentTime = range.from; video.play();
   const stop = () => { if (range.to !== null && video.currentTime >= range.to) { video.pause(); video.removeEventListener("timeupdate", stop); } };
   video.addEventListener("timeupdate", stop);
 };
+
+// Listen closely: the stretch over and over, and slower (the browser keeps the pitch), to hear what's really said
+let looping = false;
+function setLoop(on) {
+  looping = !!on && range.from !== null && range.to !== null && range.to > range.from;
+  $("#rangeLoop").setAttribute("aria-pressed", String(looping));
+  if (looping) { stopPreview(false); video.currentTime = range.from; video.play(); }
+}
+function loopTick(t) {                 // every frame while it plays
+  if (!looping) return;
+  if (range.from === null || range.to === null || range.to <= range.from) { setLoop(false); return; }
+  if (t >= range.to - 0.02 || t < range.from - 1) video.currentTime = range.from;
+}
+function setRate(r) {
+  video.playbackRate = r;
+  video.preservesPitch = video.mozPreservesPitch = video.webkitPreservesPitch = true;
+  const el = $(`input[name=rate][value="${r}"]`); if (el) el.checked = true;
+}
+$("#rangeLoop").onclick = () => {
+  if (range.from === null || range.to === null) { alert("Mark the stretch first: From here and To here."); return; }
+  setLoop(!looping);
+};
+$$("input[name=rate]").forEach(r => r.addEventListener("change", () => setRate(+r.value)));
+function endListening() { setLoop(false); setRate(1); }
 $("#fillSkipped").onclick = async () => {
   try { await api("POST", `/api/jobs/${job.id}/fill-skipped`); refresh(job.id); } catch (ex) { alert(ex.message); }
 };
@@ -1752,6 +1779,7 @@ $("#rangeGo").onclick = async () => {
       const m = myNotes(); m[typed] = { n: (m[typed]?.n || 0) + 1, at: Date.now() };
       try { localStorage.setItem("ac-fix-notes", JSON.stringify(Object.fromEntries(Object.entries(m).sort((a, b) => b[1].at - a[1].at).slice(0, 30)))); } catch { /* fine */ }
     }
+    endListening();
     $("#rangeBox").hidden = true; $("#rangeNote").value = ""; fixPicked.clear(); range.from = range.to = null; renderRange(); renderReasons();
     refresh(job.id);
   } catch (ex) { alert(ex.message); }
@@ -2113,6 +2141,7 @@ document.addEventListener("keydown", e => {
     case "Enter": if (l) { video.pause(); const z = $(`.line[data-id="${l.id}"] .zh`); z?.scrollIntoView({ block: "center" }); z?.focus(); } break;
     case "Delete": case "Backspace": if (l) $(`.line[data-id="${l.id}"] .delline`)?.click(); break;
     case "?": $("#keys").showModal(); break;
+    case "l": case "L": if (!$("#rangeBox").hidden) $("#rangeLoop").click(); else done = false; break;
     default: done = false;
   }
   if (done) e.preventDefault();
