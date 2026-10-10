@@ -834,6 +834,16 @@ def edit_line(jid, lid, changes):
         if "speaker" in changes:
             l["speaker"] = changes["speaker"] or None
             l.pop("speaker_guess", None)
+        if "paint" in changes:                # some words in their own colour
+            paint = []
+            for m in changes["paint"] or []:
+                if isinstance(m, dict) and m.get("f") in ("zh", "th") and isinstance(m.get("text"), str) and m["text"].strip() \
+                        and isinstance(m.get("color"), str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", m["color"]):
+                    paint.append({"f": m["f"], "text": m["text"][:200], "n": max(0, int(m.get("n") or 0)), "color": m["color"]})
+            if paint:
+                l["paint"] = paint[:30]
+            else:
+                l.pop("paint", None)
         if "look" in changes:                 # this line's own size, colour, position…; {} = like all the others
             look = style.clean_look(changes["look"])
             if look:

@@ -346,8 +346,8 @@ function lineEl(l, flagOpen, lookOpen) {
   if (sp) { $(".speed", li).textContent = sp.label; $(".speed", li).title = sp.why; }
   $(".time", li).title = `${fmtTime(l.start)} – ${fmtTime(l.end)}. Play from here`;
   paintWho(li, l);
-  $(".th", li).textContent = l.th;
-  $(".zh", li).textContent = l.zh || "";
+  fillPainted($(".th", li), l.th, l.paint, "th");
+  fillPainted($(".zh", li), l.zh || "", l.paint, "zh");
   $(".dot", li).title = unsure ? "It wasn't sure it heard this right" : l.status === "fixed" ? "It fixed this line" : l.status === "edited" ? "You typed this" : "";
 
   // why: what it changed, what it first heard, your note
@@ -447,6 +447,86 @@ $("#tooFast").onclick = () => {
   $(`.line[data-id="${next.id}"]`)?.scrollIntoView({ block: "center" });
 };
 
+/* ---------------------------------------------------------- a few words in their own colour */
+
+// Same as style.py paint_ranges: a mark is {f: "zh"|"th", text, n: which occurrence, color}
+function paintRanges(text, marks, field) {
+  const out = [];
+  for (const m of marks || []) {
+    if (m.f !== field || !m.text) continue;
+    let at = -1;
+    for (let k = 0; k <= (m.n || 0); k++) { at = text.indexOf(m.text, at + 1); if (at < 0) break; }
+    if (at >= 0) out.push([at, at + m.text.length, m.color]);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
+function fillPainted(el, text, marks, field) {
+  const ranges = paintRanges(text || "", marks, field);
+  if (!ranges.length) { el.textContent = text || ""; return; }
+  const bits = []; let at = 0;
+  for (const [a, b, c] of ranges) {
+    if (a < at) continue;
+    if (a > at) bits.push(document.createTextNode(text.slice(at, a)));
+    const s = document.createElement("span"); s.className = "painted"; s.style.color = c; s.textContent = text.slice(a, b);
+    bits.push(s); at = b;
+  }
+  if (at < text.length) bits.push(document.createTextNode(text.slice(at)));
+  el.replaceChildren(...bits);
+}
+
+// Select words in a line's Thai or Chinese: a small bar offers each person's colour, any colour, or clear.
+const paintSel = { l: null, field: null, text: "", n: 0, a: 0, b: 0 };
+function showPaintBar() {
+  const sel = getSelection(), bar = $("#paintBar");
+  if (!sel.rangeCount || sel.isCollapsed) { bar.hidden = true; return; }
+  const r = sel.getRangeAt(0), field = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer.closest?.(".th, .zh")
+    : r.commonAncestorContainer.parentElement?.closest(".th, .zh");
+  const l = field && lineOf(field);
+  const picked = sel.toString();
+  if (!l || !picked.trim()) { bar.hidden = true; return; }
+  const pre = document.createRange(); pre.setStart(field, 0); pre.setEnd(r.startContainer, r.startOffset);
+  const a = pre.toString().length, all = field.textContent;
+  let n = 0, at = all.indexOf(picked);
+  while (at >= 0 && at < a) { n++; at = all.indexOf(picked, at + 1); }
+  Object.assign(paintSel, { l, field: field.classList.contains("th") ? "th" : "zh", text: picked, n, a, b: a + picked.length });
+  const people = (job.speakers || []).filter(p => p.color);
+  $("#paintPeople").replaceChildren(...people.map(p => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "paint-dot";
+    b.style.background = p.color; b.title = `${p.name || "Person"}'s colour`; b.setAttribute("aria-label", b.title);
+    b.dataset.color = p.color; return b;
+  }));
+  const box = r.getBoundingClientRect();
+  bar.hidden = false;
+  bar.style.left = `${Math.max(8, Math.min(innerWidth - bar.offsetWidth - 8, box.left + box.width / 2 - bar.offsetWidth / 2))}px`;
+  bar.style.top = `${Math.max(8, box.top - bar.offsetHeight - 8)}px`;
+}
+function applyPaint(color) {
+  const { l, field, text, n, a, b } = paintSel;
+  if (!l) return;
+  const txt = l[field] || "";
+  const keep = (l.paint || []).filter(m => {     // marks that overlap the words you picked are replaced
+    if (m.f !== field) return true;
+    const [r] = paintRanges(txt, [m], field);
+    return !r || r[1] <= a || r[0] >= b;
+  });
+  if (color) keep.push({ f: field, text, n, color });
+  $("#paintBar").hidden = true;
+  getSelection().removeAllRanges();
+  document.activeElement?.blur?.();
+  patch(l, { paint: keep });
+}
+document.addEventListener("selectionchange", () => {
+  clearTimeout(paintSel.timer);
+  paintSel.timer = setTimeout(showPaintBar, 120);
+});
+$("#paintBar").addEventListener("mousedown", e => { if (e.target.type !== "color") e.preventDefault(); });   // keep the selection
+$("#paintBar").addEventListener("click", e => {
+  const dot = e.target.closest(".paint-dot");
+  if (dot) applyPaint(dot.dataset.color);
+  else if (e.target.closest("#paintClear")) applyPaint(null);
+});
+$("#paintAny").addEventListener("change", e => applyPaint(e.target.value.toUpperCase()));
+
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
 function lineOf(el) { const li = el.closest(".line"); return li && lines.find(l => l.id === +li.dataset.id); }
 
@@ -458,7 +538,7 @@ async function patch(l, changes) {
     const li = $(`.line[data-id="${l.id}"]`);
     if (li && !editing()) li.replaceWith(lineEl(l, !$(".flagbox", li).hidden, !$(".lookbox", li).hidden));
     updateFixbar(); updateTooFast();
-    if ("look" in changes || "start" in changes || "end" in changes) { current = undefined; tick(); }
+    if ("look" in changes || "paint" in changes || "start" in changes || "end" in changes) { current = undefined; tick(); }
   } catch (ex) { alert(ex.message); }
 }
 
@@ -1254,11 +1334,11 @@ function fillBox(boxEl, group, st) {
     if (mine !== "zh" && th) pair.push([th, thPx, true]);
     if (mine !== "th" && zh) pair.push([zh, zhPx, false]);
     if (st.order === "zh_above") pair.reverse();
-    pair.forEach(r => rows.push([...r, colour, lk.bold, mine, zf]));
+    pair.forEach(r => rows.push([...r, colour, lk.bold, mine, zf, l]));
   }
-  rows.forEach(([text, px, isTh, colour, bold, mine, zf], i) => {
+  rows.forEach(([text, px, isTh, colour, bold, mine, zf, line], i) => {
     const el = document.createElement("div");
-    el.className = "ov-row"; el.textContent = text;
+    el.className = "ov-row"; fillPainted(el, text, line.paint, isTh ? "th" : "zh");
     Object.assign(el.style, rowCss(st, px, isTh && mine === "both"), { marginTop: i ? `${biggest * 0.12}px` : "0" });
     if (colour) el.style.color = colour;
     if (bold !== undefined) el.style.fontWeight = bold ? "700" : "500";

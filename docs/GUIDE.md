@@ -53,7 +53,9 @@ The preview on the video matches what gets burned in.
 - language: Chinese only, Thai only, or hidden
 - timing
 
-Use it when a caption covers something on screen, or for a line that deserves to be bigger. Tick other lines and press **Use this look on the ticked lines** to copy it.
+Use it when a caption covers something on screen, or for a line that deserves to be bigger.
+
+**A few words in another colour**: select words in a line's Thai or Chinese (in the list). A small bar offers each person's colour, any colour (＋), or **Clear**. Handy when a tiny part of a line is someone else's. The preview and the saved video show it; SRT files stay plain text. Tick other lines and press **Use this look on the ticked lines** to copy it.
 
 ## 4. People and colours
 

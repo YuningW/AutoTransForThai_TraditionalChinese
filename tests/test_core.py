@@ -293,3 +293,15 @@ class ClaudeForOneFix(unittest.TestCase):
         self.assertEqual(seen["fix"], ("claude-opus-5-5", "xhigh"))
         self.assertNotEqual(seen["other"], None)
         self.assertEqual(models.in_use(), (None, None))            # this thread never chose
+
+
+class PaintedWords(unittest.TestCase):
+    def test_some_words_in_their_own_colour(self):
+        s = style.merged({})
+        l = {"start": 0, "end": 2, "zh": "好笑 哪有在開玩笑 好笑", "th": "ล้อเล่นที่ไหน",
+             "paint": [{"f": "zh", "text": "好笑", "n": 1, "color": "#FF66AA"}, {"f": "th", "text": "ที่ไหน", "n": 0, "color": "#33AAFF"},
+                       {"f": "zh", "text": "不在了", "n": 0, "color": "#000000"}]}
+        rows = style.caption_block([l], "both", 1920, 1080, s)["rows"]
+        th, zh = rows[0], rows[1]                              # Thai above Chinese by default
+        self.assertEqual(zh["paint"], [[10, 2, "#FF66AA"]])     # the second 好笑; the missing words are skipped
+        self.assertEqual(th["paint"], [[7, 6, "#33AAFF"]])

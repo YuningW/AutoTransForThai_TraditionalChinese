@@ -114,6 +114,7 @@ class LineIn(BaseModel):
     flag: str | None = None
     note: str | None = None
     look: dict | None = None
+    paint: list | None = None     # some words in their own colour: [{"f": "zh"|"th", "text", "n", "color"}]
 
 
 @app.patch("/api/jobs/{jid}/lines/{lid}")

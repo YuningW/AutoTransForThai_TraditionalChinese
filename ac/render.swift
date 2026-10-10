@@ -5,7 +5,8 @@
 //   {"out": "/path.png", "w": 1920, "h": 1080, "blocks": [Block]}
 // Block: {"x": 0..1, "y": 0..1, "anchor": "bottom"|"top"|"center", "maxw": 0..1, "gap": px,
 //         "box": {"color": "#RRGGBBAA", "pad": px, "radius": px} | null,
-//         "rows": [{"text", "font", "size", "color", "bold", "stroke", "stroke_color", "shadow", "shadow_color"}]}
+//         "rows": [{"text", "font", "size", "color", "bold", "stroke", "stroke_color", "shadow", "shadow_color",
+//                   "paint": [[start, length, "#RRGGBB"]]}]}     paint: some words in their own colour (UTF-16 ranges)
 // With argument "fonts" it prints the installed font families, one per line.
 import AppKit
 import Foundation
@@ -69,7 +70,14 @@ func makeRow(_ r: [String: Any], maxWidth: CGFloat) -> Row {
         sh!.shadowOffset = NSSize(width: 0, height: -blur * 0.35)
         sh!.shadowColor = color(r["shadow_color"] as? String, NSColor(white: 0, alpha: 0.75))
     }
-    var row = Row(text: NSAttributedString(string: text, attributes: fill), outline: outline, shadow: sh)
+    let filled = NSMutableAttributedString(string: text, attributes: fill)
+    let n = (text as NSString).length
+    for p in (r["paint"] as? [[Any]]) ?? [] {
+        guard p.count == 3, let a = p[0] as? Int, let len = p[1] as? Int, let hex = p[2] as? String,
+              a >= 0, len > 0, a + len <= n else { continue }
+        filled.addAttribute(.foregroundColor, value: color(hex, .white), range: NSRange(location: a, length: len))
+    }
+    var row = Row(text: filled, outline: outline, shadow: sh)
     let b = row.text.boundingRect(with: CGSize(width: maxWidth, height: 10000), options: [.usesLineFragmentOrigin, .usesFontLeading])
     row.size = CGSize(width: ceil(b.width) + 2 * stroke + 2, height: ceil(b.height) + 2 * stroke)
     return row

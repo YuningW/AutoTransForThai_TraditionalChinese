@@ -609,6 +609,12 @@
 </template>
 
 <div class="toast" id="toast" role="status" hidden></div>
+<div class="paint-bar" id="paintBar" role="toolbar" aria-label="Colour these words" hidden>
+  <span class="paint-k">Colour</span>
+  <span id="paintPeople"></span>
+  <label class="paint-any" title="Any colour"><input type="color" id="paintAny" value="#FF7EB6" aria-label="Any colour">＋</label>
+  <button type="button" id="paintClear" title="Back to the line's colour">Clear</button>
+</div>
 <script src="app.js"></script>
 </body>
 </html>

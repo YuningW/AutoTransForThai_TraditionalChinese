@@ -198,6 +198,29 @@ def clean_look(look):
     return out
 
 
+def paint_ranges(text, marks, field):
+    """Words painted their own colour in one row: [(start, end, color)] as character positions in text. A mark is
+    {"f": "zh"|"th", "text", "n": which occurrence, "color"}; one whose words aren't in the text any more is skipped."""
+    out = []
+    for m in marks or []:
+        if m.get("f") != field or not m.get("text"):
+            continue
+        at, n = -1, int(m.get("n") or 0)
+        for _ in range(n + 1):
+            at = text.find(m["text"], at + 1)
+            if at < 0:
+                break
+        if at >= 0:
+            out.append((at, at + len(m["text"]), m["color"]))
+    return out
+
+
+def _utf16(text, ranges):
+    """Character positions -> the UTF-16 positions the renderer (NSString) counts in."""
+    u = lambda i: len(text[:i].encode("utf-16-le")) // 2
+    return [[u(a), u(b) - u(a), c] for a, b, c in ranges]
+
+
 def place_of(line, style):
     """Where a line sits: (position, y). A line with its own position is drawn as its own block."""
     look = line.get("look") or {}
@@ -241,6 +264,9 @@ def caption_block(line, which, w, h, style, speakers=None):
         zh_row = row(zh, zh_font, zh_px, own or s["color"], bold) if mine in ("zh", "both") and zh else None
         th_row = row(th, s["th_font"], th_px, own or (s["th_color"] if mine == "both" else s["color"]), bold) \
             if mine in ("th", "both") and th else None
+        for r_, field in ((zh_row, "zh"), (th_row, "th")):     # a few words in their own colour
+            if r_ and l.get("paint"):
+                r_["paint"] = _utf16(r_["text"], paint_ranges(r_["text"], l["paint"], field))
         pair = (th_row, zh_row) if s["order"] == "th_above" else (zh_row, th_row)
         rows += [r for r in pair if r]
     if not rows:
