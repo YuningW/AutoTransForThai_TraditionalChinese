@@ -90,7 +90,7 @@ The **Clips** tab collects scenes and saves them together, in any order:
 **What to save**:
 - **The whole video**.
 - **Just a part**: mark it with **From here** and **To here**, type the times, or press **Use the ticked lines**. It's shaded on the timeline; **Play it** to check.
-- **Only when these people talk**: tick Milk, Love… and it keeps every stretch where they talk, joined into one video (a moment before and after each line; lines close together stay as one stretch). Their lines need to be marked as theirs first. The list of parts shows each one with what's said: untick a part to leave it out, use **start − +** and **end − +** to move its ends by half a second, **Play** to hear just that part. **Smooth joins** (on by default) adds a quarter-second fade where parts meet.
+- **Only when these people talk**: tick Milk, Love… and it keeps every stretch where they talk, joined into one video (a moment before and after each line; lines close together stay as one stretch). Their lines need to be marked as theirs first. The list of parts shows each one with what's said: untick a part to leave it out, use **start − +** and **end − +** to move its ends by half a second, **Play** to hear just that part. **Smooth joins** (on by default) adds a quarter-second fade where parts meet. To trim them precisely, press **Edit these as clips…**: they become clips in the Clips tab (named after who talks and what's said), with all its tools.
 
 The SRT files and the video then cover only what you chose, timed from 0:00. **▶ Preview what will be saved** plays exactly those parts one after another, skipping the rest (⏮ ⏭ move between parts; Esc or **Stop preview** ends it), and the timeline shades every part.
 

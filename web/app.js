@@ -2410,6 +2410,23 @@ $("#clipTicked").onclick = () => {
   reelChanged(); drawTimeline(video.currentTime, true);
 };
 function playClips(spans) { stopPreview(false); pv.on = true; pv.spans = spans; pv.i = 0; previewJump(); video.play(); }
+// Only when these people talk → clips: the same parts, with all the trimming tools of the Clips tab
+$("#peopleToClips").onclick = () => {
+  const parts = peopleSpans();
+  if (!parts.length) { alert("Tick the people first."); return; }
+  const names = (job.speakers || []).filter(p => whoPicked.has(p.id)).map(p => p.name).join(" + ");
+  const made = parts.map(([a, b]) => {
+    const said = lines.filter(l => l.end > a && l.start < b && whoPicked.has(l.speaker)).map(l => l.zh || l.th)[0] || "";
+    return { id: Math.random().toString(36).slice(2, 8), start: Math.round(a * 1000) / 1000, end: Math.round(b * 1000) / 1000,
+             label: `${names}${said ? `: ${said.slice(0, 24)}` : ""}` };
+  });
+  if (reel().length && !confirm(`You already have ${reel().length} clip${reel().length > 1 ? "s" : ""}. Replace them with these ${made.length}?\n\n(Cancel adds these after them instead.)`)) reel().push(...made);
+  else job.reel = made;
+  $('input[name=part][value="clips"]').checked = true; showPart(); showPeoplePick();
+  reelChanged(); drawTimeline(video.currentTime, true);
+  showTab("clipsPanel");
+  toast(`${made.length} parts are now clips: trim them here`);
+};
 $("#clipPlay").onclick = () => { if (reelSpans().length) playClips(reelSpans()); };
 $("#clipSave").onclick = () => {
   $('input[name=part][value="clips"]').checked = true; showPart(); showPeoplePick(); showTab("exportPanel");
