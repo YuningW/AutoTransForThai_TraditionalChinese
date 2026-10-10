@@ -11,6 +11,7 @@ work/jobs/<id>/
   helpers/        your screenshots and text files
   relisten/       clips cut for listening again
 """
+import contextlib
 import json
 import os
 import re
@@ -26,6 +27,7 @@ from . import brain, captions, fetch, media, memory, models, paths, procs, style
 
 _locks = {}
 _gpu = threading.Semaphore(1)        # one Whisper / Demucs run at a time
+_gpu_holder = {}                      # the video whose turn it is
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi", ".mts", ".ts", ".flv", ".wmv", ".3gp"}
 PICTURE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif"}
 TEXT_EXT = {".srt", ".txt", ".vtt", ".ass"}
@@ -336,6 +338,26 @@ def _mmss(s):
     return f"{s // 60}:{s % 60:02d}"
 
 
+@contextlib.contextmanager
+def _gpu_turn(jid):
+    """Listening, music removal and alignment run one video at a time (together they'd be slower and could run out
+    of memory). While another video has its turn, this one says so instead of sitting at 0%, and Stop still works."""
+    if not _gpu.acquire(blocking=False):
+        other = _gpu_holder.get("jid")
+        title = (load(other).get("title") or "another video") if other else "another video"
+        was = load(jid).get("label")
+        update(jid, label=f"Waiting for “{title[:50]}” to finish listening (one video at a time)", progress=None)
+        while not _gpu.acquire(timeout=1):
+            procs.check(jid)
+        update(jid, label=was)                     # its turn: back to what it's doing
+    _gpu_holder["jid"] = jid
+    try:
+        yield
+    finally:
+        _gpu_holder.pop("jid", None)
+        _gpu.release()
+
+
 def _sub(jid, args, label, weight=(0, 1)):
     """Run a python -m step, pass its progress to the page, return its last message."""
     a, b = weight
@@ -379,7 +401,7 @@ def _whisper(jid):
 
 def _listen(jid, wav, hint, out_name="segments.json"):
     d = job_dir(jid)
-    with _gpu:
+    with _gpu_turn(jid):
         _sub(jid, ["ac.listen", str(wav), str(d / out_name), hint], "Listening (Whisper)")
     return json.loads((d / out_name).read_text())
 
@@ -389,7 +411,7 @@ def _isolate_voice(jid):
     if (d / "voice.wav").exists():
         return
     _step(jid, "cleaning", "Taking the music away from the voices (a few minutes)")
-    with _gpu:
+    with _gpu_turn(jid):
         _sub(jid, ["ac.voice", str(d / load(jid)["source"]), str(d / "voice.wav")], "Taking the music away")
 
 
@@ -656,7 +678,7 @@ def _relisten(jid, targets):
 
     (rd / "plan.json").write_text(json.dumps(plan, ensure_ascii=False))
     _step(jid, load(jid)["state"], f"Listening again to {len(targets)} lines", 0)
-    with _gpu:
+    with _gpu_turn(jid):
         _sub(jid, ["ac.relisten", str(rd / "plan.json"), str(rd / "out.json")], f"Listening again to {len(targets)} lines")
     results = json.loads((rd / "out.json").read_text())
     out = {}
@@ -693,7 +715,7 @@ def _voice_windows(jid, windows):
         w.setframerate(sr)
         for p in pieces:
             w.writeframes(p + silence)
-    with _gpu:
+    with _gpu_turn(jid):
         _sub(jid, ["ac.voice", str(joined), str(rd / "joined_voice.wav")], "Taking the music away")
     outs, pos = [], 0.0
     for (lid, a, b), raw in zip(windows, pieces):
@@ -1350,7 +1372,7 @@ def _voiceprints(jid, ls):
     if todo:
         (d / "voices_todo.json").write_text(json.dumps(todo))
         wav = d / ("voice.wav" if (d / "voice.wav").exists() else "audio.wav")
-        with _gpu:
+        with _gpu_turn(jid):
             _sub(jid, ["ac.voices", str(wav), str(d / "voices_todo.json"), str(d / "voices_new.npz")], "Recognising voices")
         cache.update(dict(np.load(d / "voices_new.npz")))
         np.savez(cache_f, **cache)
@@ -1587,7 +1609,7 @@ def _review_work(jid, start, end, note, state="reviewing", why=""):
         p.update(hint=hint, temperature=0.0, timed=True, offset=a)
     (rd / "plan.json").write_text(json.dumps(plan, ensure_ascii=False))
     _step(jid, state, f"Listening again to {_mmss(start)}–{_mmss(end)}", 0)
-    with _gpu:
+    with _gpu_turn(jid):
         _sub(jid, ["ac.relisten", str(rd / "plan.json"), str(rd / "out.json")], "Listening again")
     results = json.loads((rd / "out.json").read_text())
     attempts = [{"how": p["how"], "segments": r} for p, r in zip(plan, results) if r]
@@ -1704,7 +1726,7 @@ def _retime(jid, quiet=True, only=None):
     try:
         (d / "align_in.json").write_text(json.dumps(todo, ensure_ascii=False))
         _step(jid, load(jid)["state"], "Lining up each caption with when it's said", 0)
-        with _gpu:
+        with _gpu_turn(jid):
             _sub(jid, ["ac.align", str(d / "audio.wav"), str(d / "align_in.json"), str(d / "align_out.json")],
                  "Lining up each caption with when it's said")
         found = {int(k): v for k, v in json.loads((d / "align_out.json").read_text()).items()}

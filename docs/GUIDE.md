@@ -15,7 +15,7 @@ All these choices are remembered for next time.
 
 **Give it something to help** (optional): screenshots of CapCut's caption list, an `.srt`, or someone else's translation, as pictures or text. You can also say who's in the video.
 
-When it finishes, **What it did** lists every step, including how many Claude tokens the video used.
+You can start more videos while one is working: each runs on its own and the Claude steps run side by side, but listening, removing music and lining up the timing take turns (one video at a time on the Mac's GPU); a waiting video says so. When it finishes, **What it did** lists every step, including how many Claude tokens the video used.
 
 ## The video page
 
