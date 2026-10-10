@@ -144,6 +144,12 @@ textarea.field { resize: vertical; }
 /* the video stays in view while the panels under it scroll */
 .pinned { position: sticky; top: 0; z-index: 4; flex: none; display: flex; flex-direction: column; gap: 8px; background: var(--paper); padding-bottom: 6px; }
 .stage-rest { display: flex; flex-direction: column; gap: 12px; }
+.stage-actions { display: flex; flex-direction: column; gap: 12px; }
+/* drag the captions' left edge to make them wider or narrower */
+.col-grip { position: absolute; left: -14px; top: 0; bottom: 0; width: 10px; cursor: col-resize; z-index: 3; border-radius: 5px; }
+.col-grip::after { content: ""; position: sticky; top: 45vh; display: block; margin: 0 auto; width: 4px; height: 44px; border-radius: 2px; background: var(--rule); }
+.col-grip:hover::after, .col-grip.dragging::after { background: var(--ink-3); }
+body.resizing { cursor: col-resize; user-select: none; }
 .player { position: relative; z-index: 1; flex: none; background: #000; border-radius: 10px; overflow: hidden; line-height: 0; }
 .player video { width: 100%; max-height: min(62vh, calc(100vh - 340px)); display: block; background: #000; }
 /* same fonts and proportions as the burned-in captions (style.py); app.js sizes it to the picture */
@@ -397,13 +403,13 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .more-list button:disabled { opacity: .45; }
 .more-list small { color: var(--ink-3); font-size: 12px; }
 /* tabs: one panel at a time */
-.tabs { display: flex; gap: 2px; padding: 3px; background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; overflow-x: auto; flex: none; }
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: var(--paper); border: 1px solid var(--rule); border-radius: 10px; overflow-x: auto; flex: none; }
 .tabs button { flex: 1 0 auto; border: 0; background: none; padding: 6px 10px; border-radius: 7px; font-size: 13.5px; color: var(--ink-2); white-space: nowrap; }
 .tabs button[aria-selected="true"] { background: var(--sheet); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(20, 25, 60, .12); }
 .tabs .count:empty { display: none; }
-.stage > details.panel > summary { display: none; }
-.stage > details.panel[hidden] { display: none; }
-.stage > details.panel > .panel-body { padding-top: 14px; }
+.stage-rest > details.panel > summary { display: none; }
+.stage-rest > details.panel[hidden] { display: none; }
+.stage-rest > details.panel > .panel-body { padding-top: 14px; }
 /* on the video: a small switch in the timeline bar */
 .seg-switch { display: inline-flex; border: 1px solid var(--rule); border-radius: 7px; overflow: hidden; }
 .seg-switch label { display: flex; }
@@ -429,6 +435,8 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .fixbar .fix-claude { flex-wrap: nowrap; gap: 4px; margin-left: auto; }
 .fixbar { flex-wrap: wrap; justify-content: flex-start; gap: 8px 12px; }
 #flagCount { font-weight: 600; white-space: nowrap; }
+#clearFlags { color: var(--sheet); opacity: .8; font-size: 13px; padding: 4px 8px; }
+#clearFlags:hover { opacity: 1; }
 .fixbar .fix-claude select { max-width: 150px; }
 .listen-close { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .listen-close .secondary { font-size: 13px; padding: 4px 11px; }
@@ -617,5 +625,6 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
   .pinned { grid-column: 1; }
   .stage-rest { grid-column: 2; padding-bottom: 8px; }
   .script { grid-column: 3; }
-  .player video { max-height: calc(100vh - 290px); }
+  .player video { max-height: calc(100vh - 420px); }
+  .tl-view { height: 128px; }
 }

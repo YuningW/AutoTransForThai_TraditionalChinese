@@ -125,6 +125,7 @@
 
     <div class="stage-rest" id="stageRest">
 
+    <div class="stage-actions" id="stageActions">
     <div class="tools" id="tools">
       <button class="secondary" type="button" id="addLineHere" title="Add a caption at the playhead">+ Caption <span class="now-t">0:00.0</span></button>
       <button class="secondary" type="button" id="addTouchHere" title="Add an emoji or a little note at the playhead">+ Emoji</button>
@@ -201,6 +202,7 @@
       <div class="bar" id="bar"><i id="barFill"></i></div>
       <p class="error" id="jobError" role="alert"></p>
       <button class="secondary" id="retry" type="button" hidden>Try again</button>
+    </div>
     </div>
 
     <nav class="tabs" id="tabs" role="tablist" aria-label="Panels">
@@ -476,6 +478,7 @@
   </section>
 
   <section class="script" aria-label="Captions">
+    <div class="col-grip" id="colGrip" role="separator" aria-orientation="vertical" aria-label="Caption column width: drag to change, double-click to reset" title="Drag to make the captions wider or narrower (double-click: back to normal)"></div>
     <div class="script-head">
       <div class="legend">
         <span><i class="dot unsure"></i>it wasn't sure</span>
@@ -501,6 +504,7 @@
         <select class="field" data-pick="model" aria-label="Claude model for fixing these lines"></select>
         <select class="field" data-pick="effort" aria-label="How hard Claude thinks"></select>
       </span>
+      <button class="ghost" id="clearFlags" type="button" title="Take every flag and its note off">Clear flags</button>
       <button class="primary" id="fixNow" type="button">Fix flagged lines</button>
     </div>
   </section>

@@ -1581,6 +1581,19 @@ def join_line(jid, lid):
         return a
 
 
+def clear_flags(jid):
+    """Every flag (and its note) off at once. Returns how many lines had one."""
+    with _lock(jid):
+        ls = lines(jid)
+        n = 0
+        for l in ls:
+            if l.get("flag") or l.get("note"):
+                n += bool(l.get("flag"))
+                l["flag"], l["note"] = None, ""
+        save_lines(jid, ls)
+    return n
+
+
 def delete_line(jid, lid):
     with _lock(jid):
         ls = lines(jid)

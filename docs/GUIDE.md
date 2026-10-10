@@ -19,7 +19,7 @@ You can start more videos while one is working: each runs on its own and the Cla
 
 ## The video page
 
-The video and the timeline stay pinned at the top while you scroll the panels. On a wide screen (1500 px or more) the page uses three columns: video and timeline, the tabs, the captions.
+The video and the timeline stay pinned at the top while you scroll the panels. On a wide screen (1500 px or more) the page uses three columns: video, timeline and tools (Fix a stretch, weak spots and find open there), the tabs, the captions. Drag the captions' left edge to make them wider or narrower (double-click: back to normal).
 
 Under the video: the timeline, a small switch for which captions show on the video (中文 + Thai, 中文, Thai), and the main actions (**+ Caption**, **+ Emoji**, **Fix a stretch…**, **Find & replace**, and **More** for the rest). Below them, tabs: **Style · People · Emoji · Text & logo · Save · Help · Log**; the last one you used opens next time. **Quit** (top right) closes AutoCaption.
 
@@ -27,7 +27,7 @@ Under the video: the timeline, a small switch for which captions show on the vid
 
 The captions sit next to the video and follow it as it plays. Click a line's time to play from there, or click its text to edit it. Your typed edits are never overwritten.
 
-- **Flag a line** (⚑): pick what's wrong (words, translation, timing, or other), write a few words, then press **Fix flagged lines**. Flagged lines show as red ticks down the right edge of the list (the whole video, top to bottom; click one to go there), with a red mark on the timeline; **⬆ ⬇** next to Fix flagged lines, or **N** / **Shift N**, go to the next or previous one.
+- **Flag a line** (⚑): pick what's wrong (words, translation, timing, or other), write a few words, then press **Fix flagged lines**. Flagged lines show as red ticks down the right edge of the list (the whole video, top to bottom; click one to go there), with a red mark on the timeline; **Clear flags** takes them all off; **⬆ ⬇** next to Fix flagged lines, or **N** / **Shift N**, go to the next or previous one.
 - **Fix a stretch…**: mark **From here** and **To here**, tap what's wrong (two people at once, timing, skipped words, music, English, misheard words, translation) and add a note if you like; your own notes come back as one-tap choices. **Timing doesn't match** on its own only lines the stretch up with the speech (seconds, no Claude). To hear it yourself: **⟳ Loop** (or L) plays the stretch over and over, and **0.75×** or **0.5×** slows it down at normal pitch. Otherwise it listens to just that part again several ways (Thai, any language, another model, with the music removed) and rewrites those lines.
 - **Show the weak spots** (under More): the stretches most likely wrong (doubtful words, people talking over each other, long lines with few words), in time order. **Play** one; if it's wrong, **Fix this…** opens Fix a stretch on it with the reasons ticked. On older videos, run **Line up the timing** first so the spots are where the words really are.
 - **Find skipped talking**: finds talking that has no captions (using the voices, and the video's own subtitles if any) and fills it in.

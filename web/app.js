@@ -699,6 +699,14 @@ function stepFlag(d) {                 // previous / next flagged line from wher
   goToLine(n);
   toast(`Flagged line ${f.indexOf(n) + 1} of ${f.length}`);
 }
+$("#clearFlags").onclick = async () => {
+  const n = lines.filter(l => l.flag).length;
+  if (!n || !confirm(`Take the flag off all ${n} line${n > 1 ? "s" : ""}? Their notes go too.`)) return;
+  try {
+    await api("POST", `/api/jobs/${job.id}/clear-flags`);
+    await reloadLines(); toast(`Cleared ${n} flag${n > 1 ? "s" : ""}`);
+  } catch (ex) { alert(ex.message); }
+};
 $("#flagPrev").onclick = () => stepFlag(-1);
 $("#flagNext").onclick = () => stepFlag(1);
 addEventListener("resize", renderRail);
@@ -2363,7 +2371,7 @@ $("#tabs").addEventListener("keydown", e => {
   showTab(n.dataset.tab); n.focus(); e.preventDefault(); e.stopPropagation();
 });
 showTab((() => { try { return localStorage.getItem("ac-tab"); } catch { return null; } })() || "stylePanel");
-$$(".stage > details.panel > summary").forEach(s => s.addEventListener("click", e => e.preventDefault()));   // tabs open them
+$$(".stage-rest > details.panel > summary").forEach(s => s.addEventListener("click", e => e.preventDefault()));   // tabs open them
 
 // More ▾ closes after a choice, or a click anywhere else
 $("#moreMenu").addEventListener("click", e => { if (e.target.closest(".more-list button")) $("#moreMenu").open = false; });
@@ -2518,6 +2526,46 @@ function drawClipBands(pps) {
     return el;
   }));
 }
+
+/* ============================================================ layout: the toolbar's place, the captions' width */
+
+// Wide screens: the toolbar and its boxes (Fix a stretch, weak spots, find) sit under the timeline in the left
+// column, next to the video they work on; the middle column keeps the tabs. Narrow: back above the tabs.
+const wideLayout = matchMedia("(min-width: 1500px)");
+function placeActions() {
+  const a = $("#stageActions");
+  if (wideLayout.matches) { if (a.parentElement !== $("#pinned")) $("#pinned").append(a); }
+  else if (a.parentElement !== $("#stageRest")) $("#stageRest").prepend(a);
+  applyCaptionWidth();
+}
+wideLayout.addEventListener("change", placeActions);
+
+// The captions' column width: drag its left edge; remembered on this Mac (separately for 2 and 3 columns)
+function captionWidthKey() { return wideLayout.matches ? "ac-capw-3" : "ac-capw-2"; }
+function applyCaptionWidth(w) {
+  const jobEl = $("#jobView");
+  if (w === undefined) { try { w = +localStorage.getItem(captionWidthKey()) || 0; } catch { w = 0; } }
+  if (!w) { jobEl.style.gridTemplateColumns = ""; return; }
+  jobEl.style.gridTemplateColumns = wideLayout.matches ? `minmax(520px, 1.5fr) minmax(380px, .9fr) ${w}px` : `minmax(340px, 1fr) ${w}px`;
+  requestAnimationFrame(() => { placeOverlay(); renderRail(); drawTimeline(video.currentTime, true); });
+}
+$("#colGrip").addEventListener("pointerdown", e => {
+  e.preventDefault();
+  const grip = $("#colGrip"), right = $("#jobView").getBoundingClientRect().right - 20;
+  grip.setPointerCapture(e.pointerId); grip.classList.add("dragging"); document.body.classList.add("resizing");
+  const min = 320, max = Math.max(min, innerWidth - (wideLayout.matches ? 940 : 380));
+  let w = 0;
+  grip.onpointermove = ev => { w = Math.round(Math.max(min, Math.min(max, right - ev.clientX))); applyCaptionWidth(w); };
+  grip.onpointerup = () => {
+    grip.onpointermove = null; grip.classList.remove("dragging"); document.body.classList.remove("resizing");
+    if (w) try { localStorage.setItem(captionWidthKey(), String(w)); } catch { /* fine */ }
+  };
+});
+$("#colGrip").addEventListener("dblclick", () => {
+  try { localStorage.removeItem(captionWidthKey()); } catch { /* fine */ }
+  applyCaptionWidth(0); requestAnimationFrame(() => { placeOverlay(); renderRail(); });
+});
+placeActions();
 
 /* ============================================================ routing */
 

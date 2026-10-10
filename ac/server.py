@@ -281,6 +281,11 @@ def fix_weak_spots(jid: str):
     return jobs.load(jid)
 
 
+@app.post("/api/jobs/{jid}/clear-flags")
+def clear_flags(jid: str):
+    return {"cleared": jobs.clear_flags(jid)}
+
+
 @app.post("/api/jobs/{jid}/retime")
 def retime(jid: str):
     jobs.retime(jid)
