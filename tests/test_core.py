@@ -323,3 +323,13 @@ class HelperLanguage(unittest.TestCase):
         self.assertEqual(jobs.text_language("ไม่อยากเจอใครเลยค่ะ วันนี้"), "th")
         self.assertEqual(jobs.text_language("我不想見到任何人，今天"), "zh")
         self.assertIsNone(jobs.text_language("12 34"))
+
+
+class PersonSize(unittest.TestCase):
+    def test_line_size_beats_person_size(self):
+        s = style.merged({})
+        people = [{"id": "m", "color": "#FFE14D", "size": 1.5}]
+        px = lambda l: style.caption_block([l], "zh", 1920, 1080, s, people)["rows"][0]["size"]
+        base = px({"start": 0, "end": 1, "zh": "嗨"})
+        self.assertAlmostEqual(px({"start": 0, "end": 1, "zh": "嗨", "speaker": "m"}), base * 1.5, places=0)
+        self.assertAlmostEqual(px({"start": 0, "end": 1, "zh": "嗨", "speaker": "m", "look": {"size": 0.8}}), base * 0.8, places=0)

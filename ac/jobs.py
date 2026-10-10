@@ -1417,8 +1417,10 @@ def set_speakers(jid, people):
         if pid in seen:
             continue
         seen.add(pid)
+        size = p.get("size")
+        size = round(min(2.0, max(0.5, float(size))), 2) if isinstance(size, (int, float)) and abs(float(size) - 1) > 0.01 else None
         clean.append({"id": pid, "name": (p.get("name") or "").strip()[:30], "color": p.get("color") or "#FFFFFF",
-                      **({"font": str(p["font"])[:60]} if p.get("font") else {})})
+                      **({"font": str(p["font"])[:60]} if p.get("font") else {}), **({"size": size} if size else {})})
     with _lock(jid):
         ids = {p["id"] for p in clean}
         ls = lines(jid)

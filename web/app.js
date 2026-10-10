@@ -404,6 +404,7 @@ function fillLook(li, l, open) {
 }
 const ownColour = l => ((job.speakers || []).find(p => p.id === l.speaker) || {}).color;
 const ownFont = l => ((job.speakers || []).find(p => p.id === l.speaker) || {}).font;
+const ownSize = l => ((job.speakers || []).find(p => p.id === l.speaker) || {}).size;
 // a font menu: "like the rest" first, then every Chinese caption font, each shown in itself
 function fontMenu(sel, value, first) {
   const o0 = document.createElement("option"); o0.value = ""; o0.textContent = first;
@@ -1211,7 +1212,16 @@ function renderPeople() {
     fontMenu(f, p.font, "Font: like the rest");
     f.addEventListener("change", () => { const q = personById(p.id); if (q) { q.font = f.value || undefined; peopleChanged(true); } });
     x.onclick = () => { job.speakers = (job.speakers || []).filter(q => q.id !== p.id); peopleChanged(true); renderPeople(); };
-    li.append(c, n, x, dots, f); return li;
+    // their own size (×), like the font: the line's own (Aa) still wins
+    const sz = document.createElement("label"); sz.className = "psize";
+    const r = document.createElement("input"); r.type = "range"; r.min = "0.5"; r.max = "2"; r.step = "0.05"; r.value = p.size || 1;
+    r.setAttribute("aria-label", "This person's caption size");
+    const out = document.createElement("output"); out.textContent = `${Math.round((p.size || 1) * 100)}%`;
+    const setSize = (v, now) => { const q = personById(p.id); if (!q) return; q.size = Math.abs(v - 1) < 0.01 ? undefined : v; out.textContent = `${Math.round(v * 100)}%`; peopleChanged(now); };
+    r.addEventListener("input", () => setSize(+r.value, false));
+    r.addEventListener("change", () => setSize(+r.value, true));
+    sz.append("Size", r, out);
+    li.append(c, n, x, dots, f, sz); return li;
   }));
 }
 let peopleTimer = null;
@@ -1413,7 +1423,7 @@ function fillBox(boxEl, group, st) {
     const lk = l.look || {};
     if (lk.show === "none" || (lk.show && which !== "both" && lk.show !== which)) continue;
     const mine = lk.show && which === "both" ? lk.show : which;
-    const zhPx = basePx * (lk.size || 1), thPx = mine === "both" ? zhPx * st.th_scale : zhPx;
+    const zhPx = basePx * (lk.size || ownSize(l) || 1), thPx = mine === "both" ? zhPx * st.th_scale : zhPx;
     biggest = Math.max(biggest, zhPx);
     const th = l.kind === "sound" ? "" : (l.th || ""), zh = l.zh || "", colour = lk.color || ownColour(l);
     const zf = lk.font || ownFont(l);                 // the line's font, the person's, or the video's

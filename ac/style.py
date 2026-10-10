@@ -237,6 +237,7 @@ def caption_block(line, which, w, h, style, speakers=None):
     group = line if isinstance(line, list) else [line]
     colours = {p["id"]: p.get("color") for p in speakers or [] if p.get("color")}
     fonts = {p["id"]: p.get("font") for p in speakers or [] if p.get("font")}
+    sizes = {p["id"]: float(p["size"]) for p in speakers or [] if p.get("size")}
 
     def row(text, fam, px, col, bold):
         return {"text": text, "font": fam, "size": round(px, 1), "color": col, "bold": bool(bold),
@@ -255,7 +256,7 @@ def caption_block(line, which, w, h, style, speakers=None):
         th, zh = (l.get("th") or "").strip(), (l.get("zh") or "").strip()
         if l.get("kind") == "sound":
             th = ""
-        zh_px = base_px(w, h, s) * float(look.get("size") or 1)
+        zh_px = base_px(w, h, s) * float(look.get("size") or sizes.get(l.get("speaker")) or 1)   # the line's, the person's
         th_px = zh_px * float(s["th_scale"]) if mine == "both" else zh_px
         biggest = max(biggest, zh_px)
         own = look.get("color") or colours.get(l.get("speaker"))
