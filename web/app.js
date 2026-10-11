@@ -367,6 +367,11 @@ function lineEl(l, flagOpen, lookOpen) {
   if (l.th_before && l.th_before !== l.th) bits.push(`Before: <span class="heard">${esc(l.th_before)}</span>${l.zh_before ? " / " + esc(l.zh_before) : ""}`);
   else if (l.zh_before && l.zh_before !== l.zh && l.status !== "edited") bits.push(`Before: ${esc(l.zh_before)}`);
   if (l.kind === "song") bits.push("Sung lyrics: not translated. Type your own if you like.");
+  const lk = l.look || {};
+  if (lk.text) bits.push(`<b class="shows">On the video: “${esc(lk.text)}”</b> instead of these words`);
+  else if (lk.show === "none") bits.push(`<b class="shows">Hidden</b> on the video`);
+  else if (lk.show === "zh") bits.push(`<b class="shows">中文 only</b> on the video`);
+  else if (lk.show === "th") bits.push(`<b class="shows">ไทย only</b> on the video`);
   why.innerHTML = bits.join("<br>");
 
   // flag box
@@ -390,8 +395,11 @@ function fillLook(li, l, open) {
   box.hidden = !open;
   $(".lookbtn", li).setAttribute("aria-expanded", String(!!open));
   $$(".seg", box).forEach(seg => $$("button", seg).forEach(b => {
-    b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String((look[seg.dataset.k] || "") === b.dataset.v));
+    const on = b.dataset.v === "instead" ? !!look.text : !look.text && (look[seg.dataset.k] || "") === b.dataset.v;
+    b.setAttribute("role", "radio"); b.setAttribute("aria-checked", String(on));
   }));
+  $(".look-instead", box).hidden = !look.text && !box.dataset.instead;
+  if (document.activeElement !== $(".look-text", box)) $(".look-text", box).value = look.text || "";
   $(".look-size", box).value = look.size || 1;
   $(".look-size-out", box).textContent = `${Math.round((look.size || 1) * 100)}%`;
   $(".look-color", box).value = hex6(look.color || ownColour(l) || st.color);
@@ -571,8 +579,13 @@ ol.addEventListener("click", e => {
     if (!box.hidden) { video.pause(); video.currentTime = Math.min(l.end - 0.05, l.start + 0.3); }   // show the line on the video
     return;
   }
+  const ib = e.target.closest(".lookbox .instead-btn");
+  if (ib) { const box = ib.closest(".lookbox"); box.dataset.instead = "1"; $(".look-instead", box).hidden = false; $(".look-text", box).focus(); return; }
+  const pick = e.target.closest(".instead-picks button");
+  if (pick) { setLook(l, { text: pick.dataset.t, show: "" }); return; }
   const sb = e.target.closest(".lookbox .seg button");
-  if (sb) { setLook(l, { [sb.closest(".seg").dataset.k]: sb.dataset.v }); video.pause(); video.currentTime = Math.min(l.end - 0.05, l.start + 0.3); return; }
+  if (sb) { if (sb.dataset.k === "show" || sb.closest(".seg").dataset.k === "show") { const box = sb.closest(".lookbox"); delete box.dataset.instead; }
+    setLook(l, { [sb.closest(".seg").dataset.k]: sb.dataset.v, ...(sb.closest(".seg").dataset.k === "show" ? { text: "" } : {}) }); video.pause(); video.currentTime = Math.min(l.end - 0.05, l.start + 0.3); return; }
   if (e.target.closest(".look-color-reset")) { setLook(l, { color: "" }); return; }
   if (e.target.closest(".cut-here")) { cutLine(l); return; }
   if (e.target.closest(".join-next")) { joinLine(l); return; }
@@ -626,6 +639,7 @@ ol.addEventListener("change", e => {
   else if (e.target.classList.contains("look-color")) setLook(l, { color: e.target.value });
   else if (e.target.classList.contains("look-bold")) setLook(l, { bold: e.target.checked });
   else if (e.target.classList.contains("look-font")) setLook(l, { font: e.target.value });
+  else if (e.target.classList.contains("look-text")) setLook(l, { text: e.target.value.trim(), show: "" });
 });
 ol.addEventListener("input", e => {             // see it on the video while you slide
   const l = lineOf(e.target);
@@ -1445,9 +1459,12 @@ function fillBox(boxEl, group, st) {
     const th = l.kind === "sound" ? "" : (l.th || ""), zh = l.zh || "", colour = lk.color || ownColour(l);
     const zf = lk.font || ownFont(l);                 // the line's font, the person's, or the video's
     const pair = [];
-    if (mine !== "zh" && th) pair.push([th, thPx, true]);
-    if (mine !== "th" && zh) pair.push([zh, zhPx, false]);
-    if (st.order === "zh_above") pair.reverse();
+    if (lk.text) pair.push([lk.text, zhPx, which === "th"]);      // something else instead of the words: one row
+    else {
+      if (mine !== "zh" && th) pair.push([th, thPx, true]);
+      if (mine !== "th" && zh) pair.push([zh, zhPx, false]);
+      if (st.order === "zh_above") pair.reverse();
+    }
     pair.forEach(r => rows.push([...r, colour, lk.bold, mine, zf, l]));
   }
   rows.forEach(([text, px, isTh, colour, bold, mine, zf, line], i) => {

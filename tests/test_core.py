@@ -351,3 +351,14 @@ class UndoRedo(unittest.TestCase):
         self.assertEqual(jobs.history(jid)["redo"], "delete a line")
         jobs.undo(jid, redo=True)
         self.assertEqual([l["id"] for l in jobs.lines(jid)], [1])
+
+
+class ShowInstead(unittest.TestCase):
+    def test_music_symbol_instead_of_the_words(self):
+        s = style.merged({})
+        l = {"start": 0, "end": 2, "th": "ที่รัก", "zh": "親愛的", "look": style.clean_look({"text": "♪", "show": "zh"})}
+        rows = style.caption_block([l], "both", 1920, 1080, s)["rows"]
+        self.assertEqual([r["text"] for r in rows], ["♪"])
+        out = captions.srt([l, {"start": 2, "end": 3, "th": "ก", "zh": "嗨", "look": {"show": "zh"}}], "both")
+        self.assertIn("♪", out); self.assertNotIn("親愛的", out)
+        self.assertIn("嗨", out); self.assertNotIn("\nก\n", out)

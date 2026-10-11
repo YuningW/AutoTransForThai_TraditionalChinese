@@ -709,8 +709,11 @@
         <select class="field look-font" aria-label="Chinese font for this line"></select></div>
       <div class="look-row"><span class="look-k">Show</span>
         <div class="seg" data-k="show" role="radiogroup" aria-label="Which language this line shows">
-          <button type="button" data-v="">Like the rest</button><button type="button" data-v="zh">中文 only</button><button type="button" data-v="th">ไทย only</button><button type="button" data-v="none">Hide it</button>
+          <button type="button" data-v="">Like the rest</button><button type="button" data-v="zh">中文 only</button><button type="button" data-v="th">ไทย only</button><button type="button" data-v="none">Hide it</button><button type="button" data-v="instead" class="instead-btn">Show instead…</button>
         </div></div>
+      <div class="look-row look-instead" hidden><span class="look-k"></span>
+        <span class="instead-picks"><button type="button" data-t="♪">♪</button><button type="button" data-t="♪ ♪ ♪">♪ ♪ ♪</button><button type="button" data-t="（笑）">（笑）</button><button type="button" data-t="（音樂）">（音樂）</button><button type="button" data-t="（掌聲）">（掌聲）</button></span>
+        <input class="field look-text" placeholder="…or type what to show" maxlength="80" aria-label="Shown instead of this line's words"></div>
       <div class="look-row"><span class="look-k">Timing</span>
         <div class="timing">
           <button type="button" data-t="start-">Start −0.2s</button><button type="button" data-t="start+">Start +0.2s</button><button type="button" data-t="start=">Start here</button>

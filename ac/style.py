@@ -195,7 +195,21 @@ def clean_look(look):
         out["show"] = look["show"]
     if isinstance(look.get("font"), str) and look["font"].strip():
         out["font"] = look["font"].strip()[:60]
+    if isinstance(look.get("text"), str) and look["text"].strip():     # shown instead of the line's words (♪, (笑)…)
+        out["text"] = look["text"].strip()[:80]
+        out.pop("show", None)
     return out
+
+
+def shown(l):
+    """(th, zh) as a line appears on screen and in SRT files: "show instead" text, one language only, or hidden."""
+    look = l.get("look") or {}
+    if look.get("text"):
+        return look["text"], look["text"]
+    show, th, zh = look.get("show"), l.get("th") or "", l.get("zh") or ""
+    if show == "none":
+        return "", ""
+    return ("" if show == "zh" else th), ("" if show == "th" else zh)
 
 
 def paint_ranges(text, marks, field):
@@ -256,6 +270,10 @@ def caption_block(line, which, w, h, style, speakers=None):
         th, zh = (l.get("th") or "").strip(), (l.get("zh") or "").strip()
         if l.get("kind") == "sound":
             th = ""
+        if look.get("text"):                  # something else instead of the words: one row
+            zh, th, mine = look["text"], "", ("zh" if which in ("zh", "both") else "th")
+            if mine == "th":
+                zh, th = "", look["text"]
         zh_px = base_px(w, h, s) * float(look.get("size") or sizes.get(l.get("speaker")) or 1)   # the line's, the person's
         th_px = zh_px * float(s["th_scale"]) if mine == "both" else zh_px
         biggest = max(biggest, zh_px)

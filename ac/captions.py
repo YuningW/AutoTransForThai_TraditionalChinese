@@ -172,10 +172,14 @@ def _ts(t, sep=","):
 
 
 def srt(lines, which):
-    """which: "th" | "zh" | "both" (Chinese on top, Thai under it)."""
+    """which: "th" | "zh" | "both" (Chinese on top, Thai under it). A line's own look counts: hidden, one language
+    only, or something shown instead of its words (♪)."""
+    from .style import shown
     out, n = [], 0
     for l in lines:
-        th, zh = l["th"].strip(), (l.get("zh") or "").strip()
+        th, zh = (x.strip() for x in shown(l))
+        if (l.get("look") or {}).get("text") and which == "both":
+            th = ""                            # ♪ once, not twice
         text = {"th": th, "zh": zh, "both": "\n".join(x for x in (zh, th) if x)}[which]
         if not text:
             continue

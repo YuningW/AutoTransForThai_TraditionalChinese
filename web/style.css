@@ -326,6 +326,7 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .line:hover .who, .line .who:focus, .line.now .who { opacity: 1; }
 .why b { font-weight: 600; color: var(--fixed); }
 .why b.guess { color: var(--unsure); }
+.why b.shows { color: var(--edited); }
 .why .heard { font-family: var(--th); }
 .why details summary { cursor: pointer; }
 .marks { display: flex; flex-direction: column; align-items: center; gap: 8px; padding-top: 6px; }
@@ -353,6 +354,9 @@ kbd { font: 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px s
 .seg button, .look-color-reset, .look-actions button { border: 1px solid var(--rule); background: var(--paper, transparent); border-radius: 6px; padding: 3px 10px; font-size: 13px; color: var(--ink-2); }
 .seg button[aria-checked="true"] { background: var(--ink); border-color: var(--ink); color: var(--sheet); }
 .look-size { width: 160px; }
+.instead-picks { display: flex; flex-wrap: wrap; gap: 4px; }
+.instead-picks button { border: 1px solid var(--rule); background: var(--paper); border-radius: 6px; padding: 3px 9px; font-size: 13px; color: var(--ink-2); }
+.look-text { flex: 1; min-width: 160px; padding: 4px 8px; font-size: 13px; }
 .look-font, .pfont { width: auto; max-width: 240px; padding: 4px 8px; font-size: 13px; }
 .look-color { width: 36px; height: 26px; padding: 0; border: 1px solid var(--rule); border-radius: 6px; background: none; }
 .look-bold-l { display: inline-flex; gap: 4px; align-items: center; color: var(--ink-2); }

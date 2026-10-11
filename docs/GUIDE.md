@@ -54,7 +54,7 @@ The preview on the video matches what gets burned in.
 **One line only**: press **Aa** on a line to give just that line its own:
 - position: top, bottom, or drag that caption on the video
 - size, colour, bold or font
-- language: Chinese only, Thai only, or hidden
+- language: Chinese only, Thai only, hidden, or **Show instead…** something else (♪, ♪ ♪ ♪, （笑）, （音樂）, or anything you type): the words stay in the list, the video and the SRT files show the replacement
 - timing
 
 Use it when a caption covers something on screen, or for a line that deserves to be bigger.
