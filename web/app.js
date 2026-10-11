@@ -2703,6 +2703,21 @@ function placeActions() {
 }
 wideLayout.addEventListener("change", placeActions);
 
+// More: its list floats over the page (never cut off by the column it's in), opening upward when there's no
+// room below
+function placeMoreList() {
+  const menu = $("#moreMenu"), list = menu.querySelector(".more-list");
+  if (!menu.open) return;
+  list.classList.add("floating");
+  const r = menu.querySelector("summary").getBoundingClientRect(), h = list.offsetHeight, w = list.offsetWidth;
+  const below = innerHeight - r.bottom - 8, above = r.top - 8;
+  const top = h <= below ? r.bottom + 4 : h <= above ? r.top - 4 - h : Math.max(8, innerHeight - h - 8);
+  Object.assign(list.style, { top: `${top}px`, left: `${Math.max(8, Math.min(r.right - w, innerWidth - w - 8))}px` });
+}
+$("#moreMenu").addEventListener("toggle", placeMoreList);
+addEventListener("resize", placeMoreList);
+document.addEventListener("scroll", placeMoreList, true);      // the page or a column scrolled: follow the button
+
 // The captions' column width: drag its left edge; remembered on this Mac (separately for 2 and 3 columns)
 function captionWidthKey() { return wideLayout.matches ? "ac-capw-3" : "ac-capw-2"; }
 function applyCaptionWidth(w) {
