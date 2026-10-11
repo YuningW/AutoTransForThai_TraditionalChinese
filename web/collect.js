@@ -121,6 +121,28 @@ function textEditor(t, changed, remove) {
   return box;
 }
 
+// your logo: which one (your saved logos), where, how big, how it stands out, how long
+let collLogos = null;
+async function savedLogos() { if (!collLogos) collLogos = await api("GET", "/api/logos").catch(() => []); return collLogos; }
+function logoEditor(l, changed, remove) {
+  const box = document.createElement("div"); box.className = "text-edit";
+  const pick = document.createElement("select"); pick.className = "field te-logo"; pick.append(new Option("Choose a logo…", ""));
+  savedLogos().then(ls => { ls.forEach(x => pick.append(new Option(x.name, x.id))); pick.value = l.image || ""; });
+  const place = document.createElement("select"); place.className = "field"; PLACES.forEach(([v, n]) => place.append(new Option(n, v))); place.value = l.place || "top-right";
+  const size = document.createElement("input"); size.type = "range"; size.min = "0.05"; size.max = "0.5"; size.step = "0.01"; size.value = l.w || 0.14; size.title = "Size";
+  const so = document.createElement("select"); so.className = "field";
+  [["none", "as it is"], ["outline", "outline"], ["shadow", "soft shadow"], ["badge", "on a badge"], ["circle", "in a circle"]].forEach(([v, n]) => so.append(new Option(n, v)));
+  so.value = l.standout || "none"; so.title = "So it shows on any picture";
+  const secs = document.createElement("select"); secs.className = "field";
+  [[0, "the whole clip"], [2, "first 2 s"], [3, "first 3 s"], [5, "first 5 s"], [8, "first 8 s"]].forEach(([v, n]) => secs.append(new Option(n, v)));
+  secs.value = String(l.secs || 0);
+  const x = document.createElement("button"); x.type = "button"; x.textContent = "Remove"; x.onclick = remove;
+  const put = () => { Object.assign(l, { image: pick.value, place: place.value, w: +size.value, standout: so.value, secs: +secs.value }); changed(); };
+  [pick, place, size, so, secs].forEach(el => el.addEventListener("input", put));
+  box.append(pick, place, size, so, "for", secs, x);
+  return box;
+}
+
 const cItems = () => coll?.items || [];
 const cUsed = () => cItems().filter(i => i.end - i.start >= 0.3 && (i.star || !$("#cStarOnly").checked));
 function collChanged(redraw = true) {
@@ -144,13 +166,25 @@ function renderEveryText() {
   $("#everyTextEdit").replaceChildren(textEditor(t, () => { coll.text = t; $("#everyTextNow").textContent = t.text ? `“${t.text}”` : "(none)"; saveEveryText(); drawCollTexts(true); },
     () => { coll.text = null; saveEveryText(); renderEveryText(); drawCollTexts(true); }));
 }
+function renderEveryLogo() {
+  const l = coll.logo || { image: "", place: "top-right", w: 0.14, standout: "none", secs: 0 };
+  const name = () => (collLogos || []).find(x => x.id === coll.logo?.image)?.name;
+  $("#everyLogoNow").textContent = coll.logo?.image ? `(${name() || "a logo"})` : "(none)";
+  $("#everyLogoEdit").replaceChildren(logoEditor(l, () => { coll.logo = l; $("#everyLogoNow").textContent = l.image ? `(${name() || "a logo"})` : "(none)"; saveEveryLogo(); drawCollTexts(true); },
+    () => { coll.logo = null; saveEveryLogo(); renderEveryLogo(); drawCollTexts(true); }));
+}
+let logoTimer = null;
+function saveEveryLogo() {
+  clearTimeout(logoTimer);
+  logoTimer = setTimeout(() => api("PATCH", `/api/collections/${coll.id}`, { logo: coll.logo?.image ? coll.logo : {} }).catch(ex => alert(ex.message)), 500);
+}
 let everyTimer = null;
 function saveEveryText() {
   clearTimeout(everyTimer);
   everyTimer = setTimeout(() => api("PATCH", `/api/collections/${coll.id}`, { text: coll.text?.text ? coll.text : {} }).catch(ex => alert(ex.message)), 500);
 }
 function renderColl() {
-  renderCollTotals(); renderEveryText();
+  renderCollTotals(); renderEveryText(); savedLogos().then(renderEveryLogo);
   const items = cItems();
   $("#cList").replaceChildren(...items.map((it, i) => {
     const li = document.createElement("li"); li.dataset.id = it.id;
@@ -195,7 +229,15 @@ function renderColl() {
       li.querySelector(".te-text").focus();
     }, "clip-textbtn");
     tb.setAttribute("aria-pressed", String(!!it.text?.text));
-    li.append(n, name, btn("▶", "Play this clip", () => cvPlay([it])), tb, music,
+    const lb = btn("🖼", it.logo ? "Your logo on this clip" : "Add your logo on this clip", () => {
+      if (!it.logo) it.logo = { image: "", place: "top-right", w: 0.14, standout: "none", secs: 0 };
+      const open = li.querySelector(".logo-edit");
+      if (open) { open.remove(); return; }
+      const ed = logoEditor(it.logo, () => { collChanged(false); drawCollTexts(true); }, () => { delete it.logo; collChanged(); drawCollTexts(true); });
+      ed.classList.add("logo-edit"); li.append(ed);
+    }, "clip-textbtn");
+    lb.setAttribute("aria-pressed", String(!!it.logo?.image));
+    li.append(n, name, btn("▶", "Play this clip", () => cvPlay([it])), tb, lb, music,
       btn("↑", "Earlier", () => { if (i > 0) { [items[i - 1], items[i]] = [items[i], items[i - 1]]; collChanged(); } }),
       btn("✕", "Remove from the collection", () => { items.splice(i, 1); collChanged(); }),
       src, times);
@@ -309,7 +351,7 @@ function drawCollTexts(force) {
   const it = cvQueue[cvAt] || cItems().find(i => i.id === cvPlaying);
   const t = cvideo.currentTime, show = [];
   if (it && cvideo.src.endsWith(`/api/jobs/${it.jid}/video`) && t >= it.start - 0.05 && t <= it.end + 0.05) {
-    for (const x of [it.text, coll?.text]) if (x?.text && (!x.secs || t - it.start < x.secs)) show.push(x);
+    for (const x of [it.text, coll?.text, it.logo, coll?.logo]) if ((x?.text || x?.image) && (!x.secs || t - it.start < x.secs)) show.push(x);
   }
   const key = JSON.stringify(show) + cvideo.clientWidth;
   if (key === cvTextKey && !force) return;
@@ -319,6 +361,15 @@ function drawCollTexts(force) {
   const fr = { left: (pb.width - vw * sc) / 2, top: ((cvideo.clientHeight || pb.height) - vh * sc) / 2, w: vw * sc, h: vh * sc };
   const base = Math.min(vw, vh) * sc * 0.058;
   $("#cTexts").replaceChildren(...show.map(x => {
+    if (x.image) {                       // a logo: its width is a share of the picture's width, as when saved
+      const img = document.createElement("img"), [px, py] = PLACE_XY[x.place] || PLACE_XY["top-right"];
+      img.src = `/api/logos/${x.image}`; img.alt = ""; img.className = x.standout && x.standout !== "none" ? `so-${x.standout}` : "";
+      const light = ((collLogos || []).find(g => g.id === x.image) || {}).tone !== "dark";      // a light logo gets a dark badge
+      if (x.standout === "badge" || x.standout === "circle") img.style.background = light ? "rgba(29,37,80,.85)" : "rgba(255,255,255,.85)";
+      if (x.standout === "outline") img.style.filter = `drop-shadow(0 0 1.5px ${light ? "#000" : "#fff"}) drop-shadow(0 0 1.5px ${light ? "#000" : "#fff"})`;
+      Object.assign(img.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, width: `${fr.w * (x.w || 0.14)}px` });
+      return img;
+    }
     const el = document.createElement("div"), [px, py] = PLACE_XY[x.place] || PLACE_XY["top-left"], size = base * (x.size || 1.3);
     el.textContent = x.text;
     Object.assign(el.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, fontSize: `${size}px`, color: x.color || "#FFFFFF",
@@ -372,8 +423,8 @@ async function renderCollStatus() {
 }
 
 // ---------------------------------------------------------------- routing (app.js asks us for #/collections)
-window.openCollections = cid => openCollection(cid);
+window.acOpenCollection = cid => openCollection(cid);
 window.renderCollHome = renderCollHome;
-window.closeCollections = closeCollection;
+window.acCloseCollection = closeCollection;
 renderCollHome();
 if (location.hash.startsWith("#/collections")) route();

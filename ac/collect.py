@@ -88,6 +88,32 @@ def _clean_text(t):
             "font": str(t.get("font") or "")[:60], "secs": max(0.0, min(600.0, float(t.get("secs") or 0)))}
 
 
+STANDOUT = ("none", "outline", "shadow", "badge", "circle")
+
+
+def _clean_logo(l):
+    """One of your saved logos on a clip (or every clip): {"image", "place", "w", "secs", "standout"}; None if none."""
+    if not isinstance(l, dict) or not l.get("image"):
+        return None
+    image = re.sub(r"[^0-9A-Za-z_.-]", "", str(l["image"]))[:80]
+    if not any(f.suffix.lower() in jobs.LOGO_EXT for f in paths.LOGOS.glob(f"{image}.*")):
+        return None
+    return {"image": image, "place": l.get("place") if l.get("place") in PLACES else "top-right",
+            "w": round(min(0.6, max(0.04, float(l.get("w") or 0.14))), 3),
+            "secs": max(0.0, min(600.0, float(l.get("secs") or 0))),
+            "standout": l.get("standout") if l.get("standout") in STANDOUT else "none"}
+
+
+def _logo_touch(l, a, b):
+    """The logo as a touch; its outline or badge in a colour that contrasts with it (a white logo on a dark badge)."""
+    x, y = PLACES[l["place"]]
+    tone = next((g["tone"] for g in jobs.logos() if g["id"] == l["image"]), "light")
+    light = tone == "light"
+    return {"kind": "image", "image": l["image"], "x": x, "y": y, "w": l["w"], "opacity": 1.0, "standout": l["standout"],
+            "edge_color": "#000000" if light else "#FFFFFF", "plate_color": "#1D2550D9" if light else "#FFFFFFD9",
+            "start": a, "end": min(b, a + l["secs"]) if l["secs"] else b}
+
+
 def _text_touch(t, a, b):
     """That text as a touch (style.touch_block) on the clip's own timeline: from its start, for secs (0: all of it)."""
     x, y = PLACES[t["place"]]
@@ -104,10 +130,11 @@ def _clean_item(i, keep_id=True):
     return {"id": (str(i.get("id")) if keep_id and i.get("id") else uuid.uuid4().hex[:8])[:12], "jid": jid,
             "start": round(a, 3), "end": round(b, 3), "label": str(i.get("label") or "")[:60],
             **({"star": True} if i.get("star") else {}), **({"no_music": True} if i.get("no_music") else {}),
-            **({"text": _clean_text(i["text"])} if _clean_text(i.get("text")) else {})}
+            **({"text": _clean_text(i["text"])} if _clean_text(i.get("text")) else {}),
+            **({"logo": _clean_logo(i["logo"])} if _clean_logo(i.get("logo")) else {})}
 
 
-def change(cid, name=None, items=None, text=False):
+def change(cid, name=None, items=None, text=False, logo=False):
     """Rename it, or put its clips (reordered, trimmed, starred…) as you left them on the page."""
     with _lock:
         c = load(cid)
@@ -119,6 +146,8 @@ def change(cid, name=None, items=None, text=False):
             c["items"] = [x for x in (_clean_item(i) for i in items) if x][:500]
         if text is not False:                      # text on every clip (a title, a credit line)
             c["text"] = _clean_text(text)
+        if logo is not False:                      # your logo on every clip
+            c["logo"] = _clean_logo(logo)
         return _save(c)
 
 
@@ -217,7 +246,7 @@ def _export(cid, items, burn, srt, shape, name):
             _update(cid, label=f"Clip {n + 1} of {len(items)} ({title})", progress=round(done, 3))
             tag = re.sub(r'[\\/:*?"<>|\n\r\t]+', " ", i.get("label") or "").strip()[:40]
             dst = jobs._unused(folder / f"{base} {n + 1:02d}{' ' + tag if tag else ''}.mp4") if apart else work / f"{n:04d}.mp4"
-            _piece(i, burn, dst, work / f"{n:04d}", shape, (fade and n > 0, fade and n < len(items) - 1), c.get("text"),
+            _piece(i, burn, dst, work / f"{n:04d}", shape, (fade and n > 0, fade and n < len(items) - 1), (c.get("text"), c.get("logo")),
                    lambda p: _update(cid, progress=round(done + share * p * (1 if apart else 0.8), 3)))
             pieces.append(dst)
             done += share * (1 if apart else 0.8)
@@ -231,7 +260,7 @@ def _export(cid, items, burn, srt, shape, name):
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _piece(i, which, dst, work, shape, fade, every_text, on_progress):
+def _piece(i, which, dst, work, shape, fade, every, on_progress):
     """One clip from its own video, with that video's captions and look, plus your text for it (and for every clip)."""
     job = jobs.load(i["jid"])
     d = jobs.job_dir(i["jid"])
@@ -239,7 +268,9 @@ def _piece(i, which, dst, work, shape, fade, every_text, on_progress):
     a, b = i["start"], min(i["end"], m.get("duration") or i["end"])
     full = m.get("duration") or 0
     touches = [({**t, "start": 0.0, "end": full} if t.get("whole") else t) for t in jobs.touches(i["jid"]) if not t.get("pending")]
+    every_text, every_logo = every
     touches += [_text_touch(t, a, b) for t in (i.get("text"), every_text) if t]
+    touches += [_logo_touch(l, a, b) for l in (i.get("logo"), every_logo) if l]
     W, H, st, plan = m.get("width") or 1920, m.get("height") or 1080, job.get("style"), None
     if shape.get("vertical"):
         plan = style.vertical_plan(W, H, shape.get("fit", "fill"), shape.get("pos", 0.5))

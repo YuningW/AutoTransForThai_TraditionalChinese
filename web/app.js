@@ -2693,8 +2693,8 @@ placeActions();
 
 async function route() {
   const c = location.hash.match(/^#\/collections(?:\/([0-9a-f]{10}))?$/);
-  if (c && window.openCollections) { clearTimeout(pollTimer); job = null; video.pause(); return window.openCollections(c[1]); }
-  window.closeCollections?.();
+  if (c && window.acOpenCollection) { clearTimeout(pollTimer); job = null; video.pause(); return window.acOpenCollection(c[1]); }
+  window.acCloseCollection?.();
   const m = location.hash.match(/^#\/job\/([0-9a-f]{12})$/);
   if (m) return openJob(m[1]);
   clearTimeout(pollTimer);
