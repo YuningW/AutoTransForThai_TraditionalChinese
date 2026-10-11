@@ -1191,7 +1191,16 @@ def _joined(items, spans):
     return out
 
 
-def export(jid, srt=True, burn="zh", shape=None, part=None):
+def _unused(path):
+    """path, or "name 2.mp4", "name 3.mp4"… if a file is already there (your own names are never overwritten)."""
+    n, p = 2, Path(path)
+    while p.exists():
+        p = Path(path).with_name(f"{Path(path).stem} {n}{Path(path).suffix}")
+        n += 1
+    return p
+
+
+def export(jid, srt=True, burn="zh", shape=None, part=None, name=None):
     job = load(jid)
     if job.get("busy"):
         raise JobError("Wait for the current step to finish first.")
@@ -1213,6 +1222,10 @@ def export(jid, srt=True, burn="zh", shape=None, part=None):
             base = f"{base} ({' + '.join(names)} only)"
         else:
             base = f"{base} {_mmss(spans[0][0]).replace(':', '.')}-{_mmss(spans[0][1]).replace(':', '.')}"
+    named = bool((name or "").strip())
+    if named:                                  # your own name for what's saved
+        base = _safe(name)
+        update(jid, save_name=name.strip()[:120])
     files = []
     wanted = ("th", "zh", "both") if srt is True else tuple(srt or ())     # which SRT files (none is fine)
     for which, suffix in (("th", "th"), ("zh", "zh-TW"), ("both", "zh-TW+th")):
@@ -1228,6 +1241,7 @@ def export(jid, srt=True, burn="zh", shape=None, part=None):
         _begin(jid, "burning", "Drawing the captions")
         shape = shape or {}
         update(jid, shape=shape)                 # remembered for this video
+        shape = {**shape, "named": named}
         if part and part.get("reel"):            # one file per clip: named after your clips; some without music
             used = [c for c in _reel_used(job, part) if c["end"] - c["start"] >= 0.3]
             shape = {**shape, "names": [c.get("label") or "" for c in used], "no_music_each": [bool(c.get("no_music")) for c in used]}
@@ -1257,7 +1271,8 @@ def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
     size = (shape or {}).get("size", "full")
     label = {"zh": "中文字幕", "both": "中泰字幕", "th": "Thai captions"}[which] + (" 9x16" if plan else "") + \
         (f" {size}p" if size in media.SIZES and size != "full" else "")
-    out = folder / f"{base} ({label}).mp4"
+    named = bool((shape or {}).get("named"))
+    out = _unused(folder / f"{base}.mp4") if named else folder / f"{base} ({label}).mp4"
     total = sum(b - a for a, b in spans) or 1
     pieces, done = [], 0.0
     for i, (a, b) in enumerate(spans):           # each stretch on its own, then joined
@@ -1282,7 +1297,8 @@ def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
         update(jid, label="Burning captions into the video" + (f" (part {i + 1} of {len(spans)})" if len(spans) > 1 else ""))
         if apart:                              # its own file, numbered in your order, named after the clip
             tag = re.sub(r'[\\/:*?"<>|\n\r\t]+', " ", names[i] if i < len(names) else "").strip()[:40]
-            dst = folder / f"{base} {i + 1:02d}{' ' + tag if tag else ''} ({label}).mp4"
+            dst = folder / f"{base} {i + 1:02d}{' ' + tag if tag else ''}{'' if named else f' ({label})'}.mp4"
+            dst = _unused(dst) if named else dst
         else:
             dst = out if len(spans) == 1 else work / f"{i:04d}.mp4"
         media.burn(d / job["source"], lst, dst, b - a, lambda p: update(jid, progress=round(done + share * (0.3 + 0.7 * p), 3)),

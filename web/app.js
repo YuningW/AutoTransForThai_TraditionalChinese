@@ -787,7 +787,7 @@ $("#export").onclick = async () => {
     const srt = $$("input[name=srt]:checked").map(b => b.value);
     try { localStorage.setItem("ac-srt", JSON.stringify(srt)); } catch { /* fine */ }
     if (burn === "none" && !srt.length) { alert("Nothing to save: tick an SRT file or choose a video to burn."); return; }
-    await api("POST", `/api/jobs/${job.id}/export`, { srt, burn, shape: shapeNow(), part });
+    await api("POST", `/api/jobs/${job.id}/export`, { srt, burn, shape: shapeNow(), part, name: $("#saveName").value.trim() || null });
     refresh(job.id);
   } catch (ex) { alert(ex.message); }
 };
@@ -1024,6 +1024,7 @@ function loadShape() {           // what you chose last time for this video
   cropPos = s.pos ?? 0.5;
   $("#fadeJoins").checked = s.fade !== false;
   $("#noMusic").checked = !!s.no_music;
+  $("#saveName").value = job.save_name || "";
   $(`input[name=apart][value="${s.apart ? "1" : ""}"]`).checked = true;
   $(`input[name=vsize][value="${["720", "480"].includes(s.size) ? s.size : "full"}"]`).checked = true;
   showShape();

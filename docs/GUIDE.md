@@ -92,7 +92,7 @@ The **Clips** tab collects scenes and saves them together, in any order:
 
 ## 7. Save
 
-**Save** writes the SRT files you tick (中文, 中文 + Thai, Thai, or none) and, if you like, a copy of the video with captions, emoji, notes, text and logo burned in. They go to `~/Movies/AutoCaption/<video title>/`.
+**Save** writes the SRT files you tick (中文, 中文 + Thai, Thai, or none) and, if you like, a copy of the video with captions, emoji, notes, text and logo burned in. They go to `~/Movies/AutoCaption/<video title>/`. Type a **File name** to name them yourself (one file per clip adds the number and the clip's name, e.g. `Love moments 01 Hidden Fact.mp4`); a file already there is never overwritten (`Love moments 2.mp4`).
 
 **What to save**:
 - **The whole video**.

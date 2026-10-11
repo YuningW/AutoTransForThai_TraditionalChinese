@@ -220,6 +220,7 @@ class ExportIn(BaseModel):
     burn: str = "zh"          # zh | both | th | none
     shape: dict | None = None  # {"vertical": true, "fit": "fill" | "fit", "pos": 0..1}
     part: dict | None = None   # {"start", "end"}: just this part; {"people": [...]}; {"reel": true}: your clips
+    name: str | None = None    # your own name for the saved files
 
 
 class ReelIn(BaseModel):
@@ -233,7 +234,7 @@ def put_reel(jid: str, body: ReelIn):
 
 @app.post("/api/jobs/{jid}/export")
 def export(jid: str, body: ExportIn):
-    return jobs.export(jid, body.srt, body.burn, body.shape, body.part)
+    return jobs.export(jid, body.srt, body.burn, body.shape, body.part, body.name)
 
 
 class StyleIn(BaseModel):
