@@ -36,7 +36,9 @@ $("#newCollectionHome").onclick = () => newCollection();
 // ---------------------------------------------------------------- a video's Clips tab: Add to collection
 async function renderAddColl() {
   const pick = $("#addCollPick"), keep = pick.value || localStorage.getItem("ac-coll") || "";
-  const cs = await collList();
+  const cs = await collList(), sig = JSON.stringify(cs.map(c => [c.id, c.name, c.count]));
+  if (sig === pick.dataset.sig) return;          // the same list: leave the open menu alone
+  pick.dataset.sig = sig;
   pick.replaceChildren(...cs.map(c => new Option(`${c.name} (${c.count})`, c.id)), new Option("+ New collection…", "new"));
   pick.value = cs.some(c => c.id === keep) ? keep : (cs[0]?.id || "new");
 }
@@ -57,7 +59,13 @@ $("#addCollPick").addEventListener("change", async e => {
   if (e.target.value === "new") { const c = await newCollection(false); if (c) { localStorage.setItem("ac-coll", c.id); await renderAddColl(); } }
   else try { localStorage.setItem("ac-coll", e.target.value); } catch { /* fine */ }
 });
+// the list is filled whenever you might use it: opening a video (the Clips tab may already be the open one),
+// switching to Clips, and opening the menu itself (a collection made in another window shows up)
 $("[data-tab=clipsPanel]").addEventListener("click", renderAddColl);
+$("#addCollPick").addEventListener("pointerdown", () => { if ($("#addCollPick").options.length < 2) renderAddColl(); });
+$("#addCollPick").addEventListener("focus", renderAddColl);
+window.addEventListener("hashchange", () => { if (location.hash.startsWith("#/job/")) renderAddColl(); });
+if (location.hash.startsWith("#/job/")) renderAddColl();
 
 // ---------------------------------------------------------------- the collection page
 async function openCollection(cid) {

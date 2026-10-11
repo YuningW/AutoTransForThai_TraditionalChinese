@@ -43,11 +43,10 @@
       <input type="url" id="link" class="field" placeholder="Paste a video link (YouTube, Bilibili, X, TikTok…)">
 
       <div class="only-part">
-        <label class="check"><input type="checkbox" id="onlyPart"> <span>Only part of the video<small>Just this stretch is downloaded (for links), listened to and translated: quicker, and less of your Claude plan.</small></span></label>
-        <div class="only-part-times" id="onlyPartTimes" hidden>
-          <label>From <input class="field part-t" id="opStart" placeholder="12:30" aria-label="Part starts at"></label>
-          <label>to <input class="field part-t" id="opEnd" placeholder="15:00" aria-label="Part ends at"></label>
-          <span class="muted small">minutes:seconds, or h:mm:ss</span>
+        <label class="check"><input type="checkbox" id="onlyPart"> <span>Only some parts of the video<small>Just these parts are listened to and translated: quicker, and less of your Claude plan. You can caption more parts later, from the video's page, without starting again.</small></span></label>
+        <div class="only-part-list" id="onlyPartTimes" hidden>
+          <ol class="op-rows" id="opRows"></ol>
+          <div class="op-foot"><button class="ghost" type="button" id="opAdd">+ Another part</button><span class="muted small">minutes:seconds, or h:mm:ss</span></div>
         </div>
       </div>
 
@@ -210,6 +209,7 @@
       <button class="secondary" type="button" id="addLineHere" title="Add a caption at the playhead">+ Caption <span class="now-t">0:00.0</span></button>
       <button class="secondary" type="button" id="addTouchHere" title="Add an emoji or a little note at the playhead">+ Emoji</button>
       <button class="secondary" type="button" id="markRange" title="Mark a part it got wrong or skipped; it listens again and rewrites it">Fix a stretch…</button>
+      <button class="secondary" type="button" id="morePartBtn" hidden title="Caption another part of this video (only some parts have captions)">+ Another part…</button>
       <button class="secondary" type="button" id="findOpen">Find &amp; replace</button>
       <details class="more" id="moreMenu">
         <summary class="secondary">More</summary>
@@ -240,6 +240,22 @@
       <div class="range-actions">
         <button class="primary" type="button" id="findGo" disabled>Replace all</button>
         <button class="ghost" type="button" id="findClose">Close</button>
+      </div>
+    </div>
+    <div class="range-box" id="morePartBox" hidden>
+      <p class="range-help">Only some parts of this video have captions: <span id="morePartHave"></span>. Mark another part (play to it and press From here / To here, or type the times); it's listened to and translated like the rest. The captions you have stay as they are.</p>
+      <div class="range-ends">
+        <button class="secondary" type="button" id="mpFrom">From here</button>
+        <input class="field part-t" id="mpStart" aria-label="Part starts at" placeholder="12:30">
+        <span aria-hidden="true">→</span>
+        <input class="field part-t" id="mpEnd" aria-label="Part ends at" placeholder="15:00">
+        <button class="secondary" type="button" id="mpTo">To here</button>
+        <button class="ghost" type="button" id="mpRest" title="Every part of the video that has no captions yet">All the rest</button>
+      </div>
+      <p class="muted small" id="mpSays"></p>
+      <div class="range-actions">
+        <button class="primary" type="button" id="mpGo" disabled>Caption this part</button>
+        <button class="ghost" type="button" id="mpCancel">Cancel</button>
       </div>
     </div>
     <div class="range-box weak-box" id="weakBox" hidden>

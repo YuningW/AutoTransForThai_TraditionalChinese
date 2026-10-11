@@ -100,6 +100,8 @@ def job_dir(jid):
 def load(jid):
     job = json.loads((job_dir(jid) / "job.json").read_text())
     job["dir"] = str(paths.JOBS / jid)
+    if (job.get("part") or {}).get("done"):       # started as one cut-out part (older versions): not a Save setting
+        job["cut"] = job.pop("part")
     return job
 
 
@@ -225,7 +227,7 @@ def _after_stop(jid):
         (". Everything finished before that is kept." if has_lines else "."), "warn")
 
 
-STATE_DOING = {"timing": "lining up the timing", "filling": "filling in skipped talking", "fetching": "downloading", "preparing": "reading the video", "cleaning": "removing the music",
+STATE_DOING = {"adding": "captioning another part", "timing": "lining up the timing", "filling": "filling in skipped talking", "fetching": "downloading", "preparing": "reading the video", "cleaning": "removing the music",
                "listening": "listening", "reading": "reading your screenshots", "tidying": "tidying the Thai",
                "translating": "translating", "checking": "checking its work", "fixing": "fixing your flags",
                "reviewing": "fixing a stretch", "burning": "saving the video", "touches": "picking emoji",
@@ -266,46 +268,93 @@ def _new_job(title, about="", clean_voice=False, fast=False, video_subs=True, su
     return load(jid)
 
 
-def _clean_part(part):
-    """Only part of the video, from the start page: (start, end) in seconds, or None for all of it."""
-    if not part:
+def _clean_parts(parts):
+    """Only some parts of the video, from the start page: [[start, end], …] in seconds (sorted, overlaps joined),
+    or None for all of it. Also takes the older single {"start", "end"}."""
+    if not parts:
         return None
-    try:
-        a, b = max(0.0, float(part.get("start") or 0)), float(part.get("end") or 0)
-    except (TypeError, ValueError):
-        raise JobError("The part's times don't look right (use minutes:seconds, like 12:30).")
-    if b - a < 1:
-        raise JobError("The part must end at least a second after it starts.")
-    return round(a, 3), round(b, 3)
+    if isinstance(parts, dict):
+        parts = [[parts.get("start"), parts.get("end")]]
+    out = []
+    for x in parts:
+        try:
+            a, b = (float(x.get("start") or 0), float(x.get("end") or 0)) if isinstance(x, dict) else (float(x[0] or 0), float(x[1] or 0))
+        except (TypeError, ValueError, IndexError):
+            raise JobError("A part's times don't look right (use minutes:seconds, like 12:30).")
+        if b - a < 1:
+            raise JobError(f"Each part must end at least a second after it starts ({_mmss(a)}–{_mmss(b)}).")
+        out.append([round(max(0.0, a), 3), round(b, 3)])
+    return _join_parts(out) or None
 
 
-def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False, part=None):
+def _join_parts(parts):
+    merged = []
+    for a, b in sorted(parts):
+        if merged and a <= merged[-1][1] + 0.5:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    return merged
+
+
+def _minus(parts, taken):
+    """What of parts isn't already in taken (both [[a, b], …])."""
+    out = []
+    for a, b in parts:
+        pieces = [[a, b]]
+        for x, y in taken or []:
+            pieces = [q for p_a, p_b in pieces for q in ([[p_a, min(p_b, x)]] if p_a < x else []) + ([[max(p_a, y), p_b]] if p_b > y else [])]
+        out += [q for q in pieces if q[1] - q[0] >= 1]
+    return out
+
+
+def _parts_text(parts):
+    return ", ".join(f"{_mmss(a)}–{_mmss(b)}" for a, b in parts)
+
+
+def _in_parts(job, spans):
+    """Spans cut to the parts of the video that have captions (all of it when no parts were chosen)."""
+    only = job.get("only")
+    if not only:
+        return list(spans)
+    out = []
+    for a, b in spans:
+        for x, y in only:
+            if min(b, y) - max(a, x) >= 0.5:
+                out.append((max(a, x), min(b, y)))
+    return out
+
+
+def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False, parts=None):
     url = fetch.clean_url(url)
-    part = _clean_part(part)
-    key = fetch.video_key(url) + (f"@{part[0]}-{part[1]}" if part else "")
+    parts = _clean_parts(parts)
+    key = fetch.video_key(url)
     for f in paths.JOBS.glob("*/job.json"):
         try:
             j = json.loads(f.read_text())
         except ValueError:
             continue
         if j.get("key") == key and j.get("source") and not j.get("error"):
-            return load(j["id"])                     # same video again: open the earlier job
+            # same video again: open the earlier one, captioning the parts it doesn't have yet
+            if j.get("only") and not j.get("busy"):
+                todo = _minus(parts or [[0, (j.get("media") or {}).get("duration") or 0]], j["only"])
+                if todo:
+                    add_parts(j["id"], todo)
+            return load(j["id"])
     job = _new_job(url, about, clean_voice, fast, video_subs, subs_check, careful, key=key, info={"url": url},
-                   **({"part": {"start": part[0], "end": part[1]}} if part else {}))
+                   **({"only": parts} if parts else {}))
     _run(job["id"], _fetch_then_make, url)
     return job
 
 
-def create_from_upload(filename, stream, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False, part=None):
+def create_from_upload(filename, stream, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False, parts=None):
     ext = Path(filename or "video.mp4").suffix.lower()
     if ext not in VIDEO_EXT:
         raise JobError("That doesn't look like a video file (" + (ext or "no extension") + ").")
     title = Path(filename).stem
-    part = _clean_part(part)
-    if part:
-        title = f"{title} ({_mmss(part[0])}–{_mmss(part[1])})"
+    parts = _clean_parts(parts)
     job = _new_job(title, about, clean_voice, fast, video_subs, subs_check, careful, info={"title": title, "file": filename},
-                   **({"part": {"start": part[0], "end": part[1]}} if part else {}))
+                   **({"only": parts} if parts else {}))
     dst = job_dir(job["id"]) / ("source" + ext)
     with open(dst, "wb") as f:
         shutil.copyfileobj(stream, f, 4 * 1024 * 1024)
@@ -320,15 +369,27 @@ def _fetch_then_make(jid, url):
     def progress(p, label=None):
         update(jid, progress=p, **({"label": label} if label else {}))
 
-    part = load(jid).get("part")
-    info, path = fetch.download(url, job_dir(jid), progress, (part["start"], part["end"]) if part else None)
-    title = info.get("title") or url
-    if part:
-        title = f"{title} ({_mmss(part['start'])}–{_mmss(part['end'])})"
-        if info.get("cut"):
-            update(jid, part={**part, "done": True})          # downloaded as just that part
-    update(jid, info={**info}, title=title, source=path.name)
+    info, path = fetch.download(url, job_dir(jid), progress)
+    update(jid, info={**info}, title=info.get("title") or url, source=path.name)
     _make(jid)
+
+
+def _only_sound(src, dst, parts):
+    """The sound with everything outside the parts made silent: listening finds talking only there, and every
+    time stays the video's own time."""
+    import wave
+    import numpy as np
+    with wave.open(str(src)) as w:
+        params, x = w.getparams(), np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).copy()
+    rate, ch = params.framerate, params.nchannels
+    keep = np.zeros(len(x) // ch, dtype=bool)
+    for a, b in parts:
+        keep[int(a * rate):int(b * rate)] = True
+    x.reshape(-1, ch)[~keep] = 0
+    with wave.open(str(dst), "wb") as w:
+        w.setparams(params)
+        w.writeframes(x.tobytes())
+    return dst
 
 
 # ---------------------------------------------------------------- the main run
@@ -338,16 +399,6 @@ def _make(jid):
     d = job_dir(jid)
     job = load(jid)
     src = d / job["source"]
-    part = job.get("part")
-    if part and not part.get("done"):           # only part of it: cut it out first (exact, re-encoded)
-        _step(jid, "preparing", f"Cutting out {_mmss(part['start'])}–{_mmss(part['end'])}")
-        cut = d / "part.mp4"
-        media._run(["-ss", f"{part['start']:.3f}", "-to", f"{part['end']:.3f}", "-i", str(src), "-map", "0:v:0", "-map", "0:a:0",
-                    "-c:v", "h264_videotoolbox", "-q:v", "65", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(cut)],
-                   "Cutting out the part")
-        src.unlink(missing_ok=True)
-        src = cut
-        update(jid, source=cut.name, part={**part, "done": True})
     _step(jid, "preparing", "Reading the video")
     info = media.probe(src)
     update(jid, media=info)
@@ -365,11 +416,20 @@ def _make(jid):
         _isolate_voice(jid)
         hear = d / "voice.wav"
 
+    only = job.get("only")
+    if only:                                   # only some parts: the rest is silent to the listening
+        only = [[a, min(b, info["duration"])] for a, b in only if a < info["duration"] - 0.5]
+        if not only:
+            raise JobError(f"The video is only {_mmss(info['duration'])} long: no part you chose is in it.")
+        update(jid, only=only)
+        log(jid, f"Only these parts get captions: {_parts_text(only)}. Caption another part from the video page any time.")
+        hear = _only_sound(hear, d / "parts.wav", only)
+
     _step(jid, "listening", "Listening (Whisper)", 0)
     segs = _listen(jid, hear, memory.whisper_hint())
     ls = captions.from_segments(segs)
     if not ls:
-        raise JobError("No speech was found in this video.")
+        raise JobError("No speech was found in " + ("the parts you chose." if only else "this video."))
     save_lines(jid, ls)
     log(jid, f"Heard {len(ls)} lines; {sum(1 for l in ls if l['conf'] < UNSURE)} of them it wasn't sure about.")
 
@@ -402,12 +462,75 @@ def _usage_note(jid):
 
 def _resume(jid, state):
     """Carry on from the step that stopped (Claude's usage limit, a lost connection…), keeping what was done."""
+    if load(jid).get("adding"):                # it was captioning another part
+        if not load(jid)["adding"].get("heard"):
+            return _add_parts_job(jid, load(jid)["adding"]["parts"])
+        return _add_parts_rest(jid)
     if state in ("reading", "tidying"):
         _read_helpers(jid)
         _polish_and_translate(jid)
     elif state == "translating":
         _translate(jid)
     _finish(jid)
+
+
+def add_parts(jid, parts):
+    """Caption more parts of a video that was started with only some: listen to just those, then tidy, translate,
+    check and line up only their lines. Lines you already have are left as they are."""
+    job = load(jid)
+    if job.get("cut"):
+        raise JobError("This video was started as a cut-out part (an older version), so there's nothing else in it. "
+                       "Start the video again with the parts you want.")
+    if not job.get("only"):
+        raise JobError("This video already has captions all the way through.")
+    dur = (job.get("media") or {}).get("duration") or 1e9
+    todo = _minus([[a, min(b, dur)] for a, b in _clean_parts(parts) or [] if a < dur - 1], job["only"])
+    if not todo:
+        raise JobError("Those parts already have captions.")
+    _begin(jid, "adding", f"Captioning {_parts_text(todo)}")
+    update(jid, adding={"parts": todo, "since": max((l["id"] for l in lines(jid)), default=0)})
+    _run(jid, _add_parts_job, todo)
+
+
+def _add_parts_job(jid, todo):
+    d = job_dir(jid)
+    job = load(jid)
+    since = job["adding"]["since"]
+    log(jid, f"Captioning another part: {_parts_text(todo)}.")
+    hear = d / ("voice.wav" if (d / "voice.wav").exists() else "audio.wav")
+    _step(jid, "adding", f"Listening to {_parts_text(todo)}", 0)
+    segs = _listen(jid, _only_sound(hear, d / "adding.wav", todo), memory.whisper_hint(), "adding.json")
+    (d / "adding.wav").unlink(missing_ok=True)
+    new = [l for l in captions.from_segments(segs, first_id=since + 1)
+           if any(a - 0.5 <= (l["start"] + l["end"]) / 2 <= b + 0.5 for a, b in todo)]
+    with _lock(jid):
+        ls = lines(jid)
+        mine = [l for l in new if not _in_range(ls, l["start"], l["end"])]      # never on top of lines you have
+        save_lines(jid, sorted(ls + mine, key=lambda l: l["start"]), why="caption another part")
+        job = load(jid)
+        job["only"] = _join_parts(job["only"] + todo)
+        job["adding"]["heard"] = len(mine)
+        save(job)
+    log(jid, f"Heard {len(mine)} lines in {_parts_text(todo)}.")
+    if not mine:
+        update(jid, adding=None, busy=False, state="ready", label="", progress=None)
+        log(jid, "No talking was found there.", "done")
+        return
+    _add_parts_rest(jid)
+
+
+def _add_parts_rest(jid):
+    job = load(jid)
+    since, todo = job["adding"]["since"], job["adding"]["parts"]
+    _read_helpers(jid)
+    _polish_and_translate(jid, since=since)
+    _self_check(jid, since=since)
+    _fill_from_subtitles(jid, within=todo)
+    _retime(jid, only={l["id"] for l in lines(jid) if l["id"] > since})
+    _auto_voices(jid)
+    n = sum(1 for l in lines(jid) if l["id"] > since)
+    update(jid, adding=None, busy=False, state="ready", label="", progress=None)
+    log(jid, f"Captioned {_parts_text(todo)}: {n} lines, ready for you to check." + _usage_note(jid), "done")
 
 
 def _auto_voices(jid):
@@ -574,20 +697,27 @@ def _video_subs(jid, on_progress=None):
     found = []
     tracks = {k: captions.parse_srt(f.read_text(encoding="utf-8", errors="replace"))
               for k, f in fetch.caption_files(d).items()}
-    part = job.get("part")
-    if part:                                   # timed for the whole video: shift them to the part you took
+    part = job.get("cut")
+    if part:                                   # older videos cut to one part: shift them to the part you took
         a, b = part["start"], part["end"]
         tracks = {k: [{**c, "start": round(c["start"] - a, 3), "end": round(c["end"] - a, 3)} for c in cs if c["end"] > a and c["start"] < b]
                   for k, cs in tracks.items()}
     tracks.update({k: v for k, v in vsubs.tracks_in_file(d / job["source"], d).items() if k not in tracks})
+    tracks = {k: _cues_in_parts(job, cs) for k, cs in tracks.items()}
     for lang, cues in tracks.items():
         if cues and _add_found_helper(jid, vsubs.helper_for(lang, cues, "The video's own captions")):
             found.append(f"{vsubs.LABELS[lang]} captions ({len(cues)} lines)")
     burned = vsubs.read_picture(d / job["source"], (job.get("media") or {}).get("duration"), on_progress)
+    burned = {k: _cues_in_parts(job, cs) for k, cs in burned.items()}
     for lang, cues in burned.items():
         if _add_found_helper(jid, vsubs.helper_for(lang, cues, "Subtitles in the picture")):
             found.append(f"{vsubs.LABELS[lang]} subtitles in the picture ({len(cues)} lines)")
     return found
+
+
+def _cues_in_parts(job, cues):
+    only = job.get("only")
+    return [c for c in cues if any(c["end"] > a and c["start"] < b for a, b in only)] if only else cues
 
 
 def _video_subs_quietly(jid):
@@ -663,11 +793,12 @@ def _read_helpers(jid):
         log(jid, f"Read {len(items)} lines from “{h['label']}”.")
 
 
-def _polish_and_translate(jid, keep_edited=True):
+def _polish_and_translate(jid, keep_edited=True, since=None):
+    """since: only lines numbered above it (a part just added); None for all."""
     job = load(jid)
     helpers = job["helpers"]
     ls = lines(jid)
-    work = [l for l in ls if not (keep_edited and locked(l))]
+    work = [l for l in ls if not (keep_edited and locked(l)) and (since is None or l["id"] > since)]
 
     _step(jid, "tidying", "Claude is tidying the Thai" + (" using your helpers" if any(h["kind"] == "original" for h in helpers) else ""))
     by_id = {l["id"]: l for l in ls}
@@ -687,20 +818,18 @@ def _polish_and_translate(jid, keep_edited=True):
         if len(parts) > 1:
             l["_parts"] = parts
     ls, n_split = _split_parts(ls)
-    by_id = {l["id"]: l for l in ls}
-    work = [l for l in ls if not (keep_edited and locked(l))]
     save_lines(jid, ls)
     if n_split:
         log(jid, f"Cut {n_split} long lines where the speaker or sentence changes.")
     log(jid, f"Tidied the Thai: {changed} lines changed.")
-    _translate(jid, keep_edited)
+    _translate(jid, keep_edited, since)
 
 
-def _translate(jid, keep_edited=True):
+def _translate(jid, keep_edited=True, since=None):
     job = load(jid)
     ls = lines(jid)
     by_id = {l["id"]: l for l in ls}
-    work = [l for l in ls if not (keep_edited and locked(l))]
+    work = [l for l in ls if not (keep_edited and locked(l)) and (since is None or l["id"] > since)]
     _step(jid, "translating", "Claude is translating into Traditional Chinese")
     for r in brain.translate(job, work, job["helpers"]):
         l = by_id[r["id"]]
@@ -713,7 +842,7 @@ def _translate(jid, keep_edited=True):
         for h in job["helpers"]:
             h["used"] = True
         save(job)
-    log(jid, "Translated every line.")
+    log(jid, "Translated every line." if since is None else f"Translated {len(work)} lines.")
 
 
 def _split_parts(ls):
@@ -737,17 +866,19 @@ def _split_parts(ls):
 
 # ---------------------------------------------------------------- self-check
 
-def _self_check(jid):
-    """Claude reviews the whole thing; unsure lines get a fresh listen and are fixed without asking you."""
+def _self_check(jid, since=None):
+    """Claude reviews the whole thing (or the lines numbered above since); unsure lines get a fresh listen and
+    are fixed without asking you."""
     job = load(jid)
     ls = lines(jid)
     by_id = {l["id"]: l for l in ls}
     _step(jid, "checking", "Checking its own work")
-    problems = brain.review(job, [l for l in ls if not locked(l)], _check_refs(job))
+    mine = lambda l: since is None or l["id"] > since
+    problems = brain.review(job, [l for l in ls if not locked(l) and mine(l)], _check_refs(job))
 
     targets = {}
     for l in ls:
-        if l.get("status") == "auto" and l.get("kind") == "speech" and (l["conf"] < UNSURE or l.get("suspect")):
+        if mine(l) and l.get("status") == "auto" and l.get("kind") == "speech" and (l["conf"] < UNSURE or l.get("suspect")):
             targets[l["id"]] = {**l, "flag": "heard", "note": l.get("why", ""), "by": "auto"}
     tr_fixed = 0
     for p in problems:
@@ -1103,7 +1234,7 @@ def recover_interrupted():
                    error="AutoCaption stopped while working on this. Press Try again.")
 
 
-RESUMABLE = ("reading", "tidying", "translating", "checking")
+RESUMABLE = ("reading", "tidying", "translating", "checking", "adding")
 
 
 def retry(jid):
@@ -1918,7 +2049,7 @@ def subtitle_gaps(jid):
             words = _NOT_WORDS.sub("", c.get("text") or "")      # "[Music]", "(laughs)", "♪" aren't talking
             if b - a >= 0.8 and len(words) >= 2 and covered(a, b) < 0.3:
                 gaps.append([a, b])
-    return _merge_gaps(gaps, join=1.5, longest=60)
+    return _merge_gaps(_in_parts(job, gaps), join=1.5, longest=60)
 
 
 def track_shift(cues, ls, most=6.0):
@@ -2119,12 +2250,15 @@ def _check_refs(job):
     return job["helpers"] if job["options"].get("subs_check") else []
 
 
-def _fill_from_subtitles(jid):
-    """Listen again where the video's subtitles show talking the captions are missing. Never stops the run."""
+def _fill_from_subtitles(jid, within=None):
+    """Listen again where the video's subtitles show talking the captions are missing. Never stops the run.
+    within: only in these stretches (a part just added)."""
     if not load(jid)["options"].get("subs_check"):
         return
     try:
         gaps = subtitle_gaps(jid)
+        if within:
+            gaps = _in_parts({"only": within}, gaps)
     except Exception as e:
         log(jid, f"Couldn't compare with the video's own subtitles ({e}).", "warn")
         return
@@ -2177,7 +2311,7 @@ def skipped_speech(jid):
         if dur > 5 and captions.visible_len(l["th"]) / dur < THIN_LETTERS_PER_SECOND and talking(l["start"], l["end"]) > 0.6:
             gaps.append([l["start"], l["end"]])
     gaps += [list(g) for g in subtitle_gaps(jid)]
-    return _merge_gaps(gaps, join=1.5, longest=120)
+    return _merge_gaps(_in_parts(load(jid), gaps), join=1.5, longest=120)
 
 
 def fill_skipped(jid):

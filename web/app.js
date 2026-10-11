@@ -121,11 +121,16 @@ $("#newForm").addEventListener("submit", async e => {
   e.preventDefault();
   const err = $("#formError"); err.textContent = "";
   const go = $("#go"); go.disabled = true;
-  let part = null;
-  if ($("#onlyPart").checked) {                 // only part of the video
-    const a = parseTime($("#opStart").value || "0"), b = parseTime($("#opEnd").value);
-    if (a == null || b == null || b - a < 1) { err.textContent = "Type when the part starts and ends, like 12:30 to 15:00."; go.disabled = false; return; }
-    part = { start: a, end: b };
+  let parts = null;
+  if ($("#onlyPart").checked) {                 // only some parts of the video
+    parts = [];
+    for (const [i, li] of $$("#opRows li").entries()) {
+      const [s0, s1] = [...li.querySelectorAll("input")].map(x => x.value.trim());
+      if (!s0 && !s1 && $$("#opRows li").length > 1) continue;      // an empty extra row
+      const a = parseTime(s0 || "0"), b = parseTime(s1);
+      if (a == null || b == null || b - a < 1) { err.textContent = `Part ${i + 1}: type when it starts and ends, like 12:30 to 15:00.`; go.disabled = false; return; }
+      parts.push([a, b]);
+    }
   }
   const about = $("#about").value.trim(), clean = $("#cleanVoice").checked, fast = $("#fast").checked, vsubs = $("#videoSubs").checked, scheck = vsubs && $("#subsCheck").checked;
   try {
@@ -133,11 +138,11 @@ $("#newForm").addEventListener("submit", async e => {
     if (pending.video) {
       const f = new FormData();
       f.append("file", pending.video); f.append("about", about); f.append("clean_voice", clean); f.append("fast", fast); f.append("video_subs", vsubs); f.append("subs_check", scheck);
-      if (part) { f.append("part_start", part.start); f.append("part_end", part.end); }
+      if (parts) f.append("parts", JSON.stringify(parts));
       job = await uploadVideo(f, p => { go.textContent = `Copying the video… ${Math.round(p * 100)}%`; });
     } else {
       go.textContent = "Starting…";
-      job = await api("POST", "/api/jobs", { url: $("#link").value.trim(), about, clean_voice: clean, fast, video_subs: vsubs, subs_check: scheck, part });
+      job = await api("POST", "/api/jobs", { url: $("#link").value.trim(), about, clean_voice: clean, fast, video_subs: vsubs, subs_check: scheck, parts });
     }
     await sendHelpers(job.id);
     resetForm();
@@ -157,6 +162,25 @@ function resetForm() {
   pending.original = []; pending.translation = [];
   renderChips("original"); renderChips("translation");
   $$("[data-text]").forEach(t => { t.value = ""; });
+  $("#onlyPart").checked = false; $("#onlyPartTimes").hidden = true; $("#opRows").replaceChildren();
+}
+function addPartRow(focus = true) {
+  const li = document.createElement("li");
+  const n = document.createElement("span"); n.className = "op-n"; 
+  const field = (ph, label) => { const i = document.createElement("input"); i.className = "field part-t"; i.placeholder = ph; i.setAttribute("aria-label", label); return i; };
+  const a = field("12:30", "Part starts at"), b = field("15:00", "Part ends at");
+  const from = document.createElement("label"); from.append("From ", a);
+  const to = document.createElement("label"); to.append("to ", b);
+  const x = document.createElement("button"); x.type = "button"; x.className = "ghost"; x.textContent = "✕"; x.setAttribute("aria-label", "Remove this part");
+  x.onclick = () => { li.remove(); numberPartRows(); if (!$$("#opRows li").length) addPartRow(); };
+  b.addEventListener("keydown", e => { if (e.key === "Enter" && li === $("#opRows").lastElementChild && b.value.trim()) { e.preventDefault(); addPartRow(); } });
+  li.append(n, from, to, x);
+  $("#opRows").append(li); numberPartRows();
+  if (focus) a.focus();
+}
+function numberPartRows() {
+  const rows = $$("#opRows li");
+  rows.forEach((li, i) => { li.querySelector(".op-n").textContent = rows.length > 1 ? `${i + 1}.` : ""; li.querySelector("button").hidden = rows.length < 2; });
 }
 
 async function loadJobList() {
@@ -247,6 +271,10 @@ function renderJob() {
   $("#export").disabled = !!job.busy || !(job.counts && job.counts.lines);
   const noVideo = !job.media?.duration;
   ["#addLineHere", "#addTouchHere", "#markRange"].forEach(s => { $(s).disabled = noVideo; });
+  $("#morePartBtn").hidden = !job.only?.length;
+  $("#morePartBtn").disabled = noVideo || !!job.busy;
+  if (!job.only?.length) $("#morePartBox").hidden = true;
+  else if (!$("#morePartBox").hidden) renderMorePart();
   $("#fillSkipped").disabled = noVideo || !!job.busy || !(job.counts && job.counts.lines);
   $("#retime").disabled = noVideo || !!job.busy || !(job.counts && job.counts.lines);
   $("#weakSpots").disabled = noVideo || !!job.busy || !(job.counts && job.counts.lines);
@@ -2138,6 +2166,12 @@ function drawTimeline(t, force) {
     ticks.push(el);
   }
   $("#tlTicks").replaceChildren(...ticks);
+  // only some parts have captions: the rest is hatched
+  const gone = job.only?.length ? notCaptioned().filter(([a, b]) => b > tl.from && a < tl.from + tl.span).map(([a, b]) => {
+    const el = document.createElement("div"); el.className = "tl-gone"; el.title = "No captions here (not one of the parts you chose)";
+    Object.assign(el.style, { left: `${(a - tl.from) * pps}px`, width: `${(b - a) * pps}px` });
+    return el;
+  }) : [];
   // caption blocks; two people at once go on two rows
   const shown = lines.filter(l => l.end > tl.from && l.start < tl.from + tl.span);
   let rowEnd = -1;
@@ -2158,7 +2192,7 @@ function drawTimeline(t, force) {
     el.append(hl, hr);
     return el;
   });
-  $("#tlLines").replaceChildren(...blocks);
+  $("#tlLines").replaceChildren(...gone, ...blocks);
 }
 
 function drawWave(W, pps) {
@@ -2746,7 +2780,11 @@ route();
 setInterval(() => { if (!$("#startView").hidden) loadJobList(); }, 5000);
 
 $("#videoSubs").addEventListener("change", () => { $("#subsCheck").disabled = !$("#videoSubs").checked; });
-$("#onlyPart").addEventListener("change", () => { $("#onlyPartTimes").hidden = !$("#onlyPart").checked; if ($("#onlyPart").checked) $("#opStart").focus(); });
+$("#onlyPart").addEventListener("change", () => {
+  $("#onlyPartTimes").hidden = !$("#onlyPart").checked;
+  if ($("#onlyPart").checked) { if (!$$("#opRows li").length) addPartRow(); else $("#opRows input").focus(); }
+});
+$("#opAdd").onclick = () => addPartRow();
 // Options stays folded; its line says what's on, so you can see it without opening it
 function showOptsNow() {
   const on = [["cleanVoice", "music removed"], ["fast", "quicker listening"], ["videoSubs", "video's subtitles"], ["subsCheck", "checked against them"]]
@@ -2755,3 +2793,46 @@ function showOptsNow() {
 }
 ["cleanVoice", "fast", "videoSubs", "subsCheck"].forEach(id => $("#" + id).addEventListener("change", showOptsNow));
 showOptsNow();
+
+// ---------------------------------------------------------------- caption another part (when only some have captions)
+function notCaptioned() {              // the stretches outside the parts that have captions
+  const dur = job?.media?.duration || 0, out = [];
+  let at = 0;
+  for (const [a, b] of job?.only || []) { if (a - at >= 1) out.push([at, a]); at = Math.max(at, b); }
+  if (dur - at >= 1) out.push([at, dur]);
+  return out;
+}
+const morePart = { from: null, to: null, rest: false };
+const howLong = secs => secs < 90 ? `${Math.round(secs)} s` : `${Math.round(secs / 60)} min`;
+function renderMorePart() {
+  $("#morePartHave").textContent = (job.only || []).map(([a, b]) => `${fmtTime(a).replace(/\.\d$/, "")}–${fmtTime(b).replace(/\.\d$/, "")}`).join(", ");
+  const a = morePart.from, b = morePart.to;
+  if (document.activeElement !== $("#mpStart")) $("#mpStart").value = a == null ? "" : fmtTime(a);
+  if (document.activeElement !== $("#mpEnd")) $("#mpEnd").value = b == null ? "" : fmtTime(b);
+  const ok = morePart.rest ? notCaptioned().length > 0 : a != null && b != null && b - a >= 1;
+  const mins = morePart.rest ? notCaptioned().reduce((t, [x, y]) => t + y - x, 0) : ok ? b - a : 0;
+  $("#mpSays").textContent = morePart.rest ? `Everything without captions: ${notCaptioned().map(([x, y]) => `${fmtTime(x).replace(/\.\d$/, "")}–${fmtTime(y).replace(/\.\d$/, "")}`).join(", ")} (${howLong(mins)}).`
+    : ok ? `${howLong(mins)} to caption. Bits that already have captions are skipped.` : "";
+  $("#mpGo").disabled = !ok || !!job.busy;
+  $("#mpRest").setAttribute("aria-pressed", String(morePart.rest));
+}
+$("#morePartBtn").onclick = () => {
+  const box = $("#morePartBox");
+  box.hidden = !box.hidden;
+  if (!box.hidden) { Object.assign(morePart, { from: null, to: null, rest: false }); renderMorePart(); box.scrollIntoView({ block: "nearest" }); }
+};
+$("#mpFrom").onclick = () => { morePart.rest = false; morePart.from = video.currentTime; if (morePart.to != null && morePart.to < morePart.from) morePart.to = null; renderMorePart(); handBack(); };
+$("#mpTo").onclick = () => { morePart.rest = false; morePart.to = video.currentTime; if (morePart.from != null && morePart.to < morePart.from) [morePart.from, morePart.to] = [morePart.to, morePart.from]; renderMorePart(); handBack(); };
+["#mpStart", "#mpEnd"].forEach((sel, i) => $(sel).addEventListener("input", () => {
+  morePart.rest = false; morePart[i ? "to" : "from"] = parseTime($(sel).value); renderMorePart();
+}));
+$("#mpRest").onclick = () => { morePart.rest = !morePart.rest; renderMorePart(); };
+$("#mpCancel").onclick = () => { $("#morePartBox").hidden = true; };
+$("#mpGo").onclick = async () => {
+  const parts = morePart.rest ? notCaptioned() : [[morePart.from, morePart.to]];
+  try {
+    await api("POST", `/api/jobs/${job.id}/parts`, { parts });
+    $("#morePartBox").hidden = true;
+    refresh(job.id);
+  } catch (ex) { alert(ex.message); }
+};

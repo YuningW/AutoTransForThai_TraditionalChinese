@@ -70,20 +70,25 @@ class LinkIn(BaseModel):
     video_subs: bool = True
     subs_check: bool = False
     careful: bool = False
-    part: dict | None = None     # only part of the video: {"start", "end"} in seconds
+    part: dict | None = None     # only part of the video: {"start", "end"} in seconds (older pages)
+    parts: list | None = None    # only these parts: [[start, end], …] in seconds
 
 
 @app.post("/api/jobs")
 def new_job(body: LinkIn):
-    return jobs.create_from_link(body.url, body.about, body.clean_voice, body.fast, body.video_subs, body.subs_check, body.careful, body.part)
+    return jobs.create_from_link(body.url, body.about, body.clean_voice, body.fast, body.video_subs, body.subs_check, body.careful, body.parts or body.part)
 
 
 @app.post("/api/jobs/upload")
 def upload_job(file: UploadFile = File(...), about: str = Form(""), clean_voice: bool = Form(False),
                fast: bool = Form(False), video_subs: bool = Form(True), subs_check: bool = Form(False),
-               careful: bool = Form(False), part_start: str = Form(""), part_end: str = Form("")):
-    part = {"start": part_start, "end": part_end} if part_end else None
-    return jobs.create_from_upload(file.filename, file.file, about, clean_voice, fast, video_subs, subs_check, careful, part)
+               careful: bool = Form(False), part_start: str = Form(""), part_end: str = Form(""),
+                 parts: str = Form("")):
+    try:
+        only = json.loads(parts) if parts else ({"start": part_start, "end": part_end} if part_end else None)
+    except ValueError:
+        raise jobs.JobError("The parts' times don't look right.")
+    return jobs.create_from_upload(file.filename, file.file, about, clean_voice, fast, video_subs, subs_check, careful, only)
 
 
 @app.get("/api/jobs")
@@ -371,6 +376,16 @@ def redo_change(jid: str):
 @app.post("/api/jobs/{jid}/clear-flags")
 def clear_flags(jid: str):
     return {"cleared": jobs.clear_flags(jid)}
+
+
+class PartsIn(BaseModel):
+    parts: list                  # [[start, end], …] in seconds
+
+
+@app.post("/api/jobs/{jid}/parts")
+def add_parts(jid: str, body: PartsIn):
+    jobs.add_parts(jid, body.parts)
+    return jobs.load(jid)
 
 
 @app.post("/api/jobs/{jid}/retime")

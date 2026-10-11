@@ -4,7 +4,7 @@
 
 ## 1. Start a video
 
-Drop a video file on the page, or paste a link (YouTube, Bilibili, X, TikTok…). Want only part of it? Tick **Only part of the video** and type from and to (like 12:30 to 15:00): for a link only that stretch is downloaded, and only it is listened to and translated (quicker, less of your Claude plan); captions are timed from the start of the part. Under **Options** (its line shows what's on) you can choose:
+Drop a video file on the page, or paste a link (YouTube, Bilibili, X, TikTok…). Want only some of it? Tick **Only some parts of the video** and type from and to (like 12:30 to 15:00); **+ Another part** adds more. Only those parts are listened to and translated (quicker, less of your Claude plan). The whole video comes in, so captions keep the video's own times, and the parts without captions are hatched on the timeline. Later, **+ Another part…** on the video's page captions more of it (From here / To here, typed times, or **All the rest**) without starting again; the captions you have stay as they are. Pasting the same link again with other parts adds them to that video too. Under **Options** (its line shows what's on) you can choose:
 
 - **Remove background music first**: for songs, BGM, fancams or crowd noise. It takes the music out, then listens to the voices. Adds about 10 seconds per minute of video.
 - **Quicker listening**: several times faster, but misses more Thai. Best for long videos when a rough first draft is fine.
