@@ -61,6 +61,8 @@ $("[data-tab=clipsPanel]").addEventListener("click", renderAddColl);
 
 // ---------------------------------------------------------------- the collection page
 async function openCollection(cid) {
+  for (const k of Object.keys(srcData)) delete srcData[k];   // captions may have been edited since: fetch them fresh
+  cvCapKey = "";
   $("#startView").hidden = true; $("#jobView").hidden = true; $("#collView").hidden = false; $("#flagRail").hidden = true;
   document.title = "Collections · AutoCaption";
   const cs = await collList();
@@ -194,6 +196,76 @@ cvideo.addEventListener("timeupdate", () => {
 });
 cvideo.addEventListener("pause", () => { if (cvideo.currentTime < (cvQueue[cvAt]?.end ?? 0) - 0.1) { /* paused by you: keep the place */ } });
 $("#cPlayAll").onclick = () => { if (cUsed().length) cvPlay(cUsed()); };
+
+// ---------------------------------------------------------------- captions on the preview, as each video draws them
+// Each clip's video has its own captions, style, people (colours, fonts, sizes) and per-line looks: fetched once.
+const srcData = {};
+async function sourceOf(jid) {
+  if (!srcData[jid]) {
+    srcData[jid] = Promise.all([api("GET", `/api/jobs/${jid}`), api("GET", `/api/jobs/${jid}/lines`)])
+      .then(([j, ls]) => ({ job: j, lines: ls.sort((a, b) => a.start - b.start) })).catch(() => null);
+  }
+  return srcData[jid];
+}
+let cvCapKey = "";
+async function drawCollCaption() {
+  const m = cvideo.src.match(/\/api\/jobs\/([0-9a-f]{12})\/video/);
+  const box = $("#cOvBox");
+  if (!m || !settings) { box.replaceChildren(); cvCapKey = ""; return; }
+  const src = await sourceOf(m[1]);
+  if (!src) return;
+  const t = cvideo.currentTime, on = src.lines.filter(l => l.start <= t && t < l.end);
+  const which = { zh: "zh", both: "both", th: "th" }[$("input[name=cburn]:checked").value] || "both";
+  const key = m[1] + on.map(l => l.id).join(",") + which + cvideo.clientWidth;
+  if (key === cvCapKey) return;
+  cvCapKey = key;
+  const s = src.job.style || {}, theme = settings.themes.find(x => x.key === (s.theme || "classic"));
+  const st = { ...settings.style_default, ...(theme ? theme.style : {}), ...s };
+  // where the picture is inside the player, and how big captions are on it (as style.py: 5.8% of the short side)
+  const vw = cvideo.videoWidth || 1920, vh = cvideo.videoHeight || 1080, pb = $("#cplayer").getBoundingClientRect();
+  const sc = Math.min(pb.width / vw, (cvideo.clientHeight || pb.height) / vh);
+  const fr = { left: (pb.width - vw * sc) / 2, top: ((cvideo.clientHeight || pb.height) - vh * sc) / 2, w: vw * sc, h: vh * sc };
+  const ov = $("#cOverlay");
+  ov.style.left = `${fr.left + fr.w * 0.06}px`; ov.style.width = `${fr.w * 0.88}px`;
+  if (st.position === "top") { ov.style.top = `${fr.top + fr.h * 0.05}px`; ov.style.bottom = "auto"; }
+  else { ov.style.top = "auto"; ov.style.bottom = `${pb.height - (fr.top + fr.h * (st.position === "custom" ? st.y : 0.94))}px`; }
+  const people = src.job.speakers || [], who = l => people.find(p => p.id === l.speaker) || {};
+  const base = Math.min(vw, vh) * sc * 0.058 * st.size;
+  const rows = [];
+  let biggest = 0;
+  for (const l of on) {
+    const lk = l.look || {};
+    if (lk.show === "none" || (lk.show && which !== "both" && lk.show !== which)) continue;
+    const mine = lk.show && which === "both" ? lk.show : which;
+    const zhPx = base * (lk.size || who(l).size || 1), thPx = mine === "both" ? zhPx * st.th_scale : zhPx;
+    biggest = Math.max(biggest, zhPx);
+    const colour = lk.color || who(l).color, zf = lk.font || who(l).font;
+    const pair = [];
+    if (lk.text) pair.push([lk.text, zhPx, which === "th"]);
+    else {
+      const th = l.kind === "sound" ? "" : (l.th || ""), zh = l.zh || "";
+      if (mine !== "zh" && th) pair.push([th, thPx, true]);
+      if (mine !== "th" && zh) pair.push([zh, zhPx, false]);
+      if (st.order === "zh_above") pair.reverse();
+    }
+    pair.forEach(([text, px, isTh]) => {
+      const el = document.createElement("div"); el.className = "ov-row";
+      fillPainted(el, text, l.paint, isTh ? "th" : "zh");
+      Object.assign(el.style, rowCss(st, px, isTh && mine === "both"), { marginTop: rows.length ? `${base * 0.12}px` : "0" });
+      if (colour) el.style.color = colour;
+      if (lk.bold !== undefined) el.style.fontWeight = lk.bold ? "700" : "500";
+      if (zf && !isTh) el.style.fontFamily = `"${zf}", "PingFang TC", sans-serif`;
+      rows.push(el);
+    });
+  }
+  box.replaceChildren(...rows);
+  box.style.background = "none"; box.style.padding = "0";
+  if (st.box && rows.length) Object.assign(box.style, { background: st.box_color, padding: `${biggest * 0.19}px ${biggest * 0.32}px`, borderRadius: `${biggest * 0.25}px` });
+}
+["timeupdate", "seeked", "loadedmetadata"].forEach(ev => cvideo.addEventListener(ev, drawCollCaption));
+cvideo.addEventListener("play", function loop() { drawCollCaption(); if (!cvideo.paused) requestAnimationFrame(loop); });
+$$("input[name=cburn]").forEach(r => r.addEventListener("change", () => { cvCapKey = ""; drawCollCaption(); }));
+new ResizeObserver(() => { cvCapKey = ""; drawCollCaption(); }).observe($("#cplayer"));
 
 // ---------------------------------------------------------------- saving
 $$("input[name=cshape]").forEach(r => r.addEventListener("change", () => { $("#cfitRow").hidden = $("input[name=cshape]:checked").value !== "vertical"; }));
