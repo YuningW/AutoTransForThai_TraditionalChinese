@@ -53,7 +53,7 @@ function renderChips(kind) {
   const box = $(`[data-list="${kind}"]`);
   box.replaceChildren(...pending[kind].map((f, i) => {
     const s = document.createElement("span");
-    const b = document.createElement("b"); b.textContent = f.name;
+    const b = document.createElement("b"); b.textContent = f.name; s.title = f.name;     // long names are cut short with …; the whole name on hover
     const x = document.createElement("button"); x.type = "button"; x.textContent = "×"; x.setAttribute("aria-label", "Remove " + f.name);
     x.onclick = () => { pending[kind].splice(i, 1); renderChips(kind); };
     s.append(b, x);
