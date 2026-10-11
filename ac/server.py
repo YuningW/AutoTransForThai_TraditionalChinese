@@ -70,18 +70,20 @@ class LinkIn(BaseModel):
     video_subs: bool = True
     subs_check: bool = False
     careful: bool = False
+    part: dict | None = None     # only part of the video: {"start", "end"} in seconds
 
 
 @app.post("/api/jobs")
 def new_job(body: LinkIn):
-    return jobs.create_from_link(body.url, body.about, body.clean_voice, body.fast, body.video_subs, body.subs_check, body.careful)
+    return jobs.create_from_link(body.url, body.about, body.clean_voice, body.fast, body.video_subs, body.subs_check, body.careful, body.part)
 
 
 @app.post("/api/jobs/upload")
 def upload_job(file: UploadFile = File(...), about: str = Form(""), clean_voice: bool = Form(False),
                fast: bool = Form(False), video_subs: bool = Form(True), subs_check: bool = Form(False),
-               careful: bool = Form(False)):
-    return jobs.create_from_upload(file.filename, file.file, about, clean_voice, fast, video_subs, subs_check, careful)
+               careful: bool = Form(False), part_start: str = Form(""), part_end: str = Form("")):
+    part = {"start": part_start, "end": part_end} if part_end else None
+    return jobs.create_from_upload(file.filename, file.file, about, clean_voice, fast, video_subs, subs_check, careful, part)
 
 
 @app.get("/api/jobs")

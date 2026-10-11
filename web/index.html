@@ -42,6 +42,15 @@
       <div class="or"><span>or</span></div>
       <input type="url" id="link" class="field" placeholder="Paste a video link (YouTube, Bilibili, X, TikTok…)">
 
+      <div class="only-part">
+        <label class="check"><input type="checkbox" id="onlyPart"> <span>Only part of the video<small>Just this stretch is downloaded (for links), listened to and translated: quicker, and less of your Claude plan.</small></span></label>
+        <div class="only-part-times" id="onlyPartTimes" hidden>
+          <label>From <input class="field part-t" id="opStart" placeholder="12:30" aria-label="Part starts at"></label>
+          <label>to <input class="field part-t" id="opEnd" placeholder="15:00" aria-label="Part ends at"></label>
+          <span class="muted small">minutes:seconds, or h:mm:ss</span>
+        </div>
+      </div>
+
       <details class="help" id="helpBox">
         <summary>Give it something to help (optional)</summary>
         <div class="help-body">

@@ -121,16 +121,23 @@ $("#newForm").addEventListener("submit", async e => {
   e.preventDefault();
   const err = $("#formError"); err.textContent = "";
   const go = $("#go"); go.disabled = true;
+  let part = null;
+  if ($("#onlyPart").checked) {                 // only part of the video
+    const a = parseTime($("#opStart").value || "0"), b = parseTime($("#opEnd").value);
+    if (a == null || b == null || b - a < 1) { err.textContent = "Type when the part starts and ends, like 12:30 to 15:00."; go.disabled = false; return; }
+    part = { start: a, end: b };
+  }
   const about = $("#about").value.trim(), clean = $("#cleanVoice").checked, fast = $("#fast").checked, vsubs = $("#videoSubs").checked, scheck = vsubs && $("#subsCheck").checked;
   try {
     let job;
     if (pending.video) {
       const f = new FormData();
       f.append("file", pending.video); f.append("about", about); f.append("clean_voice", clean); f.append("fast", fast); f.append("video_subs", vsubs); f.append("subs_check", scheck);
+      if (part) { f.append("part_start", part.start); f.append("part_end", part.end); }
       job = await uploadVideo(f, p => { go.textContent = `Copying the video… ${Math.round(p * 100)}%`; });
     } else {
       go.textContent = "Starting…";
-      job = await api("POST", "/api/jobs", { url: $("#link").value.trim(), about, clean_voice: clean, fast, video_subs: vsubs, subs_check: scheck });
+      job = await api("POST", "/api/jobs", { url: $("#link").value.trim(), about, clean_voice: clean, fast, video_subs: vsubs, subs_check: scheck, part });
     }
     await sendHelpers(job.id);
     resetForm();
@@ -2739,6 +2746,7 @@ route();
 setInterval(() => { if (!$("#startView").hidden) loadJobList(); }, 5000);
 
 $("#videoSubs").addEventListener("change", () => { $("#subsCheck").disabled = !$("#videoSubs").checked; });
+$("#onlyPart").addEventListener("change", () => { $("#onlyPartTimes").hidden = !$("#onlyPart").checked; if ($("#onlyPart").checked) $("#opStart").focus(); });
 // Options stays folded; its line says what's on, so you can see it without opening it
 function showOptsNow() {
   const on = [["cleanVoice", "music removed"], ["fast", "quicker listening"], ["videoSubs", "video's subtitles"], ["subsCheck", "checked against them"]]

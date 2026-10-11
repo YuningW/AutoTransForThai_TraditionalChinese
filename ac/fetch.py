@@ -34,8 +34,9 @@ def video_key(url):
     return f"url:{host}{u.path}".rstrip("/")
 
 
-def download(url, job_dir, on_progress):
-    """Returns (summary dict, path to the video file)."""
+def download(url, job_dir, on_progress, section=None):
+    """Returns (summary dict, path to the video file). section: (start, end) seconds to download only that part
+    (summary["cut"] says whether that worked; if the site won't, the whole video comes and is cut afterwards)."""
     import yt_dlp
 
     url = clean_url(url)
@@ -66,6 +67,9 @@ def download(url, job_dir, on_progress):
         "noprogress": True,
         "overwrites": True,
     }
+    if section:                                # just that part: much less to download
+        opts["download_ranges"] = yt_dlp.utils.download_range_func(None, [tuple(section)])
+        opts["force_keyframes_at_cuts"] = True
     last = None
     for attempt, wait in enumerate((0, 8, 20, 45)):
         if wait:
@@ -77,6 +81,10 @@ def download(url, job_dir, on_progress):
             break
         except yt_dlp.utils.DownloadError as e:
             last = _short(str(e))
+            if section and not _retryable(str(e)):     # this site won't give a part: take it all, cut it later
+                opts.pop("download_ranges", None); opts.pop("force_keyframes_at_cuts", None)
+                section = None
+                continue
             if not _retryable(str(e)) or attempt == 3:
                 raise FetchError(last) from None
     if info.get("_type") == "playlist":
@@ -89,7 +97,7 @@ def download(url, job_dir, on_progress):
     if not files:
         raise FetchError("The download finished but no video file was written.")
     _captions(url, job_dir, headers)
-    summary = {"url": url, "title": info.get("title") or "", "duration": info.get("duration") or 0,
+    summary = {"url": url, "title": info.get("title") or "", "duration": info.get("duration") or 0, "cut": bool(section),
                "uploader": info.get("uploader") or info.get("channel") or "",
                "description": (info.get("description") or "")[:1500]}
     return summary, files[0]

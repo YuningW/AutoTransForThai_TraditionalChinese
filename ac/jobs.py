@@ -266,9 +266,23 @@ def _new_job(title, about="", clean_voice=False, fast=False, video_subs=True, su
     return load(jid)
 
 
-def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False):
+def _clean_part(part):
+    """Only part of the video, from the start page: (start, end) in seconds, or None for all of it."""
+    if not part:
+        return None
+    try:
+        a, b = max(0.0, float(part.get("start") or 0)), float(part.get("end") or 0)
+    except (TypeError, ValueError):
+        raise JobError("The part's times don't look right (use minutes:seconds, like 12:30).")
+    if b - a < 1:
+        raise JobError("The part must end at least a second after it starts.")
+    return round(a, 3), round(b, 3)
+
+
+def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False, part=None):
     url = fetch.clean_url(url)
-    key = fetch.video_key(url)
+    part = _clean_part(part)
+    key = fetch.video_key(url) + (f"@{part[0]}-{part[1]}" if part else "")
     for f in paths.JOBS.glob("*/job.json"):
         try:
             j = json.loads(f.read_text())
@@ -276,17 +290,22 @@ def create_from_link(url, about="", clean_voice=False, fast=False, video_subs=Tr
             continue
         if j.get("key") == key and j.get("source") and not j.get("error"):
             return load(j["id"])                     # same video again: open the earlier job
-    job = _new_job(url, about, clean_voice, fast, video_subs, subs_check, careful, key=key, info={"url": url})
+    job = _new_job(url, about, clean_voice, fast, video_subs, subs_check, careful, key=key, info={"url": url},
+                   **({"part": {"start": part[0], "end": part[1]}} if part else {}))
     _run(job["id"], _fetch_then_make, url)
     return job
 
 
-def create_from_upload(filename, stream, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False):
+def create_from_upload(filename, stream, about="", clean_voice=False, fast=False, video_subs=True, subs_check=False, careful=False, part=None):
     ext = Path(filename or "video.mp4").suffix.lower()
     if ext not in VIDEO_EXT:
         raise JobError("That doesn't look like a video file (" + (ext or "no extension") + ").")
     title = Path(filename).stem
-    job = _new_job(title, about, clean_voice, fast, video_subs, subs_check, careful, info={"title": title, "file": filename})
+    part = _clean_part(part)
+    if part:
+        title = f"{title} ({_mmss(part[0])}–{_mmss(part[1])})"
+    job = _new_job(title, about, clean_voice, fast, video_subs, subs_check, careful, info={"title": title, "file": filename},
+                   **({"part": {"start": part[0], "end": part[1]}} if part else {}))
     dst = job_dir(job["id"]) / ("source" + ext)
     with open(dst, "wb") as f:
         shutil.copyfileobj(stream, f, 4 * 1024 * 1024)
@@ -301,8 +320,14 @@ def _fetch_then_make(jid, url):
     def progress(p, label=None):
         update(jid, progress=p, **({"label": label} if label else {}))
 
-    info, path = fetch.download(url, job_dir(jid), progress)
-    update(jid, info={**info}, title=info.get("title") or url, source=path.name)
+    part = load(jid).get("part")
+    info, path = fetch.download(url, job_dir(jid), progress, (part["start"], part["end"]) if part else None)
+    title = info.get("title") or url
+    if part:
+        title = f"{title} ({_mmss(part['start'])}–{_mmss(part['end'])})"
+        if info.get("cut"):
+            update(jid, part={**part, "done": True})          # downloaded as just that part
+    update(jid, info={**info}, title=title, source=path.name)
     _make(jid)
 
 
@@ -313,6 +338,16 @@ def _make(jid):
     d = job_dir(jid)
     job = load(jid)
     src = d / job["source"]
+    part = job.get("part")
+    if part and not part.get("done"):           # only part of it: cut it out first (exact, re-encoded)
+        _step(jid, "preparing", f"Cutting out {_mmss(part['start'])}–{_mmss(part['end'])}")
+        cut = d / "part.mp4"
+        media._run(["-ss", f"{part['start']:.3f}", "-to", f"{part['end']:.3f}", "-i", str(src), "-map", "0:v:0", "-map", "0:a:0",
+                    "-c:v", "h264_videotoolbox", "-q:v", "65", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(cut)],
+                   "Cutting out the part")
+        src.unlink(missing_ok=True)
+        src = cut
+        update(jid, source=cut.name, part={**part, "done": True})
     _step(jid, "preparing", "Reading the video")
     info = media.probe(src)
     update(jid, media=info)
@@ -539,6 +574,11 @@ def _video_subs(jid, on_progress=None):
     found = []
     tracks = {k: captions.parse_srt(f.read_text(encoding="utf-8", errors="replace"))
               for k, f in fetch.caption_files(d).items()}
+    part = job.get("part")
+    if part:                                   # timed for the whole video: shift them to the part you took
+        a, b = part["start"], part["end"]
+        tracks = {k: [{**c, "start": round(c["start"] - a, 3), "end": round(c["end"] - a, 3)} for c in cs if c["end"] > a and c["start"] < b]
+                  for k, cs in tracks.items()}
     tracks.update({k: v for k, v in vsubs.tracks_in_file(d / job["source"], d).items() if k not in tracks})
     for lang, cues in tracks.items():
         if cues and _add_found_helper(jid, vsubs.helper_for(lang, cues, "The video's own captions")):
