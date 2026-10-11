@@ -78,14 +78,42 @@ PLACES = {"top-left": (0.18, 0.09), "top": (0.5, 0.09), "top-right": (0.82, 0.09
           "lower": (0.5, 0.72), "bottom-left": (0.18, 0.86), "bottom-right": (0.82, 0.86)}
 
 
+def _hex(v, alpha=False):
+    ok = isinstance(v, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}" + ("([0-9A-Fa-f]{2})?" if alpha else ""), v)
+    return v if ok else None
+
+
+def _where(t, default):
+    """place: one of PLACES, or "custom" with the x, y you dragged it to (fractions of the picture)."""
+    if t.get("place") == "custom":
+        try:
+            return {"place": "custom", "x": round(min(0.98, max(0.02, float(t["x"]))), 4), "y": round(min(0.98, max(0.02, float(t["y"]))), 4)}
+        except (KeyError, TypeError, ValueError):
+            pass
+    return {"place": t.get("place") if t.get("place") in PLACES else default}
+
+
+def _moving(t):
+    """Movement (float, wiggle, flip, pulse, spin, fly, across) and how many seconds one round takes."""
+    if t.get("motion") in style.MOTIONS:
+        return {"motion": t["motion"], "period": round(min(8.0, max(0.5, float(t.get("period") or 2))), 2)}
+    return {}
+
+
+def _xy(t):
+    return (t["x"], t["y"]) if t.get("place") == "custom" else PLACES[t["place"]]
+
+
 def _clean_text(t):
     """Your own text on a clip (or on every clip): {"text", "place", "color", "size", "font", "secs"}; None if empty."""
     if not isinstance(t, dict) or not str(t.get("text") or "").strip():
         return None
-    color = t.get("color") if isinstance(t.get("color"), str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", t["color"]) else "#FFFFFF"
-    return {"text": str(t["text"]).strip()[:120], "place": t.get("place") if t.get("place") in PLACES else "top-left",
-            "color": color, "size": round(min(3.0, max(0.5, float(t.get("size") or 1.3))), 2),
-            "font": str(t.get("font") or "")[:60], "secs": max(0.0, min(600.0, float(t.get("secs") or 0)))}
+    return {"text": str(t["text"]).strip()[:120], **_where(t, "top-left"),
+            "color": _hex(t.get("color")) or "#FFFFFF", "outline_color": _hex(t.get("outline_color")) or "#000000",
+            "bold": t.get("bold") is not False, "bubble": bool(t.get("bubble")),
+            "opacity": round(min(1.0, max(0.1, float(t.get("opacity") or 1))), 2),
+            "size": round(min(3.0, max(0.5, float(t.get("size") or 1.3))), 2),
+            "font": str(t.get("font") or "")[:60], "secs": max(0.0, min(600.0, float(t.get("secs") or 0))), **_moving(t)}
 
 
 STANDOUT = ("none", "outline", "shadow", "badge", "circle")
@@ -98,27 +126,35 @@ def _clean_logo(l):
     image = re.sub(r"[^0-9A-Za-z_.-]", "", str(l["image"]))[:80]
     if not any(f.suffix.lower() in jobs.LOGO_EXT for f in paths.LOGOS.glob(f"{image}.*")):
         return None
-    return {"image": image, "place": l.get("place") if l.get("place") in PLACES else "top-right",
+    return {"image": image, **_where(l, "top-right"),
             "w": round(min(0.6, max(0.04, float(l.get("w") or 0.14))), 3),
             "secs": max(0.0, min(600.0, float(l.get("secs") or 0))),
-            "standout": l.get("standout") if l.get("standout") in STANDOUT else "none"}
+            "standout": l.get("standout") if l.get("standout") in STANDOUT else "none",
+            "opacity": round(min(1.0, max(0.1, float(l.get("opacity") or 1))), 2),
+            **({"edge_color": _hex(l["edge_color"])} if _hex(l.get("edge_color")) else {}), **_moving(l)}
 
 
 def _logo_touch(l, a, b):
     """The logo as a touch; its outline or badge in a colour that contrasts with it (a white logo on a dark badge)."""
-    x, y = PLACES[l["place"]]
+    x, y = _xy(l)
     tone = next((g["tone"] for g in jobs.logos() if g["id"] == l["image"]), "light")
     light = tone == "light"
-    return {"kind": "image", "image": l["image"], "x": x, "y": y, "w": l["w"], "opacity": 1.0, "standout": l["standout"],
-            "edge_color": "#000000" if light else "#FFFFFF", "plate_color": "#1D2550D9" if light else "#FFFFFFD9",
+    edge = l.get("edge_color")                 # your colour for the outline / badge, else one that contrasts
+    return {"kind": "image", "image": l["image"], "x": x, "y": y, "w": l["w"], "opacity": l.get("opacity", 1.0),
+            "standout": l["standout"], "edge_color": edge or ("#000000" if light else "#FFFFFF"),
+            "plate_color": (edge + "D9") if edge else ("#1D2550D9" if light else "#FFFFFFD9"),
+            "motion": l.get("motion"), "period": l.get("period"),
             "start": a, "end": min(b, a + l["secs"]) if l["secs"] else b}
 
 
 def _text_touch(t, a, b):
     """That text as a touch (style.touch_block) on the clip's own timeline: from its start, for secs (0: all of it)."""
-    x, y = PLACES[t["place"]]
-    return {"kind": "text", "text": t["text"], "x": x, "y": y, "size": t["size"], "color": t["color"], "font": t["font"],
-            "bold": True, "outline": 0.1, "outline_color": "#000000", "start": a, "end": min(b, a + t["secs"]) if t["secs"] else b}
+    x, y = _xy(t)
+    return {"kind": "bubble" if t.get("bubble") else "text", "text": t["text"], "x": x, "y": y, "size": t["size"],
+            "color": t["color"], "font": t["font"], "bold": t.get("bold", True), "outline": 0.1,
+            "outline_color": t.get("outline_color", "#000000"), "opacity": t.get("opacity", 1.0),
+            "motion": t.get("motion"), "period": t.get("period"),
+            "start": a, "end": min(b, a + t["secs"]) if t["secs"] else b}
 
 
 def _clean_item(i, keep_id=True):

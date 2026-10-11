@@ -607,15 +607,15 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .be-image[hidden], .be-edge[hidden], .be-plate[hidden] { display: none !important; }
 
 /* ---------------------------------------------------------- movement (matches style.motion_filters) */
-.touch.mv { animation-duration: var(--p, 2s); animation-iteration-count: infinite; animation-timing-function: linear; }
-.touch.mv.paused { animation-play-state: paused; }
-.touch.mv-float { animation-name: mv-float; }
-.touch.mv-wiggle { animation-name: mv-wiggle; }
-.touch.mv-spin { animation-name: mv-spin; }
-.touch.mv-flip { animation-name: mv-flip; }
-.touch.mv-pulse { animation-name: mv-pulse; }
-.touch.mv-fly { animation-name: mv-fly; }
-.touch.mv-across { animation-name: mv-across; }
+:is(.touch, .ctexts > *).mv { animation-duration: var(--p, 2s); animation-iteration-count: infinite; animation-timing-function: linear; }
+:is(.touch, .ctexts > *).mv.paused { animation-play-state: paused; }
+:is(.touch, .ctexts > *).mv-float { animation-name: mv-float; }
+:is(.touch, .ctexts > *).mv-wiggle { animation-name: mv-wiggle; }
+:is(.touch, .ctexts > *).mv-spin { animation-name: mv-spin; }
+:is(.touch, .ctexts > *).mv-flip { animation-name: mv-flip; }
+:is(.touch, .ctexts > *).mv-pulse { animation-name: mv-pulse; }
+:is(.touch, .ctexts > *).mv-fly { animation-name: mv-fly; }
+:is(.touch, .ctexts > *).mv-across { animation-name: mv-across; }
 @keyframes mv-float { 0%, 50%, 100% { transform: translate(-50%, -50%); } 25% { transform: translate(-50%, calc(-50% + var(--ay))); }
   75% { transform: translate(-50%, calc(-50% - var(--ay))); } }
 @keyframes mv-wiggle { 0%, 50%, 100% { transform: translate(-50%, -50%) rotate(0); } 25% { transform: translate(-50%, -50%) rotate(9deg); }
@@ -644,8 +644,8 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
   100.0% { transform: translate(calc(-50% + var(--ax) * -0.000), calc(-50% + var(--ay) * -0.000)); }
 }
 @keyframes mv-across { from { transform: translate(calc(-50% + var(--x0)), -50%); } to { transform: translate(calc(-50% + var(--x1)), -50%); } }
-.touch.mv-float, .touch.mv-wiggle, .touch.mv-flip, .touch.mv-pulse { animation-timing-function: ease-in-out; }
-@media (prefers-reduced-motion: reduce) { .touch.mv { animation-duration: calc(var(--p, 2s) * 3); } }
+:is(.touch, .ctexts > *):is(.mv-float, .mv-wiggle, .mv-flip, .mv-pulse) { animation-timing-function: ease-in-out; }
+@media (prefers-reduced-motion: reduce) { :is(.touch, .ctexts > *).mv { animation-duration: calc(var(--p, 2s) * 3); } }
 
 /* wide screens: three columns, nothing wasted: video + timeline | the tabs | the captions */
 @media (min-width: 1500px) {
@@ -691,6 +691,12 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .clip-list .clip-textbtn[aria-pressed="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
 
 .ctexts img { position: absolute; transform: translate(-50%, -50%); }
+.ctexts > * { pointer-events: auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.ctexts > .dragging { cursor: grabbing; outline: 2px dashed rgba(255,255,255,.85); outline-offset: 3px; }
+.text-edit .te-more { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; padding-top: 6px; border-top: 1px solid var(--rule); }
+.text-edit .te-more label { display: inline-flex; align-items: center; gap: 5px; }
+.text-edit .te-more[hidden] { display: none; }
+.text-edit .te-stylebtn[aria-expanded="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); }
 .ctexts img.so-outline { filter: drop-shadow(0 0 1.5px #000) drop-shadow(0 0 1.5px #000); }
 .ctexts img.so-shadow { filter: drop-shadow(0 2px 6px rgba(0,0,0,.8)); }
 .ctexts img.so-badge { background: rgba(255,255,255,.85); padding: 6px; border-radius: 10px; }

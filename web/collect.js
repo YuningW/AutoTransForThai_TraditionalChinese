@@ -99,47 +99,109 @@ $("#collDelete").onclick = async () => {
   location.hash = "#/collections";
 };
 
-// your text: words, where, colour, size, font, how long (0 = all of the clip)
-const PLACES = [["top-left", "Top left"], ["top", "Top"], ["top-right", "Top right"], ["center", "Middle"], ["lower", "Lower middle"], ["bottom-left", "Bottom left"], ["bottom-right", "Bottom right"]];
+// your text: words, where, colour, size, font, how long (0 = all of the clip); more style under "Style"
+const PLACES = [["top-left", "Top left"], ["top", "Top"], ["top-right", "Top right"], ["center", "Middle"], ["lower", "Lower middle"], ["bottom-left", "Bottom left"], ["bottom-right", "Bottom right"], ["custom", "Where you dragged it"]];
 const PLACE_XY = { "top-left": [0.18, 0.09], "top": [0.5, 0.09], "top-right": [0.82, 0.09], "center": [0.5, 0.5], "lower": [0.5, 0.72], "bottom-left": [0.18, 0.86], "bottom-right": [0.82, 0.86] };
+const placeXY = (x, fallback) => x.place === "custom" && x.x != null ? [x.x, x.y] : PLACE_XY[x.place] || PLACE_XY[fallback];
+const MOVES = [["", "Still"], ["float", "Float"], ["wiggle", "Wiggle"], ["flip", "Flip"], ["pulse", "Pulse"], ["spin", "Spin"], ["fly", "Fly around"], ["across", "Fly across"]];
+const styleOpen = new WeakSet();          // which overlays have their "Style" row open (kept when the list redraws)
+function mkEl(tag, props = {}, ...kids) { const e = document.createElement(tag); Object.assign(e, props); e.append(...kids); return e; }
+function placePicker(o, fallback) {
+  const place = mkEl("select", { className: "field", title: "Where (or drag it on the picture)" });
+  PLACES.forEach(([v, n]) => place.append(new Option(n, v)));
+  place.value = o.place || fallback;
+  place.addEventListener("input", () => {        // picking "Where you dragged it" before dragging: start from where it was
+    if (place.value === "custom" && o.x == null) [o.x, o.y] = PLACE_XY[o.place] || PLACE_XY[fallback];
+  }, true);
+  return place;
+}
+// movement, its speed and how see-through: the same for text and logos
+function moveControls(o, put) {
+  const move = mkEl("select", { className: "field", title: "Movement" }); MOVES.forEach(([v, n]) => move.append(new Option(n, v)));
+  move.value = o.motion || "";
+  const speed = mkEl("input", { type: "range", min: "0.5", max: "8", step: "0.25", value: 8.5 - (o.period || 2), title: "Speed", disabled: !o.motion });
+  const see = mkEl("input", { type: "range", min: "0.2", max: "1", step: "0.05", value: o.opacity || 1, title: "See-through ← → solid" });
+  const read = () => {
+    speed.disabled = !move.value;
+    if (move.value) Object.assign(o, { motion: move.value, period: +(8.5 - speed.value).toFixed(2) }); else { delete o.motion; delete o.period; }
+    o.opacity = +see.value; put();
+  };
+  [move, speed, see].forEach(x => x.addEventListener("input", read));
+  return [mkEl("label", {}, "Movement ", move), mkEl("label", {}, "Speed ", speed), mkEl("label", {}, "Solid ", see)];
+}
+function styleRow(o, box, kids) {
+  const more = mkEl("div", { className: "te-more", hidden: !styleOpen.has(o) }, ...kids);
+  const btn = mkEl("button", { type: "button", className: "te-stylebtn", textContent: "Style" });
+  btn.setAttribute("aria-expanded", String(styleOpen.has(o)));
+  btn.onclick = () => {
+    more.hidden = !more.hidden; btn.setAttribute("aria-expanded", String(!more.hidden));
+    more.hidden ? styleOpen.delete(o) : styleOpen.add(o);
+  };
+  return [btn, more];
+}
 function textEditor(t, changed, remove) {
-  const box = document.createElement("div"); box.className = "text-edit";
-  const words = document.createElement("input"); words.className = "field te-text"; words.placeholder = "e.g. EP3 · 中字 by @you"; words.value = t.text || "";
-  const place = document.createElement("select"); place.className = "field"; PLACES.forEach(([v, l]) => place.append(new Option(l, v))); place.value = t.place || "top-left";
-  const colour = document.createElement("input"); colour.type = "color"; colour.value = t.color || "#FFFFFF"; colour.title = "Colour";
-  const size = document.createElement("input"); size.type = "range"; size.min = "0.6"; size.max = "3"; size.step = "0.1"; size.value = t.size || 1.3; size.title = "Size";
-  const font = document.createElement("select"); font.className = "field"; font.append(new Option("Font: like the captions", ""));
+  const box = mkEl("div", { className: "text-edit" });
+  const words = mkEl("input", { className: "field te-text", placeholder: "e.g. EP3 · 中字 by @you", value: t.text || "" });
+  const place = placePicker(t, "top-left");
+  const colour = mkEl("input", { type: "color", value: t.color || "#FFFFFF", title: "Colour" });
+  const size = mkEl("input", { type: "range", min: "0.6", max: "3", step: "0.1", value: t.size || 1.3, title: "Size" });
+  const font = mkEl("select", { className: "field" }); font.append(new Option("Font: like the captions", ""));
   (settings?.fonts?.zh || []).forEach(f => { const o = new Option(f.label, f.family); o.style.fontFamily = `"${f.family}"`; font.append(o); });
   font.value = t.font || "";
-  const secs = document.createElement("select"); secs.className = "field";
+  const secs = mkEl("select", { className: "field" });
   [[0, "the whole clip"], [2, "first 2 s"], [3, "first 3 s"], [5, "first 5 s"], [8, "first 8 s"]].forEach(([v, l]) => secs.append(new Option(l, v)));
   secs.value = String(t.secs || 0);
-  const x = document.createElement("button"); x.type = "button"; x.textContent = "Remove"; x.onclick = remove;
-  const put = () => { Object.assign(t, { text: words.value, place: place.value, color: colour.value, size: +size.value, font: font.value, secs: +secs.value }); changed(); };
-  words.oninput = put; [place, colour, size, font, secs].forEach(el => el.addEventListener("input", put));
-  box.append(words, place, colour, size, font, "for", secs, x);
+  const x = mkEl("button", { type: "button", textContent: "Remove", onclick: remove });
+  const look = mkEl("select", { className: "field", title: "Look" });
+  [["plain", "Outlined"], ["bubble", "White bubble"]].forEach(([v, n]) => look.append(new Option(n, v)));
+  look.value = t.bubble ? "bubble" : "plain";
+  const edge = mkEl("input", { type: "color", value: t.outline_color || "#000000", title: "Outline colour" });
+  const bold = mkEl("input", { type: "checkbox", checked: t.bold !== false });
+  const put = () => {
+    Object.assign(t, { text: words.value, place: place.value, color: colour.value, size: +size.value, font: font.value, secs: +secs.value,
+      outline_color: edge.value, bold: bold.checked, bubble: look.value === "bubble" });
+    colour.disabled = edge.disabled = look.value === "bubble";
+    changed();
+  };
+  colour.disabled = edge.disabled = look.value === "bubble";
+  words.oninput = put; [place, colour, size, font, secs, look, edge, bold].forEach(e => e.addEventListener("input", put));
+  const [sb, more] = styleRow(t, box, [look, mkEl("label", {}, "Outline ", edge), mkEl("label", {}, bold, " Bold"), ...moveControls(t, put)]);
+  box.append(words, place, colour, size, font, "for", secs, sb, x, more);
+  box.ov = t; box.sync = () => { place.value = t.place; };
   return box;
 }
 
-// your logo: which one (your saved logos), where, how big, how it stands out, how long
+// your logo: which one (your saved logos), where, how big, how it stands out, how long; colour, movement under "Style"
 let collLogos = null;
 async function savedLogos() { if (!collLogos) collLogos = await api("GET", "/api/logos").catch(() => []); return collLogos; }
 function logoEditor(l, changed, remove) {
-  const box = document.createElement("div"); box.className = "text-edit";
-  const pick = document.createElement("select"); pick.className = "field te-logo"; pick.append(new Option("Choose a logo…", ""));
+  const box = mkEl("div", { className: "text-edit" });
+  const pick = mkEl("select", { className: "field te-logo" }); pick.append(new Option("Choose a logo…", ""));
   savedLogos().then(ls => { ls.forEach(x => pick.append(new Option(x.name, x.id))); pick.value = l.image || ""; });
-  const place = document.createElement("select"); place.className = "field"; PLACES.forEach(([v, n]) => place.append(new Option(n, v))); place.value = l.place || "top-right";
-  const size = document.createElement("input"); size.type = "range"; size.min = "0.05"; size.max = "0.5"; size.step = "0.01"; size.value = l.w || 0.14; size.title = "Size";
-  const so = document.createElement("select"); so.className = "field";
+  const place = placePicker(l, "top-right");
+  const size = mkEl("input", { type: "range", min: "0.05", max: "0.5", step: "0.01", value: l.w || 0.14, title: "Size" });
+  const so = mkEl("select", { className: "field", title: "So it shows on any picture" });
   [["none", "as it is"], ["outline", "outline"], ["shadow", "soft shadow"], ["badge", "on a badge"], ["circle", "in a circle"]].forEach(([v, n]) => so.append(new Option(n, v)));
-  so.value = l.standout || "none"; so.title = "So it shows on any picture";
-  const secs = document.createElement("select"); secs.className = "field";
+  so.value = l.standout || "none";
+  const secs = mkEl("select", { className: "field" });
   [[0, "the whole clip"], [2, "first 2 s"], [3, "first 3 s"], [5, "first 5 s"], [8, "first 8 s"]].forEach(([v, n]) => secs.append(new Option(n, v)));
   secs.value = String(l.secs || 0);
-  const x = document.createElement("button"); x.type = "button"; x.textContent = "Remove"; x.onclick = remove;
-  const put = () => { Object.assign(l, { image: pick.value, place: place.value, w: +size.value, standout: so.value, secs: +secs.value }); changed(); };
-  [pick, place, size, so, secs].forEach(el => el.addEventListener("input", put));
-  box.append(pick, place, size, so, "for", secs, x);
+  const x = mkEl("button", { type: "button", textContent: "Remove", onclick: remove });
+  // the outline / shadow / badge colour: one that suits the logo, or your own
+  const tint = mkEl("select", { className: "field", title: "Outline, shadow or badge colour" });
+  [["auto", "Colour: to suit the logo"], ["mine", "Colour: my own"]].forEach(([v, n]) => tint.append(new Option(n, v)));
+  tint.value = l.edge_color ? "mine" : "auto";
+  const edge = mkEl("input", { type: "color", value: l.edge_color || "#FFFFFF", hidden: !l.edge_color });
+  const put = () => {
+    Object.assign(l, { image: pick.value, place: place.value, w: +size.value, standout: so.value, secs: +secs.value });
+    edge.hidden = tint.value !== "mine";
+    if (tint.value === "mine") l.edge_color = edge.value; else delete l.edge_color;
+    changed();
+  };
+  [pick, place, size, so, secs, tint, edge].forEach(e => e.addEventListener("input", put));
+  const [sb, more] = styleRow(l, box, [tint, edge, ...moveControls(l, put)]);
+  box.append(pick, place, size, so, "for", secs, sb, x, more);
+  box.ov = l; box.sync = () => { place.value = l.place; };
   return box;
 }
 
@@ -223,7 +285,7 @@ function renderColl() {
     times.append(time("start"), "→", time("end"), lenEl);
     const tb = btn("T", it.text ? `Text on this clip: “${it.text.text}”` : "Add your own text on this clip", () => {
       if (!it.text) it.text = { text: "", place: "top-left", color: "#FFFFFF", size: 1.3, secs: 0 };
-      const open = li.querySelector(".text-edit");
+      const open = li.querySelector(".text-edit:not(.logo-edit)");
       if (open) { open.remove(); return; }
       li.append(textEditor(it.text, () => { collChanged(false); drawCollTexts(true); }, () => { delete it.text; collChanged(); drawCollTexts(true); }));
       li.querySelector(".te-text").focus();
@@ -346,37 +408,96 @@ async function drawCollCaption() {
   box.style.background = "none"; box.style.padding = "0";
   if (st.box && rows.length) Object.assign(box.style, { background: st.box_color, padding: `${biggest * 0.19}px ${biggest * 0.32}px`, borderRadius: `${biggest * 0.25}px` });
 }
-let cvTextKey = "";
+let cvTextKey = "", cvFrame = null, cvClipStart = 0, cvDrag = null;
 function drawCollTexts(force) {
+  if (cvDrag) return;                    // not while you're moving one
   const it = cvQueue[cvAt] || cItems().find(i => i.id === cvPlaying);
   const t = cvideo.currentTime, show = [];
   if (it && cvideo.src.endsWith(`/api/jobs/${it.jid}/video`) && t >= it.start - 0.05 && t <= it.end + 0.05) {
     for (const x of [it.text, coll?.text, it.logo, coll?.logo]) if ((x?.text || x?.image) && (!x.secs || t - it.start < x.secs)) show.push(x);
+    cvClipStart = it.start;
   }
   const key = JSON.stringify(show) + cvideo.clientWidth;
   if (key === cvTextKey && !force) return;
   cvTextKey = key;
   const vw = cvideo.videoWidth || 1920, vh = cvideo.videoHeight || 1080, pb = $("#cplayer").getBoundingClientRect();
   const sc = Math.min(pb.width / vw, (cvideo.clientHeight || pb.height) / vh);
-  const fr = { left: (pb.width - vw * sc) / 2, top: ((cvideo.clientHeight || pb.height) - vh * sc) / 2, w: vw * sc, h: vh * sc };
+  const fr = cvFrame = { left: (pb.width - vw * sc) / 2, top: ((cvideo.clientHeight || pb.height) - vh * sc) / 2, w: vw * sc, h: vh * sc };
   const base = Math.min(vw, vh) * sc * 0.058;
   $("#cTexts").replaceChildren(...show.map(x => {
+    let node;
     if (x.image) {                       // a logo: its width is a share of the picture's width, as when saved
-      const img = document.createElement("img"), [px, py] = PLACE_XY[x.place] || PLACE_XY["top-right"];
-      img.src = `/api/logos/${x.image}`; img.alt = ""; img.className = x.standout && x.standout !== "none" ? `so-${x.standout}` : "";
+      const [px, py] = placeXY(x, "top-right");
+      node = document.createElement("img");
+      node.src = `/api/logos/${x.image}`; node.alt = ""; node.className = x.standout && x.standout !== "none" ? `so-${x.standout}` : "";
       const light = ((collLogos || []).find(g => g.id === x.image) || {}).tone !== "dark";      // a light logo gets a dark badge
-      if (x.standout === "badge" || x.standout === "circle") img.style.background = light ? "rgba(29,37,80,.85)" : "rgba(255,255,255,.85)";
-      if (x.standout === "outline") img.style.filter = `drop-shadow(0 0 1.5px ${light ? "#000" : "#fff"}) drop-shadow(0 0 1.5px ${light ? "#000" : "#fff"})`;
-      Object.assign(img.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, width: `${fr.w * (x.w || 0.14)}px` });
-      return img;
+      const edge = x.edge_color || (light ? "#000000" : "#FFFFFF");
+      if (x.standout === "badge" || x.standout === "circle") node.style.background = x.edge_color ? x.edge_color + "D9" : light ? "rgba(29,37,80,.85)" : "rgba(255,255,255,.85)";
+      if (x.standout === "outline") node.style.filter = `drop-shadow(0 0 1.5px ${edge}) drop-shadow(0 0 1.5px ${edge})`;
+      if (x.standout === "shadow") node.style.filter = `drop-shadow(0 2px 6px ${edge}D9)`;
+      Object.assign(node.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, width: `${fr.w * (x.w || 0.14)}px` });
+    } else {
+      const [px, py] = placeXY(x, "top-left"), size = base * (x.size || 1.3);
+      node = document.createElement("div"); node.textContent = x.text;
+      Object.assign(node.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, fontSize: `${size}px`,
+        fontFamily: `"${x.font || cvCaptionFont}", "PingFang TC", sans-serif` });
+      if (x.bubble) Object.assign(node.style, { color: "#3A2A3A", background: "#FFFFFFEE", padding: `${size * 0.35}px`, borderRadius: `${size * 0.6}px` });
+      else Object.assign(node.style, { color: x.color || "#FFFFFF", webkitTextStroke: `${size * 0.2}px ${x.outline_color || "#000000"}`,
+        fontWeight: x.bold === false ? "500" : "700" });
     }
-    const el = document.createElement("div"), [px, py] = PLACE_XY[x.place] || PLACE_XY["top-left"], size = base * (x.size || 1.3);
-    el.textContent = x.text;
-    Object.assign(el.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, fontSize: `${size}px`, color: x.color || "#FFFFFF",
-      fontFamily: `"${x.font || cvCaptionFont}", "PingFang TC", sans-serif`, webkitTextStroke: `${size * 0.2}px #000` });
-    return el;
+    node.style.opacity = x.opacity ?? 1;
+    node.ov = x; node.title = "Drag to move it";
+    collMove(node, x);
+    return node;
   }));
 }
+// the same movements the saved video gets, starting with the clip
+function collMove(node, x) {
+  if (!x.motion || !cvFrame) return;
+  const p = x.period || 2, fr = cvFrame, [px] = placeXY(x, x.image ? "top-right" : "top-left"), left = fr.left + px * fr.w;
+  node.classList.add("mv", `mv-${x.motion}`);
+  node.classList.toggle("paused", cvideo.paused);
+  node.style.setProperty("--p", `${p}s`);
+  node.style.setProperty("--ay", `${(x.motion === "fly" ? 0.045 : 0.015) * fr.h}px`);
+  node.style.setProperty("--ax", `${0.07 * fr.w}px`);
+  node.style.setProperty("--x0", `${fr.left - left - fr.w * 0.06}px`);
+  node.style.setProperty("--x1", `${fr.left + fr.w - left + fr.w * 0.06}px`);
+  node.style.animationDelay = `-${(Math.max(0, cvideo.currentTime - cvClipStart) % p).toFixed(2)}s`;
+}
+["play", "pause", "seeked"].forEach(ev => cvideo.addEventListener(ev, () => $$("#cTexts .mv").forEach(n => {
+  n.classList.toggle("paused", cvideo.paused);
+  n.style.animationDelay = `-${(Math.max(0, cvideo.currentTime - cvClipStart) % (n.ov?.period || 2)).toFixed(2)}s`;
+})));
+// drag your text or logo on the picture: it stays where you put it, in the saved video too
+$("#cTexts").addEventListener("pointerdown", e => {
+  const node = e.target.closest("#cTexts > *");
+  if (!node?.ov || !cvFrame || e.button !== 0) return;
+  e.preventDefault();
+  node.setPointerCapture(e.pointerId);
+  node.classList.remove("mv"); node.classList.add("dragging");
+  cvDrag = { node, o: node.ov, moved: false };
+});
+$("#cTexts").addEventListener("pointermove", e => {
+  if (!cvDrag) return;
+  const pb = $("#cplayer").getBoundingClientRect(), fr = cvFrame;
+  const fx = Math.min(0.98, Math.max(0.02, (e.clientX - pb.left - fr.left) / fr.w));
+  const fy = Math.min(0.98, Math.max(0.02, (e.clientY - pb.top - fr.top) / fr.h));
+  Object.assign(cvDrag, { fx, fy, moved: true });
+  Object.assign(cvDrag.node.style, { left: `${fr.left + fr.w * fx}px`, top: `${fr.top + fr.h * fy}px` });
+});
+function collDrop() {
+  if (!cvDrag) return;
+  const { o, moved, fx, fy } = cvDrag;
+  cvDrag = null;
+  if (moved) {
+    Object.assign(o, { place: "custom", x: +fx.toFixed(4), y: +fy.toFixed(4) });
+    $$(".text-edit").forEach(b => { if (b.ov === o) b.sync(); });
+    if (o === coll?.text) saveEveryText(); else if (o === coll?.logo) saveEveryLogo(); else collChanged(false);
+  }
+  drawCollTexts(true);
+}
+$("#cTexts").addEventListener("pointerup", collDrop);
+$("#cTexts").addEventListener("pointercancel", collDrop);
 ["timeupdate", "seeked", "loadedmetadata"].forEach(ev => cvideo.addEventListener(ev, () => drawCollTexts()));
 ["timeupdate", "seeked", "loadedmetadata"].forEach(ev => cvideo.addEventListener(ev, drawCollCaption));
 cvideo.addEventListener("play", function loop() { drawCollCaption(); if (!cvideo.paused) requestAnimationFrame(loop); });
