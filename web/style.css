@@ -707,3 +707,4 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .ctexts img.so-badge { background: rgba(255,255,255,.85); padding: 6px; border-radius: 10px; }
 .ctexts img.so-circle { background: rgba(255,255,255,.85); padding: 8px; border-radius: 50%; }
 .text-edit .te-logo { max-width: 180px; }
+.text-edit .te-all { white-space: nowrap; }

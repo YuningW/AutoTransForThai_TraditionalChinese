@@ -147,7 +147,7 @@ function styleRow(o, box, kids) {
   };
   return [btn, more];
 }
-function textEditor(t, changed, remove) {
+function textEditor(t, changed, remove, toAll) {
   const box = mkEl("div", { className: "text-edit" });
   const words = mkEl("input", { className: "field te-text", placeholder: "e.g. EP3 · 中字 by @you", value: t.text || "" });
   const place = placePicker(t, "top-left");
@@ -174,7 +174,8 @@ function textEditor(t, changed, remove) {
   colour.disabled = edge.disabled = look.value === "bubble";
   words.oninput = put; [place, colour, size, font, secs, look, edge, bold].forEach(e => e.addEventListener("input", put));
   const [sb, more] = styleRow(t, box, [look, mkEl("label", {}, "Outline ", edge), mkEl("label", {}, bold, " Bold"), ...moveControls(t, put)]);
-  box.append(words, place, colour, size, font, "for", secs, sb, x, more);
+  box.append(words, place, colour, size, font, "for", secs, sb, ...allButton(toAll, "Same look on all clips",
+    "Give every other clip's text this font, colour, size, style, place and timing (their words stay)"), x, more);
   box.ov = t; box.sync = () => { place.value = t.place; };
   return box;
 }
@@ -182,7 +183,7 @@ function textEditor(t, changed, remove) {
 // your logo: which one (your saved logos), where, how big, how it stands out, how long; colour, movement under "Style"
 let collLogos = null;
 async function savedLogos() { if (!collLogos) collLogos = await api("GET", "/api/logos").catch(() => []); return collLogos; }
-function logoEditor(l, changed, remove) {
+function logoEditor(l, changed, remove, toAll) {
   const box = mkEl("div", { className: "text-edit" });
   const pick = mkEl("select", { className: "field te-logo" }); pick.append(new Option("Choose a logo…", ""));
   savedLogos().then(ls => { ls.forEach(x => pick.append(new Option(x.name, x.id))); pick.value = l.image || ""; });
@@ -208,9 +209,45 @@ function logoEditor(l, changed, remove) {
   };
   [pick, place, size, so, secs, tint, edge].forEach(e => e.addEventListener("input", put));
   const [sb, more] = styleRow(l, box, [tint, edge, ...moveControls(l, put)]);
-  box.append(pick, place, size, so, "for", secs, sb, x, more);
+  box.append(pick, place, size, so, "for", secs, sb, ...allButton(toAll, "Same on all clips",
+    "Give every other clip's logo this logo, size, place, colour, movement and timing"), x, more);
   box.ov = l; box.sync = () => { place.value = l.place; };
   return box;
+}
+
+function allButton(f, label, title) {
+  return f ? [mkEl("button", { type: "button", className: "te-all", textContent: label, title, onclick: f })] : [];
+}
+
+// one clip's text or logo look, given to the others (their own words stay); new ones start with the last look
+const TEXT_LOOK = ["place", "x", "y", "color", "outline_color", "bold", "bubble", "opacity", "size", "font", "secs", "motion", "period"];
+const LOGO_LOOK = ["image", "place", "x", "y", "w", "standout", "edge_color", "opacity", "secs", "motion", "period"];
+const lastLook = { text: null, logo: null };
+function lookOf(o, keys) { return Object.fromEntries(keys.filter(k => o[k] !== undefined).map(k => [k, o[k]])); }
+function putLook(o, look, keys) { keys.forEach(k => { if (look[k] === undefined) delete o[k]; else o[k] = look[k]; }); }
+function startLook(kind, it) {          // the look a new text or logo on a clip starts with
+  const keys = kind === "text" ? TEXT_LOOK : LOGO_LOOK;
+  const other = cItems().find(x => x !== it && (kind === "text" ? x.text?.text : x.logo?.image));
+  return lastLook[kind] || (other ? lookOf(other[kind], keys) : null);
+}
+function sameOnAll(kind, it) {
+  const keys = kind === "text" ? TEXT_LOOK : LOGO_LOOK, look = lookOf(it[kind], keys);
+  lastLook[kind] = look;
+  const others = cItems().filter(x => x !== it && (kind === "text" ? x.text?.text : x.logo?.image));
+  if (!others.length) {
+    toast(kind === "text" ? "No other clip has text yet. New ones will start with this look." : "No other clip has a logo yet. New ones will start like this.");
+    return;
+  }
+  const before = others.map(x => lookOf(x[kind], keys));
+  others.forEach(x => putLook(x[kind], look, keys));
+  const redo = () => {
+    $$(".text-edit").forEach(b => { if (others.some(x => x[kind] === b.ov)) b.remove(); });   // their open editors were out of date
+    collChanged(false); drawCollTexts(true);
+  };
+  redo();
+  toast(`${kind === "text" ? "Same look" : "Same logo"} on ${others.length} other clip${others.length === 1 ? "" : "s"}`, "Undo", () => {
+    others.forEach((x, i) => putLook(x[kind], before[i], keys)); redo();
+  });
 }
 
 const cItems = () => coll?.items || [];
@@ -292,18 +329,20 @@ function renderColl() {
     const lenEl = document.createElement("span"); lenEl.className = "clip-len"; lenEl.textContent = `${(it.end - it.start).toFixed(1)} s`;
     times.append(time("start"), "→", time("end"), lenEl);
     const tb = btn("T", it.text ? `Text on this clip: “${it.text.text}”` : "Add your own text on this clip", () => {
-      if (!it.text) it.text = { text: "", place: "top-left", color: "#FFFFFF", size: 1.3, secs: 0 };
+      if (!it.text) it.text = { text: "", place: "top-left", color: "#FFFFFF", size: 1.3, secs: 0, ...startLook("text", it) };
       const open = li.querySelector(".text-edit:not(.logo-edit)");
       if (open) { open.remove(); return; }
-      li.append(textEditor(it.text, () => { collChanged(false); drawCollTexts(true); }, () => { delete it.text; collChanged(); drawCollTexts(true); }));
+      li.append(textEditor(it.text, () => { lastLook.text = lookOf(it.text, TEXT_LOOK); collChanged(false); drawCollTexts(true); },
+        () => { delete it.text; collChanged(); drawCollTexts(true); }, () => sameOnAll("text", it)));
       li.querySelector(".te-text").focus();
     }, "clip-textbtn");
     tb.setAttribute("aria-pressed", String(!!it.text?.text));
     const lb = btn("🖼", it.logo ? "Your logo on this clip" : "Add your logo on this clip", () => {
-      if (!it.logo) it.logo = { image: "", place: "top-right", w: 0.14, standout: "none", secs: 0 };
+      if (!it.logo) it.logo = { image: "", place: "top-right", w: 0.14, standout: "none", secs: 0, ...startLook("logo", it) };
       const open = li.querySelector(".logo-edit");
       if (open) { open.remove(); return; }
-      const ed = logoEditor(it.logo, () => { collChanged(false); drawCollTexts(true); }, () => { delete it.logo; collChanged(); drawCollTexts(true); });
+      const ed = logoEditor(it.logo, () => { lastLook.logo = lookOf(it.logo, LOGO_LOOK); collChanged(false); drawCollTexts(true); },
+        () => { delete it.logo; collChanged(); drawCollTexts(true); }, () => sameOnAll("logo", it));
       ed.classList.add("logo-edit"); li.append(ed);
     }, "clip-textbtn");
     lb.setAttribute("aria-pressed", String(!!it.logo?.image));
@@ -500,7 +539,8 @@ function collDrop() {
   if (moved) {
     Object.assign(o, { place: "custom", x: +fx.toFixed(4), y: +fy.toFixed(4) });
     $$(".text-edit").forEach(b => { if (b.ov === o) b.sync(); });
-    if (o === coll?.text) saveEveryText(); else if (o === coll?.logo) saveEveryLogo(); else collChanged(false);
+    if (o === coll?.text) saveEveryText(); else if (o === coll?.logo) saveEveryLogo();
+    else { if (o.image) lastLook.logo = lookOf(o, LOGO_LOOK); else lastLook.text = lookOf(o, TEXT_LOOK); collChanged(false); }
   }
   drawCollTexts(true);
 }
