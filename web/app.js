@@ -923,6 +923,11 @@ function showPart() {
   $("#partLen").textContent = ok ? `${fmtTime(part.end - part.start)} long, ${n} caption${n === 1 ? "" : "s"}` : "";
   drawTimeline(video.currentTime, true);
 }
+// the From … to … stretch, dragged on the timeline like a clip (writes straight into part)
+function partClip() {
+  return { isPart: true, get start() { return part.start; }, set start(v) { part.start = v; },
+           get end() { return part.end; }, set end(v) { part.end = v; } };
+}
 function setPart(k, v) {
   part[k] = Math.max(0, Math.min(video.duration || 1e9, v));
   if (part.start != null && part.end != null && part.end < part.start) [part.start, part.end] = [part.end, part.start];
@@ -930,10 +935,10 @@ function setPart(k, v) {
 }
 $$("input[name=part]").forEach(r => r.addEventListener("change", showPeoplePick));
 $$("input[name=part]").forEach(r => r.addEventListener("change", () => {
-  if (partOn() && part.start == null) {            // a start: the ticked lines, or a minute from the playhead
+  if (partOn() && part.start == null) {            // a start: the ticked lines, or the whole video to trim from
     const ticked = lines.filter(l => picked.has(l.id));
     if (ticked.length) { part.start = ticked[0].start; part.end = ticked[ticked.length - 1].end; }
-    else { part.start = video.currentTime; part.end = Math.min(video.duration || 1e9, video.currentTime + 60); }
+    else { part.start = 0; part.end = video.duration || job?.media?.duration || 0; }
   }
   showPart();
 }));
@@ -987,11 +992,21 @@ $("#pvStop").onclick = () => stopPreview();
 $("#pvNext").onclick = () => { if (pv.on && pv.i < pv.spans.length - 1) { pv.i++; previewJump(); } };
 $("#pvPrev").onclick = () => { if (pv.on) { pv.i = Math.max(0, video.currentTime - pv.spans[pv.i][0] > 1.5 ? pv.i : pv.i - 1); previewJump(); } };
 addEventListener("keydown", e => { if (e.key === "Escape" && pv.on) stopPreview(); });
-["partStart", "partEnd"].forEach(id => $("#" + id).addEventListener("change", e => {
-  const t = parseTime(e.target.value);
-  if (t == null) { showPart(); return; }
-  setPart(id === "partStart" ? "start" : "end", t);
-}));
+["partStart", "partEnd"].forEach(id => {
+  const box = $("#" + id), k = id === "partStart" ? "start" : "end";
+  box.addEventListener("change", e => {
+    const t = parseTime(e.target.value);
+    if (t == null) { showPart(); return; }
+    setPart(k, t);
+  });
+  box.addEventListener("keydown", e => {                 // ↑ ↓: 0.1 s, Shift: 1 s
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    const t = (part[k] ?? 0) + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 1 : 0.1);
+    setPart(k, Math.round(t * 1000) / 1000); box.value = fmtTime(part[k]);
+    video.currentTime = k === "end" ? Math.max(0, part.end - 0.05) : part.start + 0.01;
+  });
+});
 
 // Vertical 9:16: "fill" crops the sides (the frame on the video picks which part stays), "fit" keeps all of it
 let cropPos = 0.5;
@@ -2146,7 +2161,7 @@ $("#tlView").addEventListener("pointerdown", e => {
   if (e.button !== 0) return;
   const band = e.target.closest(".tl-clip");
   if (band && !band.classList.contains("pending")) {
-    const c = reel().find(x => x.id === band.dataset.id);
+    const c = band.dataset.id === "part" ? partClip() : reel().find(x => x.id === band.dataset.id);
     const mode = e.target.classList.contains("l") ? "start" : e.target.classList.contains("r") ? "end" : "move";
     tl.drag = { clip: c, mode, x0: e.clientX, t0: tlTime(e.clientX), s0: c.start, e0: c.end, moved: false };
     $("#tlView").setPointerCapture(e.pointerId); video.pause();
@@ -2186,6 +2201,7 @@ $("#tlView").addEventListener("pointerup", e => {
   tl.drag = null;
   if (!d) return;
   if (d.clip) {
+    if (d.clip.isPart) { if (d.moved) showPart(); else video.currentTime = d.clip.start + 0.01; drawTimeline(video.currentTime, true); return; }
     if (!d.moved) { video.currentTime = d.clip.start + 0.01; showTab("clipsPanel"); }
     else clipTimesChanged();
     drawTimeline(video.currentTime, true);
@@ -2600,12 +2616,13 @@ function markPlayingClip(t) {
 let clipBandsKey = "";
 function drawClipBands(pps) {
   const bands = reel().map((c, i) => ({ ...c, n: i + 1 }));
+  if (partOn() && part.start != null && part.end != null) bands.push({ id: "part", start: part.start, end: part.end, n: "From … to …" });
   if (clipStart !== null) bands.push({ id: "pending", start: clipStart, end: Math.max(clipStart + 0.1, video.currentTime), n: "…" });
   const key = JSON.stringify(bands.map(b => [b.id, b.start, b.end, b.label, b.star])) + tl.from.toFixed(2) + pps;
   if (key === clipBandsKey) return;                 // nothing moved: leave them be
   clipBandsKey = key;
   $("#tlClips").replaceChildren(...bands.filter(c => c.end > tl.from && c.start < tl.from + tl.span).map(c => {
-    const el = document.createElement("div"); el.className = `tl-clip${c.id === "pending" ? " pending" : ""}`; el.dataset.id = c.id;
+    const el = document.createElement("div"); el.className = `tl-clip${c.id === "pending" ? " pending" : ""}${c.id === "part" ? " part-band" : ""}`; el.dataset.id = c.id;
     Object.assign(el.style, { left: `${(c.start - tl.from) * pps}px`, width: `${Math.max(6, (c.end - c.start) * pps)}px` });
     el.textContent = c.n; el.title = `Clip ${c.n}${c.star ? " ★" : ""}: ${fmtTime(c.start)}–${fmtTime(c.end)}${c.label ? ` · ${c.label}` : ""}`;
     if (c.star) el.classList.add("starred");
@@ -2658,6 +2675,9 @@ placeActions();
 /* ============================================================ routing */
 
 async function route() {
+  const c = location.hash.match(/^#\/collections(?:\/([0-9a-f]{10}))?$/);
+  if (c && window.openCollections) { clearTimeout(pollTimer); job = null; video.pause(); return window.openCollections(c[1]); }
+  window.closeCollections?.();
   const m = location.hash.match(/^#\/job\/([0-9a-f]{12})$/);
   if (m) return openJob(m[1]);
   clearTimeout(pollTimer);
@@ -2665,7 +2685,7 @@ async function route() {
   video.pause();
   $("#jobView").hidden = true; $("#startView").hidden = false; $("#flagRail").hidden = true;
   $("#topTitle").textContent = ""; document.title = "AutoCaption";
-  loadJobList();
+  loadJobList(); window.renderCollHome?.();
 }
 $("#home").onclick = () => { location.hash = ""; };
 addEventListener("hashchange", route);

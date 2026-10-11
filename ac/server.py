@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import brain, fetch, jobs, media, memory, models, paths, style
+from . import brain, collect, fetch, jobs, media, memory, models, paths, style
 
 PORT = int(os.environ.get("AC_PORT", 8771))
 HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
@@ -289,6 +289,63 @@ def weak_spots(jid: str):
 def fix_weak_spots(jid: str):
     jobs.fix_weak_spots(jid)
     return jobs.load(jid)
+
+
+# ---------------------------------------------------------------- collections (clips from many videos)
+
+class CollectionIn(BaseModel):
+    name: str | None = None
+    items: list[dict] | None = None
+
+
+class AddIn(BaseModel):
+    jid: str
+    clips: list[dict]
+
+
+class CollectExportIn(BaseModel):
+    burn: str = "zh"
+    srt: list[str] = []
+    shape: dict | None = None
+    name: str | None = None
+
+
+@app.get("/api/collections")
+def collections():
+    return collect.listing()
+
+
+@app.post("/api/collections")
+def new_collection(body: CollectionIn):
+    return collect.create(body.name)
+
+
+@app.get("/api/collections/{cid}")
+def one_collection(cid: str):
+    return collect.full(cid)
+
+
+@app.patch("/api/collections/{cid}")
+def change_collection(cid: str, body: CollectionIn):
+    collect.change(cid, body.name, body.items)
+    return collect.full(cid)
+
+
+@app.delete("/api/collections/{cid}")
+def delete_collection(cid: str):
+    collect.remove(cid)
+    return {"ok": True}
+
+
+@app.post("/api/collections/{cid}/add")
+def add_to_collection(cid: str, body: AddIn):
+    return collect.add(cid, body.jid, body.clips)
+
+
+@app.post("/api/collections/{cid}/export")
+def export_collection(cid: str, body: CollectExportIn):
+    collect.export(cid, body.burn, body.srt, body.shape, body.name)
+    return collect.full(cid)
 
 
 @app.get("/api/jobs/{jid}/history")

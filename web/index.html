@@ -13,6 +13,7 @@
     AutoCaption
   </button>
   <div class="top-title" id="topTitle"></div>
+  <button class="ghost" id="openCollections" type="button">Collections <span class="count" id="collCount"></span></button>
   <button class="ghost" id="openMemory" type="button">What it has learned <span class="count" id="memCount"></span></button>
   <button class="ghost" id="openSettings" type="button">Models</button>
   <button class="ghost" id="quitApp" type="button" title="Close AutoCaption. Your work is saved; double-click AutoCaption.command to open it again.">Quit</button>
@@ -82,6 +83,65 @@
     <h2>Your videos</h2>
     <ul id="jobList" class="job-list"></ul>
     <p class="muted" id="noJobs">Videos you caption show up here.</p>
+    <h2 class="coll-head">Your collections <button class="ghost" type="button" id="newCollectionHome">+ New</button></h2>
+    <ul id="collList" class="job-list"></ul>
+    <p class="muted" id="noColls">Gather clips from several videos into a collection (a video's Clips tab → Add to collection), then save them as one.</p>
+  </section>
+</main>
+
+<!-- ============================================================ a collection: clips from many videos -->
+<main id="collView" class="coll" hidden>
+  <section class="coll-stage">
+    <div class="coll-top">
+      <select class="field" id="collPick" aria-label="Which collection"></select>
+      <input class="field coll-name" id="collName" aria-label="Collection name" maxlength="80">
+      <button class="ghost" type="button" id="collNew">+ New</button>
+      <button class="ghost" type="button" id="collDelete">Delete</button>
+    </div>
+    <div class="player coll-player"><video id="cvideo" controls playsinline preload="metadata"></video></div>
+    <p class="muted small" id="cvNow">Press ▶ on a clip, or Play all.</p>
+    <div class="panel coll-save">
+      <div class="panel-body">
+        <h3>Save this collection</h3>
+        <div class="opt-row"><span>Burn into the video</span>
+          <label><input type="radio" name="cburn" value="zh" checked> 中文</label>
+          <label><input type="radio" name="cburn" value="both"> 中文 + Thai</label>
+          <label><input type="radio" name="cburn" value="th"> Thai</label>
+          <label><input type="radio" name="cburn" value="none"> Don't</label></div>
+        <div class="opt-row"><span>Shape</span>
+          <label><input type="radio" name="cshape" value="" checked> 16:9</label>
+          <label><input type="radio" name="cshape" value="vertical"> Vertical 9:16</label>
+          <label id="cfitRow"><select class="field" id="cfit" aria-label="How a 16:9 picture fills 9:16"><option value="fill">fill, cut the sides</option><option value="fit">whole picture, blurred behind</option></select></label></div>
+        <div class="opt-row"><span>Size</span>
+          <label><input type="radio" name="csize" value="full" checked> Original</label>
+          <label><input type="radio" name="csize" value="720"> 720p</label>
+          <label><input type="radio" name="csize" value="480"> 480p</label></div>
+        <div class="opt-row"><span>Clips as</span>
+          <label><input type="radio" name="capart" value="" checked> One video</label>
+          <label><input type="radio" name="capart" value="1"> One file per clip <small class="muted">(for iMovie)</small></label></div>
+        <label class="check"><input type="checkbox" id="cfade" checked> <span>Smooth joins<small>A quarter-second fade where clips meet.</small></span></label>
+        <label class="check"><input type="checkbox" id="cnomusic"> <span>Take out the background music<small>For every clip (♪ on a clip does it for that one only).</small></span></label>
+        <div class="opt-row"><span>SRT files</span>
+          <label><input type="checkbox" name="csrt" value="zh"> 中文</label>
+          <label><input type="checkbox" name="csrt" value="both"> 中文 + Thai</label>
+          <label><input type="checkbox" name="csrt" value="th"> Thai</label></div>
+        <label class="save-name">File name <input class="field" id="cfileName" placeholder="The collection's name" maxlength="120"></label>
+        <p class="muted small">Each clip keeps its own video's captions, people, fonts, emoji and logo; videos of different sizes are fitted to one shape. Saved in <span id="cOutDir">~/Movies/AutoCaption/Collections</span>.</p>
+        <button class="primary" type="button" id="cSave">Save</button>
+        <div class="status" id="cStatus" hidden><div class="status-line"><span class="spinner"></span><span id="cStatusText"></span></div><div class="bar"><i id="cBar"></i></div></div>
+        <p class="error" id="cError" role="alert"></p>
+        <ul class="exports" id="cExports"></ul>
+      </div>
+    </div>
+  </section>
+  <section class="coll-list-wrap">
+    <div class="clip-foot coll-foot">
+      <span class="muted" id="cTotal"></span>
+      <label class="star-only"><input type="checkbox" id="cStarOnly"> ★ only</label>
+      <button class="secondary" type="button" id="cPlayAll">▶ Play all</button>
+    </div>
+    <ol class="clip-list" id="cList"></ol>
+    <p class="muted" id="cEmpty">No clips yet. Open one of your videos, make clips in its Clips tab, and press <b>Add to collection</b>.</p>
   </section>
 </main>
 
@@ -379,6 +439,11 @@
           <button class="ghost" type="button" id="clipTicked" title="One clip from the first ticked line to the last">From ticked lines</button>
           <span class="muted small" id="clipPending"></span>
         </div>
+        <div class="add-coll">
+          <span class="muted small">Add to collection</span>
+          <select class="field" id="addCollPick" aria-label="Which collection"></select>
+          <button class="secondary" type="button" id="addCollGo">Add these clips</button>
+        </div>
         <ol class="clip-list" id="clipList"></ol>
         <div class="clip-foot">
           <span class="muted" id="clipTotal"></span>
@@ -401,7 +466,7 @@
         <div class="opt-row">
           <span>What to save</span>
           <label><input type="radio" name="part" value="all" checked> The whole video</label>
-          <label><input type="radio" name="part" value="part"> Just a part</label>
+          <label><input type="radio" name="part" value="part"> From … to … <small class="muted">(trim the start or end)</small></label>
           <label><input type="radio" name="part" value="people"> Only when these people talk</label>
           <label><input type="radio" name="part" value="clips"> My clips <span class="muted small" id="clipsHere"></span></label>
         </div>
@@ -420,11 +485,11 @@
         <button class="secondary" type="button" id="pvGo" hidden>▶ Preview what will be saved</button>
         <div class="part-box" id="partBox" hidden>
           <div class="range-ends">
-            <button class="secondary" type="button" id="partFrom">From here</button>
+            <button class="secondary" type="button" id="partFrom">Start here</button>
             <input class="field part-t" id="partStart" aria-label="Part starts at" placeholder="0:00.0">
             <span class="muted">to</span>
             <input class="field part-t" id="partEnd" aria-label="Part ends at" placeholder="0:00.0">
-            <button class="secondary" type="button" id="partTo">To here</button>
+            <button class="secondary" type="button" id="partTo">End here</button>
           </div>
           <div class="range-ends">
             <button class="ghost" type="button" id="partTicked" title="From the first ticked line to the last">Use the ticked lines</button>
@@ -670,5 +735,6 @@
   <button type="button" id="paintClear" title="Back to the line's colour">Clear</button>
 </div>
 <script src="app.js"></script>
+<script src="collect.js"></script>
 </body>
 </html>

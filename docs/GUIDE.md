@@ -90,13 +90,21 @@ The **Clips** tab collects scenes and saves them together, in any order:
 - **Save these clips…** opens Save with **What to save → My clips**; smooth joins, size and vertical work as usual.
 - **Clips as → One file per clip** saves each clip as its own captioned video, numbered in your order and named after the clip: drag them into **iMovie** to arrange them and add music and transitions. (iMovie can't read SRT files, so the captions are burned in; iMovie on the Mac edits in 16:9, so save vertical videos straight from here.)
 
+## Collections: clips from several videos
+
+Gather clips from many videos and save them as one:
+1. In a video's **Clips** tab, pick a collection under **Add to collection** (or **+ New collection…** and name it) and press **Add these clips** (all clips, or only ★ ones with ★ only on).
+2. Do the same in other videos.
+3. **Collections** (top right, also listed on the start page) shows a collection's clips in one list, each saying which video it's from: rename the collection, switch between collections, reorder, rename or remove clips, change their exact times (type them, or ↑ ↓), ★ and ♪ (music out), **▶** one clip or **▶ Play all** across videos.
+4. **Save this collection**: one video or one file per clip (for iMovie), 16:9 or vertical 9:16, size, smooth joins, music out, SRT files, a file name. Each clip keeps its own video's captions, people, fonts, emoji and logo; videos of different sizes are fitted to one shape. Files go to `~/Movies/AutoCaption/Collections/<collection>/`.
+
 ## 7. Save
 
 **Save** writes the SRT files you tick (中文, 中文 + Thai, Thai, or none) and, if you like, a copy of the video with captions, emoji, notes, text and logo burned in. They go to `~/Movies/AutoCaption/<video title>/`. Type a **File name** to name them yourself (one file per clip adds the number and the clip's name, e.g. `Love moments 01 Hidden Fact.mp4`); a file already there is never overwritten (`Love moments 2.mp4`).
 
 **What to save**:
 - **The whole video**.
-- **Just a part**: mark it with **From here** and **To here**, type the times, or press **Use the ticked lines**. It's shaded on the timeline; **Play it** to check.
+- **From … to … (trim the start or end)**: starts as the whole video; trim it with **Start here** / **End here**, typed times, ↑ ↓ in the time boxes (0.1 s; Shift 1 s), or by dragging the blue band on the timeline. **Use the ticked lines** sets it to their span.
 - **Only when these people talk**: tick Milk, Love… and it keeps every stretch where they talk, joined into one video (a moment before and after each line; lines close together stay as one stretch). Their lines need to be marked as theirs first. The list of parts shows each one with what's said: untick a part to leave it out, use **start − +** and **end − +** to move its ends by half a second, **Play** to hear just that part. **Smooth joins** (on by default) adds a quarter-second fade where parts meet. To trim them precisely, press **Edit these as clips…**: they become clips in the Clips tab (named after who talks and what's said), with all its tools.
 
 The SRT files and the video then cover only what you chose, timed from 0:00. **▶ Preview what will be saved** plays exactly those parts one after another, skipping the rest (⏮ ⏭ move between parts; Esc or **Stop preview** ends it), and the timeline shades every part.
