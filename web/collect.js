@@ -99,6 +99,28 @@ $("#collDelete").onclick = async () => {
   location.hash = "#/collections";
 };
 
+// your text: words, where, colour, size, font, how long (0 = all of the clip)
+const PLACES = [["top-left", "Top left"], ["top", "Top"], ["top-right", "Top right"], ["center", "Middle"], ["lower", "Lower middle"], ["bottom-left", "Bottom left"], ["bottom-right", "Bottom right"]];
+const PLACE_XY = { "top-left": [0.18, 0.09], "top": [0.5, 0.09], "top-right": [0.82, 0.09], "center": [0.5, 0.5], "lower": [0.5, 0.72], "bottom-left": [0.18, 0.86], "bottom-right": [0.82, 0.86] };
+function textEditor(t, changed, remove) {
+  const box = document.createElement("div"); box.className = "text-edit";
+  const words = document.createElement("input"); words.className = "field te-text"; words.placeholder = "e.g. EP3 · 中字 by @you"; words.value = t.text || "";
+  const place = document.createElement("select"); place.className = "field"; PLACES.forEach(([v, l]) => place.append(new Option(l, v))); place.value = t.place || "top-left";
+  const colour = document.createElement("input"); colour.type = "color"; colour.value = t.color || "#FFFFFF"; colour.title = "Colour";
+  const size = document.createElement("input"); size.type = "range"; size.min = "0.6"; size.max = "3"; size.step = "0.1"; size.value = t.size || 1.3; size.title = "Size";
+  const font = document.createElement("select"); font.className = "field"; font.append(new Option("Font: like the captions", ""));
+  (settings?.fonts?.zh || []).forEach(f => { const o = new Option(f.label, f.family); o.style.fontFamily = `"${f.family}"`; font.append(o); });
+  font.value = t.font || "";
+  const secs = document.createElement("select"); secs.className = "field";
+  [[0, "the whole clip"], [2, "first 2 s"], [3, "first 3 s"], [5, "first 5 s"], [8, "first 8 s"]].forEach(([v, l]) => secs.append(new Option(l, v)));
+  secs.value = String(t.secs || 0);
+  const x = document.createElement("button"); x.type = "button"; x.textContent = "Remove"; x.onclick = remove;
+  const put = () => { Object.assign(t, { text: words.value, place: place.value, color: colour.value, size: +size.value, font: font.value, secs: +secs.value }); changed(); };
+  words.oninput = put; [place, colour, size, font, secs].forEach(el => el.addEventListener("input", put));
+  box.append(words, place, colour, size, font, "for", secs, x);
+  return box;
+}
+
 const cItems = () => coll?.items || [];
 const cUsed = () => cItems().filter(i => i.end - i.start >= 0.3 && (i.star || !$("#cStarOnly").checked));
 function collChanged(redraw = true) {
@@ -116,8 +138,19 @@ function renderCollTotals() {
   $("#cEmpty").hidden = all.length > 0;
   $("#cList").classList.toggle("star-only", $("#cStarOnly").checked);
 }
+function renderEveryText() {
+  const t = coll.text || { text: "", place: "bottom-right", color: "#FFFFFF", size: 1.0, secs: 0 };
+  $("#everyTextNow").textContent = coll.text?.text ? `“${coll.text.text}”` : "(none)";
+  $("#everyTextEdit").replaceChildren(textEditor(t, () => { coll.text = t; $("#everyTextNow").textContent = t.text ? `“${t.text}”` : "(none)"; saveEveryText(); drawCollTexts(true); },
+    () => { coll.text = null; saveEveryText(); renderEveryText(); drawCollTexts(true); }));
+}
+let everyTimer = null;
+function saveEveryText() {
+  clearTimeout(everyTimer);
+  everyTimer = setTimeout(() => api("PATCH", `/api/collections/${coll.id}`, { text: coll.text?.text ? coll.text : {} }).catch(ex => alert(ex.message)), 500);
+}
 function renderColl() {
-  renderCollTotals();
+  renderCollTotals(); renderEveryText();
   const items = cItems();
   $("#cList").replaceChildren(...items.map((it, i) => {
     const li = document.createElement("li"); li.dataset.id = it.id;
@@ -154,7 +187,15 @@ function renderColl() {
     const times = document.createElement("div"); times.className = "clip-times";
     const lenEl = document.createElement("span"); lenEl.className = "clip-len"; lenEl.textContent = `${(it.end - it.start).toFixed(1)} s`;
     times.append(time("start"), "→", time("end"), lenEl);
-    li.append(n, name, btn("▶", "Play this clip", () => cvPlay([it])), music,
+    const tb = btn("T", it.text ? `Text on this clip: “${it.text.text}”` : "Add your own text on this clip", () => {
+      if (!it.text) it.text = { text: "", place: "top-left", color: "#FFFFFF", size: 1.3, secs: 0 };
+      const open = li.querySelector(".text-edit");
+      if (open) { open.remove(); return; }
+      li.append(textEditor(it.text, () => { collChanged(false); drawCollTexts(true); }, () => { delete it.text; collChanged(); drawCollTexts(true); }));
+      li.querySelector(".te-text").focus();
+    }, "clip-textbtn");
+    tb.setAttribute("aria-pressed", String(!!it.text?.text));
+    li.append(n, name, btn("▶", "Play this clip", () => cvPlay([it])), tb, music,
       btn("↑", "Earlier", () => { if (i > 0) { [items[i - 1], items[i]] = [items[i], items[i - 1]]; collChanged(); } }),
       btn("✕", "Remove from the collection", () => { items.splice(i, 1); collChanged(); }),
       src, times);
@@ -207,7 +248,7 @@ async function sourceOf(jid) {
   }
   return srcData[jid];
 }
-let cvCapKey = "";
+let cvCapKey = "", cvCaptionFont = "PingFang TC";
 async function drawCollCaption() {
   const m = cvideo.src.match(/\/api\/jobs\/([0-9a-f]{12})\/video/);
   const box = $("#cOvBox");
@@ -221,6 +262,7 @@ async function drawCollCaption() {
   cvCapKey = key;
   const s = src.job.style || {}, theme = settings.themes.find(x => x.key === (s.theme || "classic"));
   const st = { ...settings.style_default, ...(theme ? theme.style : {}), ...s };
+  if (cvCaptionFont !== st.zh_font) { cvCaptionFont = st.zh_font; drawCollTexts(true); }   // "like the captions" texts follow
   // where the picture is inside the player, and how big captions are on it (as style.py: 5.8% of the short side)
   const vw = cvideo.videoWidth || 1920, vh = cvideo.videoHeight || 1080, pb = $("#cplayer").getBoundingClientRect();
   const sc = Math.min(pb.width / vw, (cvideo.clientHeight || pb.height) / vh);
@@ -262,6 +304,29 @@ async function drawCollCaption() {
   box.style.background = "none"; box.style.padding = "0";
   if (st.box && rows.length) Object.assign(box.style, { background: st.box_color, padding: `${biggest * 0.19}px ${biggest * 0.32}px`, borderRadius: `${biggest * 0.25}px` });
 }
+let cvTextKey = "";
+function drawCollTexts(force) {
+  const it = cvQueue[cvAt] || cItems().find(i => i.id === cvPlaying);
+  const t = cvideo.currentTime, show = [];
+  if (it && cvideo.src.endsWith(`/api/jobs/${it.jid}/video`) && t >= it.start - 0.05 && t <= it.end + 0.05) {
+    for (const x of [it.text, coll?.text]) if (x?.text && (!x.secs || t - it.start < x.secs)) show.push(x);
+  }
+  const key = JSON.stringify(show) + cvideo.clientWidth;
+  if (key === cvTextKey && !force) return;
+  cvTextKey = key;
+  const vw = cvideo.videoWidth || 1920, vh = cvideo.videoHeight || 1080, pb = $("#cplayer").getBoundingClientRect();
+  const sc = Math.min(pb.width / vw, (cvideo.clientHeight || pb.height) / vh);
+  const fr = { left: (pb.width - vw * sc) / 2, top: ((cvideo.clientHeight || pb.height) - vh * sc) / 2, w: vw * sc, h: vh * sc };
+  const base = Math.min(vw, vh) * sc * 0.058;
+  $("#cTexts").replaceChildren(...show.map(x => {
+    const el = document.createElement("div"), [px, py] = PLACE_XY[x.place] || PLACE_XY["top-left"], size = base * (x.size || 1.3);
+    el.textContent = x.text;
+    Object.assign(el.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, fontSize: `${size}px`, color: x.color || "#FFFFFF",
+      fontFamily: `"${x.font || cvCaptionFont}", "PingFang TC", sans-serif`, webkitTextStroke: `${size * 0.2}px #000` });
+    return el;
+  }));
+}
+["timeupdate", "seeked", "loadedmetadata"].forEach(ev => cvideo.addEventListener(ev, () => drawCollTexts()));
 ["timeupdate", "seeked", "loadedmetadata"].forEach(ev => cvideo.addEventListener(ev, drawCollCaption));
 cvideo.addEventListener("play", function loop() { drawCollCaption(); if (!cvideo.paused) requestAnimationFrame(loop); });
 $$("input[name=cburn]").forEach(r => r.addEventListener("change", () => { cvCapKey = ""; drawCollCaption(); }));

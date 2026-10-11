@@ -74,6 +74,27 @@ def create(name):
         return _save(c)
 
 
+PLACES = {"top-left": (0.18, 0.09), "top": (0.5, 0.09), "top-right": (0.82, 0.09), "center": (0.5, 0.5),
+          "lower": (0.5, 0.72), "bottom-left": (0.18, 0.86), "bottom-right": (0.82, 0.86)}
+
+
+def _clean_text(t):
+    """Your own text on a clip (or on every clip): {"text", "place", "color", "size", "font", "secs"}; None if empty."""
+    if not isinstance(t, dict) or not str(t.get("text") or "").strip():
+        return None
+    color = t.get("color") if isinstance(t.get("color"), str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", t["color"]) else "#FFFFFF"
+    return {"text": str(t["text"]).strip()[:120], "place": t.get("place") if t.get("place") in PLACES else "top-left",
+            "color": color, "size": round(min(3.0, max(0.5, float(t.get("size") or 1.3))), 2),
+            "font": str(t.get("font") or "")[:60], "secs": max(0.0, min(600.0, float(t.get("secs") or 0)))}
+
+
+def _text_touch(t, a, b):
+    """That text as a touch (style.touch_block) on the clip's own timeline: from its start, for secs (0: all of it)."""
+    x, y = PLACES[t["place"]]
+    return {"kind": "text", "text": t["text"], "x": x, "y": y, "size": t["size"], "color": t["color"], "font": t["font"],
+            "bold": True, "outline": 0.1, "outline_color": "#000000", "start": a, "end": min(b, a + t["secs"]) if t["secs"] else b}
+
+
 def _clean_item(i, keep_id=True):
     jid = str(i.get("jid") or "")
     jobs.job_dir(jid)                                # it must be one of your videos
@@ -82,10 +103,11 @@ def _clean_item(i, keep_id=True):
         return None
     return {"id": (str(i.get("id")) if keep_id and i.get("id") else uuid.uuid4().hex[:8])[:12], "jid": jid,
             "start": round(a, 3), "end": round(b, 3), "label": str(i.get("label") or "")[:60],
-            **({"star": True} if i.get("star") else {}), **({"no_music": True} if i.get("no_music") else {})}
+            **({"star": True} if i.get("star") else {}), **({"no_music": True} if i.get("no_music") else {}),
+            **({"text": _clean_text(i["text"])} if _clean_text(i.get("text")) else {})}
 
 
-def change(cid, name=None, items=None):
+def change(cid, name=None, items=None, text=False):
     """Rename it, or put its clips (reordered, trimmed, starred…) as you left them on the page."""
     with _lock:
         c = load(cid)
@@ -95,6 +117,8 @@ def change(cid, name=None, items=None):
             c["name"] = name.strip()[:80] or c["name"]
         if items is not None:
             c["items"] = [x for x in (_clean_item(i) for i in items) if x][:500]
+        if text is not False:                      # text on every clip (a title, a credit line)
+            c["text"] = _clean_text(text)
         return _save(c)
 
 
@@ -193,7 +217,7 @@ def _export(cid, items, burn, srt, shape, name):
             _update(cid, label=f"Clip {n + 1} of {len(items)} ({title})", progress=round(done, 3))
             tag = re.sub(r'[\\/:*?"<>|\n\r\t]+', " ", i.get("label") or "").strip()[:40]
             dst = jobs._unused(folder / f"{base} {n + 1:02d}{' ' + tag if tag else ''}.mp4") if apart else work / f"{n:04d}.mp4"
-            _piece(i, burn, dst, work / f"{n:04d}", shape, (fade and n > 0, fade and n < len(items) - 1),
+            _piece(i, burn, dst, work / f"{n:04d}", shape, (fade and n > 0, fade and n < len(items) - 1), c.get("text"),
                    lambda p: _update(cid, progress=round(done + share * p * (1 if apart else 0.8), 3)))
             pieces.append(dst)
             done += share * (1 if apart else 0.8)
@@ -207,14 +231,15 @@ def _export(cid, items, burn, srt, shape, name):
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _piece(i, which, dst, work, shape, fade, on_progress):
-    """One clip from its own video, with that video's captions and look."""
+def _piece(i, which, dst, work, shape, fade, every_text, on_progress):
+    """One clip from its own video, with that video's captions and look, plus your text for it (and for every clip)."""
     job = jobs.load(i["jid"])
     d = jobs.job_dir(i["jid"])
     m = job["media"]
     a, b = i["start"], min(i["end"], m.get("duration") or i["end"])
     full = m.get("duration") or 0
     touches = [({**t, "start": 0.0, "end": full} if t.get("whole") else t) for t in jobs.touches(i["jid"]) if not t.get("pending")]
+    touches += [_text_touch(t, a, b) for t in (i.get("text"), every_text) if t]
     W, H, st, plan = m.get("width") or 1920, m.get("height") or 1080, job.get("style"), None
     if shape.get("vertical"):
         plan = style.vertical_plan(W, H, shape.get("fit", "fill"), shape.get("pos", 0.5))

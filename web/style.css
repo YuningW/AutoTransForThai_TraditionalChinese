@@ -672,3 +672,16 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .coll-head { display: flex; align-items: center; gap: 10px; margin-top: 26px; }
 .clip-list .clip-add { font-size: 13px; }
 @media (max-width: 900px) { .coll { grid-template-columns: 1fr; } .coll-stage { position: static; max-height: none; } }
+
+/* your own text on a clip, or on every clip of a collection */
+.ctexts { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.ctexts div { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; font-weight: 700; paint-order: stroke fill; line-height: 1.2; }
+.text-edit { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; padding: 8px; border-radius: 8px; background: var(--paper); font-size: 12.5px; }
+.text-edit .te-text { flex: 1 1 160px; min-width: 120px; padding: 4px 8px; font-size: 13px; }
+.text-edit select { width: auto; padding: 3px 6px; font-size: 12.5px; }
+.text-edit input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var(--rule); border-radius: 5px; }
+.text-edit input[type=range] { width: 80px; }
+.every-text { border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); padding: 6px 10px; }
+.every-text summary { cursor: pointer; font-size: 14px; font-weight: 600; }
+.every-text .text-edit { margin-top: 8px; }
+.clip-list .clip-textbtn[aria-pressed="true"] { background: var(--ink); color: var(--sheet); border-color: var(--ink); }

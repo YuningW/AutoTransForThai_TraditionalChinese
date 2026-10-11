@@ -96,6 +96,7 @@ Gather clips from many videos and save them as one:
 1. In a video's **Clips** tab, pick a collection under **Add to collection** (or **+ New collection…** and name it) and press **Add these clips** (all clips, or only ★ ones with ★ only on).
 2. Do the same in other videos.
 3. **Collections** (top right, also listed on the start page) shows a collection's clips in one list, each saying which video it's from: rename the collection, switch between collections, reorder, rename or remove clips, change their exact times (type them, or ↑ ↓), ★ and ♪ (music out), **▶** one clip or **▶ Play all** across videos.
+   **T** on a clip adds your own text to it ("EP3", "Day 1"…): where it sits, colour, size, font, for the whole clip or its first few seconds. **Text on every clip** (above the list) puts one text on all of them, like a title or "中字 by @you". Both show on the preview and in the saved video.
 4. **Save this collection**: one video or one file per clip (for iMovie), 16:9 or vertical 9:16, size, smooth joins, music out, SRT files, a file name. Each clip keeps its own video's captions, people, fonts, emoji and logo; videos of different sizes are fitted to one shape. Files go to `~/Movies/AutoCaption/Collections/<collection>/`.
 
 ## 7. Save

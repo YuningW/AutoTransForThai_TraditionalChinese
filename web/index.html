@@ -99,7 +99,8 @@
       <button class="ghost" type="button" id="collDelete">Delete</button>
     </div>
     <div class="player coll-player" id="cplayer"><video id="cvideo" controls playsinline preload="metadata"></video>
-      <div class="overlay" id="cOverlay"><div class="ov-box" id="cOvBox"></div></div></div>
+      <div class="overlay" id="cOverlay"><div class="ov-box" id="cOvBox"></div></div>
+      <div class="ctexts" id="cTexts"></div></div>
     <p class="muted small" id="cvNow">Press ▶ on a clip, or Play all.</p>
     <div class="panel coll-save">
       <div class="panel-body">
@@ -141,6 +142,10 @@
       <label class="star-only"><input type="checkbox" id="cStarOnly"> ★ only</label>
       <button class="secondary" type="button" id="cPlayAll">▶ Play all</button>
     </div>
+    <details class="every-text" id="everyText">
+      <summary>Text on every clip <span class="muted small" id="everyTextNow"></span></summary>
+      <div id="everyTextEdit"></div>
+    </details>
     <ol class="clip-list" id="cList"></ol>
     <p class="muted" id="cEmpty">No clips yet. Open one of your videos, make clips in its Clips tab, and press <b>Add to collection</b>.</p>
   </section>

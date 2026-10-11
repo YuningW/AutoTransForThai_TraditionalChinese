@@ -296,6 +296,7 @@ def fix_weak_spots(jid: str):
 class CollectionIn(BaseModel):
     name: str | None = None
     items: list[dict] | None = None
+    text: dict | None = None       # text on every clip; {} removes it
 
 
 class AddIn(BaseModel):
@@ -327,7 +328,7 @@ def one_collection(cid: str):
 
 @app.patch("/api/collections/{cid}")
 def change_collection(cid: str, body: CollectionIn):
-    collect.change(cid, body.name, body.items)
+    collect.change(cid, body.name, body.items, body.text if "text" in body.model_fields_set else False)
     return collect.full(cid)
 
 
