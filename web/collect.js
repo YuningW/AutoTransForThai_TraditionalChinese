@@ -355,6 +355,7 @@ function renderColl() {
     const on = document.createElement("div"); on.className = "clip-pv-on"; pv.append(on);
     pv.onclick = () => cvPlay([it]);
     li.append(pv);
+    const said = document.createElement("div"); said.className = "clip-said"; li.append(said);
     li.append(n, name, btn("▶", "Play this clip", () => cvPlay([it])), tb, lb, music,
       btn("↑", "Earlier", () => { if (i > 0) { [items[i - 1], items[i]] = [items[i], items[i - 1]]; collChanged(); } }),
       btn("✕", "Remove from the collection", () => { items.splice(i, 1); collChanged(); }),
@@ -528,6 +529,16 @@ function drawClipPreviews() {
     const on = [it.text, coll?.text, it.logo, coll?.logo].filter(x => x?.text || x?.image);
     box.querySelector(".clip-pv-on").replaceChildren(...on.map(x => overlayNode(x, fr, base)));
     box.title = on.length ? "How this clip's text and logo will look (at its start)" : "The start of this clip (no text or logo on it)";
+    // on the right: the words themselves, big enough to read, in their font and colours
+    const said = li.querySelector(".clip-said");
+    if (said) said.replaceChildren(...[[it.text, false], [coll?.text, true]].filter(([x]) => x?.text).map(([x, every]) => {
+      const el = document.createElement("span"); el.className = "said" + (every ? " every" : ""); el.textContent = x.text;
+      el.title = every ? "Text on every clip" : "This clip's text";
+      el.style.fontFamily = `"${x.font || cvCaptionFont}", "PingFang TC", sans-serif`;
+      if (x.bubble) Object.assign(el.style, { color: "#3A2A3A", background: "#FFFFFFEE", boxShadow: "0 0 0 1px #2b2f3a" });
+      else Object.assign(el.style, { color: x.color || "#FFFFFF", webkitTextStroke: `${every ? 2 : 3}px ${x.outline_color || "#000000"}`, fontWeight: x.bold === false ? "500" : "700" });
+      return el;
+    }));
   });
 }
 // the same movements the saved video gets, starting with the clip
