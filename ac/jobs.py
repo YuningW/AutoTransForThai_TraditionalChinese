@@ -1910,6 +1910,20 @@ def clear_flags(jid):
     return n
 
 
+def frame(jid, t):
+    """One small picture from the video at t seconds (kept, so it's made once): for previews of clips."""
+    d = job_dir(jid)
+    t = round(max(0.0, float(t)), 1)
+    out = d / "thumbs" / f"{t:.1f}.jpg"
+    if not out.exists():
+        out.parent.mkdir(exist_ok=True)
+        subprocess.run([paths.ffmpeg(), "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{t:.2f}", "-i", str(d / load(jid)["source"]),
+                        "-frames:v", "1", "-vf", "scale=360:-2", "-q:v", "4", str(out)], timeout=30)
+        if not out.exists():
+            raise JobError("Couldn't take a picture from the video there.")
+    return out
+
+
 def delete_line(jid, lid):
     with _lock(jid):
         ls = lines(jid)

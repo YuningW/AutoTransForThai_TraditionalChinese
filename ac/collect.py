@@ -214,7 +214,9 @@ def full(cid):
         if i["jid"] not in titles:
             try:
                 j = jobs.load(i["jid"])
-                titles[i["jid"]] = {"title": j.get("title") or "", "duration": (j.get("media") or {}).get("duration") or 0}
+                m = j.get("media") or {}
+                titles[i["jid"]] = {"title": j.get("title") or "", "duration": m.get("duration") or 0,
+                                    "width": m.get("width") or 1920, "height": m.get("height") or 1080}
             except Exception:
                 titles[i["jid"]] = {"title": "(this video was deleted)", "duration": 0, "gone": True}
     return {**c, "videos": titles}

@@ -182,6 +182,11 @@ def waveform(jid: str):
                     headers={"X-Rate": str(jobs.WAVE_RATE), "Cache-Control": "no-cache"})
 
 
+@app.get("/api/jobs/{jid}/frame")
+def frame(jid: str, t: float = 0.0):
+    return FileResponse(jobs.frame(jid, t), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+
+
 @app.get("/api/jobs/{jid}/video")
 def video(jid: str):
     return FileResponse(jobs.job_dir(jid) / "preview.mp4", media_type="video/mp4")

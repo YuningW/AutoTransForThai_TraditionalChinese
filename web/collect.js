@@ -346,12 +346,22 @@ function renderColl() {
       ed.classList.add("logo-edit"); li.append(ed);
     }, "clip-textbtn");
     lb.setAttribute("aria-pressed", String(!!it.logo?.image));
+    const pv = document.createElement("div"); pv.className = "clip-pv";
+    if (!coll.videos?.[it.jid]?.gone) {
+      const img = document.createElement("img"); img.alt = ""; img.loading = "lazy";
+      img.src = `/api/jobs/${it.jid}/frame?t=${Math.min(it.start + 0.5, (it.start + it.end) / 2).toFixed(1)}`;
+      pv.append(img);
+    }
+    const on = document.createElement("div"); on.className = "clip-pv-on"; pv.append(on);
+    pv.onclick = () => cvPlay([it]);
+    li.append(pv);
     li.append(n, name, btn("▶", "Play this clip", () => cvPlay([it])), tb, lb, music,
       btn("↑", "Earlier", () => { if (i > 0) { [items[i - 1], items[i]] = [items[i], items[i - 1]]; collChanged(); } }),
       btn("✕", "Remove from the collection", () => { items.splice(i, 1); collChanged(); }),
       src, times);
     return li;
   }));
+  requestAnimationFrame(drawClipPreviews);
 }
 $("#cStarOnly").addEventListener("change", () => {
   try { localStorage.setItem("ac-cstar", $("#cStarOnly").checked ? "1" : ""); } catch { /* fine */ }
@@ -472,31 +482,53 @@ function drawCollTexts(force) {
   const fr = cvFrame = { left: (pb.width - vw * sc) / 2, top: ((cvideo.clientHeight || pb.height) - vh * sc) / 2, w: vw * sc, h: vh * sc };
   const base = Math.min(vw, vh) * sc * 0.058;
   $("#cTexts").replaceChildren(...show.map(x => {
-    let node;
-    if (x.image) {                       // a logo: its width is a share of the picture's width, as when saved
-      const [px, py] = placeXY(x, "top-right");
-      node = document.createElement("img");
-      node.src = `/api/logos/${x.image}`; node.alt = ""; node.className = x.standout && x.standout !== "none" ? `so-${x.standout}` : "";
-      const light = ((collLogos || []).find(g => g.id === x.image) || {}).tone !== "dark";      // a light logo gets a dark badge
-      const edge = x.edge_color || (light ? "#000000" : "#FFFFFF");
-      if (x.standout === "badge" || x.standout === "circle") node.style.background = x.edge_color ? x.edge_color + "D9" : light ? "rgba(29,37,80,.85)" : "rgba(255,255,255,.85)";
-      if (x.standout === "outline") node.style.filter = `drop-shadow(0 0 1.5px ${edge}) drop-shadow(0 0 1.5px ${edge})`;
-      if (x.standout === "shadow") node.style.filter = `drop-shadow(0 2px 6px ${edge}D9)`;
-      Object.assign(node.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, width: `${fr.w * (x.w || 0.14)}px` });
-    } else {
-      const [px, py] = placeXY(x, "top-left"), size = base * (x.size || 1.3);
-      node = document.createElement("div"); node.textContent = x.text;
-      Object.assign(node.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, fontSize: `${size}px`,
-        fontFamily: `"${x.font || cvCaptionFont}", "PingFang TC", sans-serif` });
-      if (x.bubble) Object.assign(node.style, { color: "#3A2A3A", background: "#FFFFFFEE", padding: `${size * 0.35}px`, borderRadius: `${size * 0.6}px` });
-      else Object.assign(node.style, { color: x.color || "#FFFFFF", webkitTextStroke: `${size * 0.2}px ${x.outline_color || "#000000"}`,
-        fontWeight: x.bold === false ? "500" : "700" });
-    }
-    node.style.opacity = x.opacity ?? 1;
+    const node = overlayNode(x, fr, base);
     node.ov = x; node.title = "Drag to move it";
     collMove(node, x);
     return node;
   }));
+  drawClipPreviews();
+}
+// one text or logo, placed on a picture whose frame (where the picture sits, its size) is fr: the same rules as the
+// saved video, so the big preview and the small ones match it
+function overlayNode(x, fr, base) {
+  let node;
+  if (x.image) {                       // a logo: its width is a share of the picture's width, as when saved
+    const [px, py] = placeXY(x, "top-right");
+    node = document.createElement("img");
+    node.src = `/api/logos/${x.image}`; node.alt = ""; node.className = x.standout && x.standout !== "none" ? `so-${x.standout}` : "";
+    const light = ((collLogos || []).find(g => g.id === x.image) || {}).tone !== "dark";      // a light logo gets a dark badge
+    const edge = x.edge_color || (light ? "#000000" : "#FFFFFF");
+    if (x.standout === "badge" || x.standout === "circle") node.style.background = x.edge_color ? x.edge_color + "D9" : light ? "rgba(29,37,80,.85)" : "rgba(255,255,255,.85)";
+    if (x.standout === "outline") node.style.filter = `drop-shadow(0 0 1.5px ${edge}) drop-shadow(0 0 1.5px ${edge})`;
+    if (x.standout === "shadow") node.style.filter = `drop-shadow(0 2px 6px ${edge}D9)`;
+    Object.assign(node.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, width: `${fr.w * (x.w || 0.14)}px` });
+    if (fr.w < 300 && (x.standout === "badge" || x.standout === "circle")) node.style.padding = `${Math.max(1, fr.w * 0.006)}px`;
+  } else {
+    const [px, py] = placeXY(x, "top-left"), size = base * (x.size || 1.3);
+    node = document.createElement("div"); node.textContent = x.text;
+    Object.assign(node.style, { left: `${fr.left + fr.w * px}px`, top: `${fr.top + fr.h * py}px`, fontSize: `${size}px`,
+      fontFamily: `"${x.font || cvCaptionFont}", "PingFang TC", sans-serif` });
+    if (x.bubble) Object.assign(node.style, { color: "#3A2A3A", background: "#FFFFFFEE", padding: `${size * 0.35}px`, borderRadius: `${size * 0.6}px` });
+    else Object.assign(node.style, { color: x.color || "#FFFFFF", webkitTextStroke: `${size * 0.2}px ${x.outline_color || "#000000"}`,
+      fontWeight: x.bold === false ? "500" : "700" });
+  }
+  node.style.opacity = x.opacity ?? 1;
+  return node;
+}
+// beside each clip in the list: a small picture from it with its text and logo on, as they'll be saved
+function drawClipPreviews() {
+  $$("#cList li").forEach(li => {
+    const it = cItems().find(i => i.id === li.dataset.id), box = li.querySelector(".clip-pv");
+    if (!it || !box) return;
+    const v = coll?.videos?.[it.jid] || {}, vw = v.width || 1920, vh = v.height || 1080;
+    const W = box.clientWidth || 176, H = box.clientHeight || 99, sc = Math.min(W / vw, H / vh);
+    const fr = { left: (W - vw * sc) / 2, top: (H - vh * sc) / 2, w: vw * sc, h: vh * sc };
+    const base = Math.min(vw, vh) * sc * 0.058;
+    const on = [it.text, coll?.text, it.logo, coll?.logo].filter(x => x?.text || x?.image);
+    box.querySelector(".clip-pv-on").replaceChildren(...on.map(x => overlayNode(x, fr, base)));
+    box.title = on.length ? "How this clip's text and logo will look (at its start)" : "The start of this clip (no text or logo on it)";
+  });
 }
 // the same movements the saved video gets, starting with the clip
 function collMove(node, x) {

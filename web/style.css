@@ -679,6 +679,17 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .coll-foot { position: sticky; top: 70px; z-index: 2; background: var(--paper); padding: 6px 0; }
 .clip-list .clip-src { grid-column: 2 / 7; font-size: 12px; color: var(--ink-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .clip-list .clip-src a { color: inherit; }
+/* a collection's clips: a small picture of each, with its text and logo, on the left */
+#cList li { grid-template-columns: 168px auto minmax(0, 1fr) repeat(6, auto); }
+#cList .clip-pv { grid-column: 1; grid-row: 1 / span 3; align-self: start; position: relative; width: 168px; aspect-ratio: 16 / 9; background: #000; border-radius: 6px; overflow: hidden; cursor: pointer; }
+#cList .clip-pv > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+#cList .clip-src, #cList .clip-times { grid-column: 2 / -1; }
+#cList .text-edit { grid-column: 1 / -1; }
+.clip-pv-on { position: absolute; inset: 0; pointer-events: none; }
+.clip-pv-on > * { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; line-height: 1.2; paint-order: stroke fill; }
+.clip-pv-on img.so-badge { border-radius: 3px; }
+.clip-pv-on img.so-circle { border-radius: 50%; }
+@media (max-width: 560px) { #cList li { grid-template-columns: 120px auto minmax(0, 1fr) repeat(6, auto); } #cList .clip-pv { width: 120px; } }
 .add-coll { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px; border: 1px dashed var(--rule); border-radius: 8px; }
 .add-coll select { width: auto; max-width: 200px; padding: 4px 8px; font-size: 13px; }
 .coll-head { display: flex; align-items: center; gap: 10px; margin-top: 26px; }
