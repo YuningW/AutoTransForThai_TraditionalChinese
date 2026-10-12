@@ -2607,7 +2607,7 @@ function renderClips(timesOnly) {
   $("#clipList").replaceChildren(...cs.map((c, i) => {
     const li = document.createElement("li"); li.dataset.id = c.id; li.classList.toggle("playing", c.id === playingClip);
     const btn = (label, title, f) => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.onclick = f; return b; };
-    const n = document.createElement("span"); n.className = "clip-n"; n.textContent = i + 1;
+    const n = document.createElement("span"); n.className = "clip-n"; n.append(gripFor("clip"), String(i + 1));
     li.classList.toggle("starred", !!c.star);
     const star = document.createElement("button"); star.type = "button"; star.className = "clip-star";
     star.textContent = c.star ? "★" : "☆"; star.setAttribute("aria-pressed", String(!!c.star));
@@ -2654,6 +2654,62 @@ function renderClips(timesOnly) {
   }));
   showSizes();
 }
+// Drag a clip by its ⠿ (or its picture) to move it up or down the list; a line shows where it will land.
+// items(): the array the list shows, in order; moved(): save and redraw. Used here and on a collection's page.
+function dragToReorder(list, items, moved) {
+  let justDragged = false;
+  list.addEventListener("click", e => { if (justDragged) { e.stopPropagation(); e.preventDefault(); justDragged = false; } }, true);
+  list.addEventListener("pointerdown", e => {
+    const h = e.target.closest(".clip-grip, .clip-pv");
+    if (!h || e.button !== 0) return;
+    const li = h.closest("li"), from = [...list.children].indexOf(li);
+    if (from < 0) return;
+    e.preventDefault();
+    const y0 = e.clientY;
+    let dragging = false, to = from, lastY = y0, scroller = null;
+    const others = () => [...list.children].filter(k => k !== li);
+    const mark = () => others().forEach((k, i, all) => {
+      k.classList.toggle("drop-before", dragging && i === to);
+      k.classList.toggle("drop-after", dragging && to === all.length && i === all.length - 1);
+    });
+    const follow = y => {
+      lastY = y;
+      li.style.transform = `translateY(${y - y0 + (scroller?.moved || 0)}px)`;
+      to = others().filter(k => { const r = k.getBoundingClientRect(); return y > r.top + r.height / 2; }).length;
+      mark();
+    };
+    const move = ev => {
+      if (!dragging && Math.abs(ev.clientY - y0) < 6) return;
+      if (!dragging) { dragging = true; li.classList.add("dragging"); document.body.classList.add("reordering"); }
+      follow(ev.clientY);
+      // near the window's top or bottom: scroll, so a clip can go anywhere in a long list
+      const edge = ev.clientY < 70 ? -1 : ev.clientY > innerHeight - 70 ? 1 : 0;
+      if (edge && !scroller) {
+        scroller = { moved: 0, dir: edge, t: setInterval(() => { scrollBy(0, 12 * scroller.dir); scroller.moved += 12 * scroller.dir; follow(lastY); }, 16) };
+      } else if (scroller) {
+        if (!edge) { clearInterval(scroller.t); scroller = { moved: scroller.moved, dir: 0, t: null }; }
+        else scroller.dir = edge;
+      }
+    };
+    const up = () => {
+      removeEventListener("pointermove", move); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
+      if (scroller?.t) clearInterval(scroller.t);
+      li.style.transform = ""; li.classList.remove("dragging"); document.body.classList.remove("reordering");
+      const was = dragging; dragging = false; mark();
+      if (!was) return;
+      justDragged = true; setTimeout(() => { justDragged = false; }, 0);
+      if (to !== from) { const arr = items(); const [x] = arr.splice(from, 1); arr.splice(to, 0, x); moved(); }
+    };
+    addEventListener("pointermove", move); addEventListener("pointerup", up); addEventListener("pointercancel", up);
+  });
+}
+function gripFor(what) {
+  const g = document.createElement("span"); g.className = "clip-grip"; g.textContent = "⠿"; g.title = `Drag to move this ${what}`;
+  g.setAttribute("aria-hidden", "true");
+  return g;
+}
+dragToReorder($("#clipList"), () => reel(), () => { reelChanged(); drawTimeline(video.currentTime, true); });
+
 // the clip being played (or under the playhead) stands out, in the list and on the timeline
 let playingClip = null;
 function markPlayingClip(t) {

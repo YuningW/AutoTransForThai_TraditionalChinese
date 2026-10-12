@@ -212,6 +212,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .clip-list li.playing { box-shadow: 0 0 0 2px #f5a623; }
 .tl-clip.playing { background: color-mix(in srgb, #f5a623 50%, transparent); border-color: #f5a623; color: #7a4b00; }
 .clip-list .clip-n { font-weight: 700; color: #2ea05a; min-width: 1.4em; }
+.clip-list .clip-grip { cursor: grab; color: var(--ink-3); font-weight: 400; padding: 2px 5px 2px 0; touch-action: none; user-select: none; -webkit-user-select: none; }
+.clip-list .clip-grip:hover { color: var(--ink); }
+.clip-list .clip-pv { touch-action: none; }
+.clip-list li.dragging { z-index: 5; box-shadow: 0 10px 28px rgba(20, 25, 60, .22); opacity: .95; cursor: grabbing; }
+.clip-list li.drop-before { box-shadow: 0 -3px 0 0 #2f80ed; }
+.clip-list li.drop-after { box-shadow: 0 3px 0 0 #2f80ed; }
+body.reordering, body.reordering * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
 .clip-list .clip-label { padding: 4px 8px; font-size: 13px; }
 .clip-list .clip-times { grid-column: 2 / 7; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .clip-list .clip-t { width: 6.5em; padding: 3px 6px; font-size: 13px; text-align: center; font-variant-numeric: tabular-nums; }
@@ -726,3 +733,8 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .ctexts img.so-circle { background: rgba(255,255,255,.85); padding: 8px; border-radius: 50%; }
 .text-edit .te-logo { max-width: 180px; }
 .text-edit .te-all { white-space: nowrap; }
+.text-edit .te-whenwrap { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.text-edit .te-when { display: inline-flex; align-items: center; gap: 4px; }
+.text-edit .te-when[hidden] { display: none; }
+.text-edit .te-when-t { width: 4.2em; padding: 3px 6px; font-size: 12.5px; text-align: center; font-variant-numeric: tabular-nums; }
+.text-edit .te-now { padding: 2px 6px; font-size: 12px; }

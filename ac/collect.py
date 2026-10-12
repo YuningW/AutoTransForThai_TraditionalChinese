@@ -100,6 +100,24 @@ def _moving(t):
     return {}
 
 
+def _when(t):
+    """When in the clip it shows: from..to seconds after the clip starts, when you chose them (else secs: the first
+    seconds, 0 for all of it)."""
+    try:
+        a, b = float(t.get("from")), float(t.get("to"))
+    except (TypeError, ValueError):
+        return {}
+    a, b = max(0.0, min(600.0, a)), max(0.0, min(600.0, b))
+    return {"from": round(a, 2), "to": round(b, 2)} if b - a >= 0.2 else {}
+
+
+def _span(t, a, b):
+    """(start, end) on the clip's own video for its text or logo."""
+    if t.get("to") is not None:
+        return a + t["from"], min(b, a + t["to"])
+    return a, min(b, a + t["secs"]) if t.get("secs") else b
+
+
 def _xy(t):
     return (t["x"], t["y"]) if t.get("place") == "custom" else PLACES[t["place"]]
 
@@ -113,7 +131,7 @@ def _clean_text(t):
             "bold": t.get("bold") is not False, "bubble": bool(t.get("bubble")),
             "opacity": round(min(1.0, max(0.1, float(t.get("opacity") or 1))), 2),
             "size": round(min(3.0, max(0.5, float(t.get("size") or 1.3))), 2),
-            "font": str(t.get("font") or "")[:60], "secs": max(0.0, min(600.0, float(t.get("secs") or 0))), **_moving(t)}
+            "font": str(t.get("font") or "")[:60], "secs": max(0.0, min(600.0, float(t.get("secs") or 0))), **_when(t), **_moving(t)}
 
 
 STANDOUT = ("none", "outline", "shadow", "badge", "circle")
@@ -131,7 +149,7 @@ def _clean_logo(l):
             "secs": max(0.0, min(600.0, float(l.get("secs") or 0))),
             "standout": l.get("standout") if l.get("standout") in STANDOUT else "none",
             "opacity": round(min(1.0, max(0.1, float(l.get("opacity") or 1))), 2),
-            **({"edge_color": _hex(l["edge_color"])} if _hex(l.get("edge_color")) else {}), **_moving(l)}
+            **({"edge_color": _hex(l["edge_color"])} if _hex(l.get("edge_color")) else {}), **_when(l), **_moving(l)}
 
 
 def _logo_touch(l, a, b):
@@ -144,7 +162,7 @@ def _logo_touch(l, a, b):
             "standout": l["standout"], "edge_color": edge or ("#000000" if light else "#FFFFFF"),
             "plate_color": (edge + "D9") if edge else ("#1D2550D9" if light else "#FFFFFFD9"),
             "motion": l.get("motion"), "period": l.get("period"),
-            "start": a, "end": min(b, a + l["secs"]) if l["secs"] else b}
+            "start": _span(l, a, b)[0], "end": _span(l, a, b)[1]}
 
 
 def _text_touch(t, a, b):
@@ -154,7 +172,7 @@ def _text_touch(t, a, b):
             "color": t["color"], "font": t["font"], "bold": t.get("bold", True), "outline": 0.1,
             "outline_color": t.get("outline_color", "#000000"), "opacity": t.get("opacity", 1.0),
             "motion": t.get("motion"), "period": t.get("period"),
-            "start": a, "end": min(b, a + t["secs"]) if t["secs"] else b}
+            "start": _span(t, a, b)[0], "end": _span(t, a, b)[1]}
 
 
 def _clean_item(i, keep_id=True):

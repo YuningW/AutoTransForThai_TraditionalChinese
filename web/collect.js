@@ -147,7 +147,7 @@ function styleRow(o, box, kids) {
   };
   return [btn, more];
 }
-function textEditor(t, changed, remove, toAll) {
+function textEditor(t, changed, remove, toAll, clip) {
   const box = mkEl("div", { className: "text-edit" });
   const words = mkEl("input", { className: "field te-text", placeholder: "e.g. EP3 · 中字 by @you", value: t.text || "" });
   const place = placePicker(t, "top-left");
@@ -156,9 +156,7 @@ function textEditor(t, changed, remove, toAll) {
   const font = mkEl("select", { className: "field" }); font.append(new Option("Font: like the captions", ""));
   (settings?.fonts?.zh || []).forEach(f => { const o = new Option(f.label, f.family); o.style.fontFamily = `"${f.family}"`; font.append(o); });
   font.value = t.font || "";
-  const secs = mkEl("select", { className: "field" });
-  [[0, "the whole clip"], [2, "first 2 s"], [3, "first 3 s"], [5, "first 5 s"], [8, "first 8 s"]].forEach(([v, l]) => secs.append(new Option(l, v)));
-  secs.value = String(t.secs || 0);
+  const when = whenPicker(t, () => put(), clip);
   const x = mkEl("button", { type: "button", textContent: "Remove", onclick: remove });
   const look = mkEl("select", { className: "field", title: "Look" });
   [["plain", "Outlined"], ["bubble", "White bubble"]].forEach(([v, n]) => look.append(new Option(n, v)));
@@ -166,15 +164,15 @@ function textEditor(t, changed, remove, toAll) {
   const edge = mkEl("input", { type: "color", value: t.outline_color || "#000000", title: "Outline colour" });
   const bold = mkEl("input", { type: "checkbox", checked: t.bold !== false });
   const put = () => {
-    Object.assign(t, { text: words.value, place: place.value, color: colour.value, size: +size.value, font: font.value, secs: +secs.value,
+    Object.assign(t, { text: words.value, place: place.value, color: colour.value, size: +size.value, font: font.value,
       outline_color: edge.value, bold: bold.checked, bubble: look.value === "bubble" });
     colour.disabled = edge.disabled = look.value === "bubble";
     changed();
   };
   colour.disabled = edge.disabled = look.value === "bubble";
-  words.oninput = put; [place, colour, size, font, secs, look, edge, bold].forEach(e => e.addEventListener("input", put));
+  words.oninput = put; [place, colour, size, font, look, edge, bold].forEach(e => e.addEventListener("input", put));
   const [sb, more] = styleRow(t, box, [look, mkEl("label", {}, "Outline ", edge), mkEl("label", {}, bold, " Bold"), ...moveControls(t, put)]);
-  box.append(words, place, colour, size, font, "for", secs, sb, ...allButton(toAll, "Same look on all clips",
+  box.append(words, place, colour, size, font, when.el, sb, ...allButton(toAll, "Same look on all clips",
     "Give every other clip's text this font, colour, size, style, place and timing (their words stay)"), x, more);
   box.ov = t; box.sync = () => { place.value = t.place; };
   return box;
@@ -183,7 +181,7 @@ function textEditor(t, changed, remove, toAll) {
 // your logo: which one (your saved logos), where, how big, how it stands out, how long; colour, movement under "Style"
 let collLogos = null;
 async function savedLogos() { if (!collLogos) collLogos = await api("GET", "/api/logos").catch(() => []); return collLogos; }
-function logoEditor(l, changed, remove, toAll) {
+function logoEditor(l, changed, remove, toAll, clip) {
   const box = mkEl("div", { className: "text-edit" });
   const pick = mkEl("select", { className: "field te-logo" }); pick.append(new Option("Choose a logo…", ""));
   savedLogos().then(ls => { ls.forEach(x => pick.append(new Option(x.name, x.id))); pick.value = l.image || ""; });
@@ -192,9 +190,7 @@ function logoEditor(l, changed, remove, toAll) {
   const so = mkEl("select", { className: "field", title: "So it shows on any picture" });
   [["none", "as it is"], ["outline", "outline"], ["shadow", "soft shadow"], ["badge", "on a badge"], ["circle", "in a circle"]].forEach(([v, n]) => so.append(new Option(n, v)));
   so.value = l.standout || "none";
-  const secs = mkEl("select", { className: "field" });
-  [[0, "the whole clip"], [2, "first 2 s"], [3, "first 3 s"], [5, "first 5 s"], [8, "first 8 s"]].forEach(([v, n]) => secs.append(new Option(n, v)));
-  secs.value = String(l.secs || 0);
+  const when = whenPicker(l, () => put(), clip);
   const x = mkEl("button", { type: "button", textContent: "Remove", onclick: remove });
   // the outline / shadow / badge colour: one that suits the logo, or your own
   const tint = mkEl("select", { className: "field", title: "Outline, shadow or badge colour" });
@@ -202,26 +198,59 @@ function logoEditor(l, changed, remove, toAll) {
   tint.value = l.edge_color ? "mine" : "auto";
   const edge = mkEl("input", { type: "color", value: l.edge_color || "#FFFFFF", hidden: !l.edge_color });
   const put = () => {
-    Object.assign(l, { image: pick.value, place: place.value, w: +size.value, standout: so.value, secs: +secs.value });
+    Object.assign(l, { image: pick.value, place: place.value, w: +size.value, standout: so.value });
     edge.hidden = tint.value !== "mine";
     if (tint.value === "mine") l.edge_color = edge.value; else delete l.edge_color;
     changed();
   };
-  [pick, place, size, so, secs, tint, edge].forEach(e => e.addEventListener("input", put));
+  [pick, place, size, so, tint, edge].forEach(e => e.addEventListener("input", put));
   const [sb, more] = styleRow(l, box, [tint, edge, ...moveControls(l, put)]);
-  box.append(pick, place, size, so, "for", secs, sb, ...allButton(toAll, "Same on all clips",
+  box.append(pick, place, size, so, when.el, sb, ...allButton(toAll, "Same on all clips",
     "Give every other clip's logo this logo, size, place, colour, movement and timing"), x, more);
   box.ov = l; box.sync = () => { place.value = l.place; };
   return box;
 }
 
+// when in the clip a text or logo shows: all of it, its first seconds, or from..to (seconds after the clip starts;
+// typed, or Now while the clip plays). clip: that clip, or null for the text/logo on every clip (the one playing).
+function whenPicker(o, put, clip) {
+  const pick = mkEl("select", { className: "field", title: "When it shows" });
+  [["0", "the whole clip"], ["2", "first 2 s"], ["3", "first 3 s"], ["5", "first 5 s"], ["8", "first 8 s"], ["range", "from … to …"]].forEach(([v, n]) => pick.append(new Option(n, v)));
+  pick.value = o.to != null ? "range" : String(o.secs || 0);
+  if (![...pick.options].some(x => x.value === pick.value)) pick.add(new Option(`first ${o.secs} s`, String(o.secs)), 5), pick.value = String(o.secs);
+  const fmt = v => v == null ? "" : (v >= 60 ? fmtTime(v) : `${(+v).toFixed(1)}`);
+  const from = mkEl("input", { className: "field te-when-t", value: fmt(o.from), placeholder: "0.0", title: "Seconds after the clip starts" });
+  const to = mkEl("input", { className: "field te-when-t", value: fmt(o.to), placeholder: "3.0", title: "Seconds after the clip starts" });
+  const now = box => mkEl("button", { type: "button", className: "te-now", textContent: "Now", title: "Where the clip is playing now",
+    onclick: () => {
+      const it = clip || cvQueue[cvAt] || cItems().find(i => i.id === cvPlaying);
+      const on = it && cvPlaying === it.id && cvideo.src.endsWith(`/api/jobs/${it.jid}/video`);
+      if (!on) { toast(clip ? "Play this clip (▶), pause where it should start or end, then press Now." : "Play a clip, pause where it should start or end, then press Now."); return; }
+      box.value = fmt(Math.max(0, Math.min(it.end - it.start, cvideo.currentTime - it.start))); read();
+    } });
+  const range = mkEl("span", { className: "te-when", hidden: pick.value !== "range" }, "from ", from, now(from), " to ", to, now(to), " s");
+  const read = () => {
+    range.hidden = pick.value !== "range";
+    if (pick.value === "range") {
+      if (!from.value && !to.value) { from.value = "0.0"; to.value = fmt(o.secs || 3); }
+      const a = parseTime(from.value), b = parseTime(to.value);
+      if (a != null && b != null && b - a >= 0.2) { Object.assign(o, { from: +a.toFixed(2), to: +b.toFixed(2), secs: 0 }); put(); }
+    } else { delete o.from; delete o.to; o.secs = +pick.value; put(); }
+  };
+  pick.addEventListener("input", read);
+  [from, to].forEach(x => x.addEventListener("change", read));
+  return { el: mkEl("span", { className: "te-whenwrap" }, "for ", pick, range) };
+}
+function shownAt(x, rel) {          // is this text or logo on, rel seconds into its clip?
+  return x.to != null ? rel >= x.from - 0.05 && rel < x.to : !x.secs || rel < x.secs;
+}
 function allButton(f, label, title) {
   return f ? [mkEl("button", { type: "button", className: "te-all", textContent: label, title, onclick: f })] : [];
 }
 
 // one clip's text or logo look, given to the others (their own words stay); new ones start with the last look
-const TEXT_LOOK = ["place", "x", "y", "color", "outline_color", "bold", "bubble", "opacity", "size", "font", "secs", "motion", "period"];
-const LOGO_LOOK = ["image", "place", "x", "y", "w", "standout", "edge_color", "opacity", "secs", "motion", "period"];
+const TEXT_LOOK = ["place", "x", "y", "color", "outline_color", "bold", "bubble", "opacity", "size", "font", "secs", "from", "to", "motion", "period"];
+const LOGO_LOOK = ["image", "place", "x", "y", "w", "standout", "edge_color", "opacity", "secs", "from", "to", "motion", "period"];
 const lastLook = { text: null, logo: null };
 function lookOf(o, keys) { return Object.fromEntries(keys.filter(k => o[k] !== undefined).map(k => [k, o[k]])); }
 function putLook(o, look, keys) { keys.forEach(k => { if (look[k] === undefined) delete o[k]; else o[k] = look[k]; }); }
@@ -297,7 +326,7 @@ function renderColl() {
     const li = document.createElement("li"); li.dataset.id = it.id;
     li.classList.toggle("starred", !!it.star); li.classList.toggle("playing", it.id === cvPlaying);
     const btn = (label, title, f, cls = "") => { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.title = title; b.onclick = f; if (cls) b.className = cls; return b; };
-    const n = document.createElement("span"); n.className = "clip-n"; n.textContent = i + 1;
+    const n = document.createElement("span"); n.className = "clip-n"; n.append(gripFor("clip"), String(i + 1));
     const star = btn(it.star ? "★" : "☆", it.star ? "A favourite (click to unstar)" : "Mark as a favourite", () => { it.star = !it.star || undefined; collChanged(); }, "clip-star");
     star.setAttribute("aria-pressed", String(!!it.star)); n.append(star);
     const name = document.createElement("input"); name.className = "field clip-label"; name.value = it.label || "";
@@ -333,7 +362,7 @@ function renderColl() {
       const open = li.querySelector(".text-edit:not(.logo-edit)");
       if (open) { open.remove(); return; }
       li.append(textEditor(it.text, () => { lastLook.text = lookOf(it.text, TEXT_LOOK); collChanged(false); drawCollTexts(true); },
-        () => { delete it.text; collChanged(); drawCollTexts(true); }, () => sameOnAll("text", it)));
+        () => { delete it.text; collChanged(); drawCollTexts(true); }, () => sameOnAll("text", it), it));
       li.querySelector(".te-text").focus();
     }, "clip-textbtn");
     tb.setAttribute("aria-pressed", String(!!it.text?.text));
@@ -342,13 +371,13 @@ function renderColl() {
       const open = li.querySelector(".logo-edit");
       if (open) { open.remove(); return; }
       const ed = logoEditor(it.logo, () => { lastLook.logo = lookOf(it.logo, LOGO_LOOK); collChanged(false); drawCollTexts(true); },
-        () => { delete it.logo; collChanged(); drawCollTexts(true); }, () => sameOnAll("logo", it));
+        () => { delete it.logo; collChanged(); drawCollTexts(true); }, () => sameOnAll("logo", it), it);
       ed.classList.add("logo-edit"); li.append(ed);
     }, "clip-textbtn");
     lb.setAttribute("aria-pressed", String(!!it.logo?.image));
     const pv = document.createElement("div"); pv.className = "clip-pv";
     if (!coll.videos?.[it.jid]?.gone) {
-      const img = document.createElement("img"); img.alt = ""; img.loading = "lazy";
+      const img = document.createElement("img"); img.alt = ""; img.loading = "lazy"; img.draggable = false;
       img.src = `/api/jobs/${it.jid}/frame?t=${Math.min(it.start + 0.5, (it.start + it.end) / 2).toFixed(1)}`;
       pv.append(img);
     }
@@ -364,6 +393,7 @@ function renderColl() {
   }));
   requestAnimationFrame(drawClipPreviews);
 }
+dragToReorder($("#cList"), () => cItems(), () => collChanged());
 $("#cStarOnly").addEventListener("change", () => {
   try { localStorage.setItem("ac-cstar", $("#cStarOnly").checked ? "1" : ""); } catch { /* fine */ }
   renderCollTotals();
@@ -472,7 +502,7 @@ function drawCollTexts(force) {
   const it = cvQueue[cvAt] || cItems().find(i => i.id === cvPlaying);
   const t = cvideo.currentTime, show = [];
   if (it && cvideo.src.endsWith(`/api/jobs/${it.jid}/video`) && t >= it.start - 0.05 && t <= it.end + 0.05) {
-    for (const x of [it.text, coll?.text, it.logo, coll?.logo]) if ((x?.text || x?.image) && (!x.secs || t - it.start < x.secs)) show.push(x);
+    for (const x of [it.text, coll?.text, it.logo, coll?.logo]) if ((x?.text || x?.image) && shownAt(x, t - it.start)) show.push(x);
     cvClipStart = it.start;
   }
   const key = JSON.stringify(show) + cvideo.clientWidth;
