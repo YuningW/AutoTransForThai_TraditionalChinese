@@ -1031,6 +1031,12 @@ def _fix(jid, targets, learn=True):
         if t.get("by") == "user":
             l["flag"], l["note"] = None, ""
             l["feedback"] = t.get("note", "")
+    gone = [l for l in ls if l.get("status") == "fixed" and l.get("kind") != "sound"
+            and not (l.get("th") or "").strip() and not (l.get("zh") or "").strip()]
+    if gone:                                   # Claude found nothing is said there (noise, a made-up line, a repeat)
+        ls = [l for l in ls if l not in gone]
+        log(jid, f"Removed {len(gone)} line{'s' if len(gone) > 1 else ''} where nothing is said: "
+                 + "; ".join(f"{_mmss(l['start'])} “{l.get('th_before', '')[:30]}”" for l in gone) + ".")
     save_lines(jid, ls)
     added = memory.learn(result["lessons"], source=load(jid).get("title", "")) if learn else []
     if added:
