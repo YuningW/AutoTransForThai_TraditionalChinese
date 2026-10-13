@@ -168,6 +168,11 @@ body.resizing { cursor: col-resize; user-select: none; }
 .overlay { position: absolute; text-align: center; pointer-events: none; line-height: 1.25; }
 .ov-box { display: inline-block; max-width: 100%; pointer-events: auto; }
 .overlay.draggable .ov-box { cursor: ns-resize; outline: 1px dashed rgba(255,255,255,.6); outline-offset: 4px; }
+#cOverlay .ov-box { pointer-events: none; }           /* a collection's preview: captions can't be dragged there */
+/* the mouse over the video's own controls (its time slider): what's drawn on the picture fades and lets it through */
+.player :is(.overlay, .ctexts, .touch-layer, #ovOwn) { transition: opacity .15s; }
+.player.near-controls :is(.overlay, .ctexts, .touch-layer, #ovOwn) { opacity: .12; }
+.player.near-controls :is(.overlay, .ctexts, .touch-layer, #ovOwn), .player.near-controls :is(.overlay, .ctexts, .touch-layer, #ovOwn) * { pointer-events: none !important; }
 .ov-row { overflow-wrap: anywhere; }
 .ov-row:empty { display: none; }
 .touch-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }

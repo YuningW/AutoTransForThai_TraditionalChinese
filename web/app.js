@@ -2654,6 +2654,23 @@ function renderClips(timesOnly) {
   }));
   showSizes();
 }
+// A video's own controls sit along its bottom edge. With the mouse there, captions, texts, logos and emoji fade
+// and let the mouse through, so the time slider can be seen and dragged; away from it they come back.
+function clearOfControls(player) {
+  const v = player.querySelector("video");
+  let held = false;
+  const set = on => player.classList.toggle("near-controls", on);
+  player.addEventListener("pointerdown", () => { held = true; });
+  addEventListener("pointerup", () => { held = false; });
+  player.addEventListener("pointermove", e => {
+    if (held && !player.classList.contains("near-controls")) return;      // dragging a caption or an emoji: leave it be
+    const r = v.getBoundingClientRect();
+    set(e.clientY > r.bottom - 52 && e.clientY <= r.bottom && e.clientX >= r.left && e.clientX <= r.right);
+  });
+  player.addEventListener("pointerleave", () => { if (!held) set(false); });
+}
+document.querySelectorAll(".player").forEach(clearOfControls);
+
 // Drag a clip by its ⠿ (or its picture) to move it up or down the list; a line shows where it will land.
 // items(): the array the list shows, in order; moved(): save and redraw. Used here and on a collection's page.
 function dragToReorder(list, items, moved) {
