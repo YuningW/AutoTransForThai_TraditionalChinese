@@ -187,6 +187,11 @@ def frame(jid: str, t: float = 0.0):
     return FileResponse(jobs.frame(jid, t), media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
 
 
+@app.get("/api/jobs/{jid}/even-sound")
+def even_sound(jid: str, start: float, end: float, strength: str = "medium", loud: str = "normal"):
+    return FileResponse(jobs.even_sound(jid, start, end, strength, loud), media_type="audio/mp4")
+
+
 @app.get("/api/jobs/{jid}/video")
 def video(jid: str):
     return FileResponse(jobs.job_dir(jid) / "preview.mp4", media_type="video/mp4")

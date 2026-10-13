@@ -88,7 +88,7 @@ async function openCollection(cid) {
   try { $("#cStarOnly").checked = localStorage.getItem("ac-cstar") === "1"; } catch { /* fine */ }
   renderColl(); renderCollStatus(); renderCapSize();
 }
-function closeCollection() { $("#collView").hidden = true; cvideo.pause(); clearTimeout(collPoll); coll = null; }
+function closeCollection() { $("#collView").hidden = true; cvideo.pause(); ear.stop(); $("#cHear").setAttribute("aria-pressed", "false"); clearTimeout(collPoll); coll = null; }
 $("#collPick").addEventListener("change", async e => {
   if (e.target.value === "new") { const c = await newCollection(); if (!c) e.target.value = coll?.id || ""; }
   else location.hash = `#/collections/${e.target.value}`;
@@ -422,10 +422,26 @@ function cvShow(it, t) {                          // show one moment of a clip (
   else cvideo.currentTime = t;
 }
 function cvPlay(list) { cvQueue = list; cvAt = 0; cvStart(); }
+// Hear it evened, on a collection: the playing clip's sound as it will be saved; the next clip's when it moves on
+function cvEar() {
+  if (!$("#cHear").getAttribute("aria-pressed").startsWith("t")) return;
+  const it = cvQueue[cvAt] || cItems().find(i => i.id === cvPlaying);
+  if (!it) return;
+  ear.start(cvideo, it.jid, it.start, it.end, levelOpts("c"), null);
+}
+$("#cHear").onclick = () => {
+  const b = $("#cHear"), on = b.getAttribute("aria-pressed") !== "true";
+  b.setAttribute("aria-pressed", String(on));
+  if (!on) { ear.stop(); return; }
+  if (!(cvQueue[cvAt] || cItems().find(i => i.id === cvPlaying))) { cvPlay(cUsed()); }
+  cvEar();
+};
+["cLevelStrength", "cLevelLoud"].forEach(id => $("#" + id).addEventListener("change", cvEar));
+$("#clevel").addEventListener("change", () => { levelOptsShown("c", $("#clevel").checked); if (!$("#clevel").checked) { ear.stop(); $("#cHear").setAttribute("aria-pressed", "false"); } });
 function cvStart() {
   const it = cvQueue[cvAt];
   if (!it) { cvideo.pause(); cvMark(null); $("#cvNow").textContent = "Done."; return; }
-  cvMark(it.id);
+  cvMark(it.id); cvEar();
   const v = coll.videos?.[it.jid] || {};
   $("#cvNow").textContent = `Clip ${cItems().indexOf(it) + 1}${it.label ? `: ${it.label}` : ""} · from ${v.title || "a video"}${cvQueue.length > 1 ? ` · ${cvAt + 1} of ${cvQueue.length}` : ""}`;
   const go = () => { cvideo.currentTime = it.start; cvideo.play(); };
@@ -653,7 +669,7 @@ $("#cSave").onclick = async () => {
   try { await api("PATCH", `/api/collections/${coll.id}`, { items: cItems() }); } catch { /* the save below says what's wrong */ }
   const vertical = $("input[name=cshape]:checked").value === "vertical";
   const shape = { vertical, fit: $("#cfit").value, size: $("input[name=csize]:checked").value, apart: $("input[name=capart]:checked").value === "1",
-                  fade: $("#cfade").checked, no_music: $("#cnomusic").checked, level: $("#clevel").checked, starred: $("#cStarOnly").checked };
+                  fade: $("#cfade").checked, no_music: $("#cnomusic").checked, level: $("#clevel").checked, level_strength: $("#cLevelStrength").value, level_loud: $("#cLevelLoud").value, starred: $("#cStarOnly").checked };
   try {
     coll = await api("POST", `/api/collections/${coll.id}/export`, {
       burn: $("input[name=cburn]:checked").value, srt: $$("input[name=csrt]:checked").map(b => b.value), shape, name: $("#cfileName").value.trim() || null });

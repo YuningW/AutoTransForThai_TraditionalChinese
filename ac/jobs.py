@@ -1480,7 +1480,7 @@ def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
             dst = out if len(spans) == 1 else work / f"{i:04d}.mp4"
         media.burn(d / job["source"], lst, dst, b - a, lambda p: update(jid, progress=round(done + share * (0.3 + 0.7 * p), 3)),
                    moves, plan, start=a, size=(shape or {}).get("size", "full"), canvas=(W, H),
-                   fade=(fade and i > 0, fade and i < len(spans) - 1), audio=voices, level=bool((shape or {}).get("level")))
+                   fade=(fade and i > 0, fade and i < len(spans) - 1), audio=voices, level=level_of(shape))
         pieces.append(dst)
         done += share
     if len(pieces) > 1 and not apart:
@@ -1908,6 +1908,28 @@ def clear_flags(jid):
                 l["flag"], l["note"] = None, ""
         save_lines(jid, ls, why="clear the flags")
     return n
+
+
+def level_of(shape):
+    """The save's "even out the volume" choice: False, or {"strength", "loud"} for media.even_chain."""
+    shape = shape or {}
+    return {"strength": shape.get("level_strength") or "medium", "loud": shape.get("level_loud") or "normal"} if shape.get("level") else False
+
+
+def even_sound(jid, start, end, strength="medium", loud="normal"):
+    """The sound of start..end evened out as it would be saved (kept, so it's made once): to hear before saving."""
+    d = job_dir(jid)
+    m = load(jid).get("media") or {}
+    start, end = max(0.0, float(start)), min(float(end), m.get("duration") or float(end))
+    if end - start < 0.3 or end - start > 600:
+        raise JobError("Choose 0.3 s to 10 minutes to hear.")
+    strength = strength if strength in media.STRENGTHS else "medium"
+    loud = loud if loud in media.LOUDNESSES else "normal"
+    out = d / "even" / f"{start:.2f}-{end:.2f}-{strength}-{loud}.m4a"
+    if not out.exists():
+        out.parent.mkdir(exist_ok=True)
+        media.even_sound(d / load(jid)["source"], out, start, end - start, {"strength": strength, "loud": loud})
+    return out
 
 
 def frame(jid, t):

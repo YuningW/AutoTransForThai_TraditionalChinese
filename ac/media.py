@@ -83,6 +83,32 @@ LOUDNESS = -16       # how loud a saved video is when the volume is evened out (
 TALK = -18           # the level talk is brought to first, so TAME knows what "too loud" is
 TAME = "acompressor=threshold=0.125:ratio=6:attack=5:release=300:knee=4"   # what sticks out above the talk brought down
 LIMIT = "alimiter=limit=0.84:attack=3:release=60:level=false"     # and nothing ever over -1.5 dB
+# your choices: how hard loud bits are brought down, and how loud it all is
+STRENGTHS = {"light": "acompressor=threshold=0.18:ratio=3:attack=8:release=300:knee=4",
+             "medium": TAME,
+             "strong": "acompressor=threshold=0.09:ratio=10:attack=3:release=300:knee=4"}
+LOUDNESSES = {"quieter": -19, "normal": LOUDNESS, "louder": -14}
+
+
+def even_chain(src, start, duration, level):
+    """The filters that even out the volume of start..start+duration of src: its talk brought to one level, what
+    sticks out tamed (level["strength"]), the whole set to level["loud"], peaks limited. "" if there's no sound."""
+    lv = level if isinstance(level, dict) else {}
+    tame = STRENGTHS.get(lv.get("strength"), TAME)
+    target = LOUDNESSES.get(lv.get("loud"), LOUDNESS)
+    heard = loudness(src, start, duration)
+    if heard is None or heard <= -60:
+        return ""
+    pre = f"volume={max(-20.0, min(30.0, TALK - heard)):.2f}dB,{tame}"
+    tamed = loudness(src, start, duration, pre)
+    return f"{pre},volume={max(-12.0, min(12.0, target - (tamed if tamed is not None else target))):.2f}dB,{LIMIT}"
+
+
+def even_sound(src, dst, start, duration, level):
+    """Just the sound of start..start+duration, evened out (to hear before saving)."""
+    chain = even_chain(src, start, duration, level) or "anull"
+    _run(["-ss", f"{start:.3f}", "-i", str(src), "-t", f"{duration:.3f}", "-vn", "-af", chain, "-ac", "2",
+          "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst)], "Evening out the sound")
 
 
 def loudness(src, start, duration, chain=""):
@@ -144,13 +170,8 @@ def burn(src, frames_list, dst, duration, on_progress, sprites=(), vertical=None
         inputs += ["-i", str(audio)]
         a_in = f"{len(sprites) + 2}:a"            # after the video, the caption frames and the moving items
     even = ""
-    if level:                                   # this part's talk brought to one level, what sticks out tamed, then
-        f, at = audio or src, 0.0 if audio else start          # the whole set exactly to LOUDNESS, peaks limited
-        heard = loudness(f, at, duration)
-        if heard is not None and heard > -60:
-            pre = f"volume={max(-20.0, min(30.0, TALK - heard)):.2f}dB,{TAME}"
-            tamed = loudness(f, at, duration, pre)
-            even = f"{pre},volume={max(-12.0, min(12.0, LOUDNESS - (tamed if tamed is not None else LOUDNESS))):.2f}dB,{LIMIT}"
+    if level:                                   # True, or {"strength", "loud"}: see even_chain
+        even = even_chain(audio or src, 0.0 if audio else start, duration, level)
     if af or audio or even:
         graph.append(f"[{a_in}]{','.join(x for x in (even, af) if x) or 'anull'}[a]")
     if small:

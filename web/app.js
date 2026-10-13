@@ -1062,9 +1062,10 @@ let cropPos = 0.5;
 function shapeNow() {
   const vertical = $("input[name=shape]:checked").value === "vertical";
   const size = $("input[name=vsize]:checked").value, fade = $("#fadeJoins").checked, no_music = $("#noMusic").checked, level = $("#evenVolume").checked;
+  const level_strength = $("#vLevelStrength").value, level_loud = $("#vLevelLoud").value;
   const apart = (peopleOn() || clipsOn()) && $("input[name=apart]:checked").value === "1";
-  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size, fade, apart, no_music, level }
-    : { size, fade, apart, no_music, level };
+  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size, fade, apart, no_music, level, level_strength, level_loud }
+    : { size, fade, apart, no_music, level, level_strength, level_loud };
 }
 function showShape() {
   const s = shapeNow();
@@ -1089,6 +1090,8 @@ function loadShape() {           // what you chose last time for this video
   $("#fadeJoins").checked = s.fade !== false;
   $("#noMusic").checked = !!s.no_music;
   $("#evenVolume").checked = s.level !== false;
+  $("#vLevelStrength").value = s.level_strength || "medium"; $("#vLevelLoud").value = s.level_loud || "normal";
+  levelOptsShown("v", $("#evenVolume").checked);
   $("#saveName").value = job.save_name || "";
   $(`input[name=apart][value="${s.apart ? "1" : ""}"]`).checked = true;
   $(`input[name=vsize][value="${["720", "480"].includes(s.size) ? s.size : "full"}"]`).checked = true;
@@ -2655,6 +2658,62 @@ function renderClips(timesOnly) {
   }));
   showSizes();
 }
+// Hear it evened: the sound of a stretch as it will be saved (made by the app, the same way), played in step with
+// the video, which goes quiet meanwhile. ear.start(video, jid, start, end, opts, onEnd); ear.stop().
+const ear = {
+  audio: new Audio(), on: false, video: null, base: 0, end: 0, key: "", onEnd: null, wasMuted: false,
+  start(video, jid, start, end, opts, onEnd) {
+    const key = `${jid}|${start.toFixed(2)}|${end.toFixed(2)}|${opts.strength}|${opts.loud}`;
+    if (this.on && this.video !== video) this.stop();
+    if (!this.on) { this.wasMuted = video.muted; this.video = video; this.on = true; }
+    Object.assign(this, { base: start, end, onEnd });
+    video.muted = true;
+    if (key !== this.key) {
+      this.key = key; this.audio.pause();
+      this.audio.src = `/api/jobs/${jid}/even-sound?start=${start.toFixed(2)}&end=${end.toFixed(2)}&strength=${opts.strength}&loud=${opts.loud}`;
+      toast("Getting the evened sound ready…");
+      this.audio.addEventListener("canplay", () => { if (this.key === key) { $("#toast").hidden = true; this.sync(); } }, { once: true });
+      this.audio.onerror = () => { if (this.key === key) { toast("Couldn't make the evened sound."); this.stop(); } };
+    }
+    // a browser only lets sound start from a click: start it now (it waits for the sound to arrive), then follow the video
+    this.audio.play().then(() => this.sync()).catch(() => {});
+    this.sync();
+  },
+  sync() {
+    if (!this.on) return;
+    const v = this.video, want = v.currentTime - this.base;
+    if (v.currentTime > this.end + 0.05 || want < -0.05) { this.audio.pause(); if (v.currentTime > this.end + 0.05 && this.onEnd) this.onEnd(); return; }
+    this.audio.playbackRate = v.playbackRate;
+    if (this.audio.readyState >= 2 && Math.abs(this.audio.currentTime - want) > 0.15) this.audio.currentTime = Math.max(0, want);
+    if (v.paused) this.audio.pause(); else if (this.audio.readyState >= 2) this.audio.play().catch(() => {});
+  },
+  stop() {
+    if (!this.on) return;
+    this.on = false; this.audio.pause(); this.key = "";
+    if (this.video) this.video.muted = this.wasMuted;
+  },
+};
+["play", "pause", "seeked", "timeupdate", "ratechange"].forEach(ev => {
+  video.addEventListener(ev, () => { if (ear.video === video) ear.sync(); });
+  $("#cvideo").addEventListener(ev, () => { if (ear.video === $("#cvideo")) ear.sync(); });
+});
+function levelOpts(p) { return { strength: $(`#${p}LevelStrength`).value, loud: $(`#${p}LevelLoud`).value }; }
+function levelOptsShown(p, on) { $(`#${p}LevelOpts`).classList.toggle("off", !on); }
+
+// the video's Save tab: 20 s from the playhead, evened
+$("#vHear").onclick = () => {
+  const b = $("#vHear");
+  if (ear.on && ear.video === video) { ear.stop(); b.setAttribute("aria-pressed", "false"); video.pause(); return; }
+  const a = video.currentTime, end = Math.min(a + 20, video.duration || a + 20);
+  b.setAttribute("aria-pressed", "true");
+  ear.start(video, job.id, a, end, levelOpts("v"), () => { ear.stop(); b.setAttribute("aria-pressed", "false"); video.pause(); });
+  video.play().catch(() => {});
+};
+["vLevelStrength", "vLevelLoud"].forEach(id => $("#" + id).addEventListener("change", () => {
+  if (ear.on && ear.video === video) ear.start(video, job.id, ear.base, ear.end, levelOpts("v"), ear.onEnd);
+}));
+$("#evenVolume").addEventListener("change", () => { levelOptsShown("v", $("#evenVolume").checked); if (!$("#evenVolume").checked && ear.video === video) { ear.stop(); $("#vHear").setAttribute("aria-pressed", "false"); } });
+
 // A video's own controls sit along its bottom edge. With the mouse there, captions, texts, logos and emoji fade
 // and let the mouse through, so the time slider can be seen and dragged; away from it they come back.
 function clearOfControls(player) {

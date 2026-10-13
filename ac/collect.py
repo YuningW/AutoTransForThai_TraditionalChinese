@@ -354,7 +354,7 @@ def _piece(i, which, dst, work, shape, fade, every, on_progress):
             voices = None                      # the clip keeps its sound rather than failing the save
     apart = bool(shape.get("apart"))
     media.burn(d / job["source"], lst, dst, b - a, lambda p: on_progress(0.3 + 0.7 * p), moves, plan, start=a,
-               size=shape.get("size", "full") if apart else "full", canvas=(W, H), fade=fade, audio=voices, level=bool(shape.get("level")))
+               size=shape.get("size", "full") if apart else "full", canvas=(W, H), fade=fade, audio=voices, level=jobs.level_of(shape))
 
 
 def _join(pieces, out, shape):
