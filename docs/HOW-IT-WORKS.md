@@ -41,6 +41,10 @@ Captions are always timed to the audio. Subtitles from elsewhere only help with 
 | `ac/server.py` | The local web server (only answers this Mac) |
 | `web/` | The page (plain HTML, CSS and JavaScript) |
 
+## Even volume
+
+With **Even out the volume** (on by default when saving), each part or clip is measured (EBU R128) and its talk brought to one level; a compressor brings down anything that sticks out above it, the whole is set to -16 LUFS (what YouTube and Instagram aim for), and a limiter keeps every peak under -1.5 dB. In a test with talk and a sudden blast 15 dB louder, the blast ended up 4.8 dB above the talk with no dip in the talk after it; four clips from two videos, between -15.4 and -19.0 LUFS before, all came out at -16.0.
+
 ## Fonts in the preview
 
 Safari only lets web pages use the fonts every Mac ships with. So the app serves the free fonts, and the Mac's extra Chinese fonts (圓體, 娃娃體, 楷體…), to the page itself. That way the preview shows the same font as the saved video.

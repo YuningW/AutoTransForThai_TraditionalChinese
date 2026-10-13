@@ -1480,7 +1480,7 @@ def _burn_job(jid, which, folder, base, files, shape=None, spans=None):
             dst = out if len(spans) == 1 else work / f"{i:04d}.mp4"
         media.burn(d / job["source"], lst, dst, b - a, lambda p: update(jid, progress=round(done + share * (0.3 + 0.7 * p), 3)),
                    moves, plan, start=a, size=(shape or {}).get("size", "full"), canvas=(W, H),
-                   fade=(fade and i > 0, fade and i < len(spans) - 1), audio=voices)
+                   fade=(fade and i > 0, fade and i < len(spans) - 1), audio=voices, level=bool((shape or {}).get("level")))
         pieces.append(dst)
         done += share
     if len(pieces) > 1 and not apart:

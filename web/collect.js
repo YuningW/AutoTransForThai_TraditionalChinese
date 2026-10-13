@@ -653,7 +653,7 @@ $("#cSave").onclick = async () => {
   try { await api("PATCH", `/api/collections/${coll.id}`, { items: cItems() }); } catch { /* the save below says what's wrong */ }
   const vertical = $("input[name=cshape]:checked").value === "vertical";
   const shape = { vertical, fit: $("#cfit").value, size: $("input[name=csize]:checked").value, apart: $("input[name=capart]:checked").value === "1",
-                  fade: $("#cfade").checked, no_music: $("#cnomusic").checked, starred: $("#cStarOnly").checked };
+                  fade: $("#cfade").checked, no_music: $("#cnomusic").checked, level: $("#clevel").checked, starred: $("#cStarOnly").checked };
   try {
     coll = await api("POST", `/api/collections/${coll.id}/export`, {
       burn: $("input[name=cburn]:checked").value, srt: $$("input[name=csrt]:checked").map(b => b.value), shape, name: $("#cfileName").value.trim() || null });

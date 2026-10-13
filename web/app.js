@@ -1061,10 +1061,10 @@ addEventListener("keydown", e => { if (e.key === "Escape" && pv.on) stopPreview(
 let cropPos = 0.5;
 function shapeNow() {
   const vertical = $("input[name=shape]:checked").value === "vertical";
-  const size = $("input[name=vsize]:checked").value, fade = $("#fadeJoins").checked, no_music = $("#noMusic").checked;
+  const size = $("input[name=vsize]:checked").value, fade = $("#fadeJoins").checked, no_music = $("#noMusic").checked, level = $("#evenVolume").checked;
   const apart = (peopleOn() || clipsOn()) && $("input[name=apart]:checked").value === "1";
-  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size, fade, apart, no_music }
-    : { size, fade, apart, no_music };
+  return vertical ? { vertical, fit: $("input[name=fit]:checked").value, pos: Math.round(cropPos * 1000) / 1000, size, fade, apart, no_music, level }
+    : { size, fade, apart, no_music, level };
 }
 function showShape() {
   const s = shapeNow();
@@ -1088,6 +1088,7 @@ function loadShape() {           // what you chose last time for this video
   cropPos = s.pos ?? 0.5;
   $("#fadeJoins").checked = s.fade !== false;
   $("#noMusic").checked = !!s.no_music;
+  $("#evenVolume").checked = s.level !== false;
   $("#saveName").value = job.save_name || "";
   $(`input[name=apart][value="${s.apart ? "1" : ""}"]`).checked = true;
   $(`input[name=vsize][value="${["720", "480"].includes(s.size) ? s.size : "full"}"]`).checked = true;
