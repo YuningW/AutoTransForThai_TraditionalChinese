@@ -188,7 +188,7 @@ def _clean_item(i, keep_id=True):
             **({"logo": _clean_logo(i["logo"])} if _clean_logo(i.get("logo")) else {})}
 
 
-def change(cid, name=None, items=None, text=False, logo=False):
+def change(cid, name=None, items=None, text=False, logo=False, cap_size=None):
     """Rename it, or put its clips (reordered, trimmed, starred…) as you left them on the page."""
     with _lock:
         c = load(cid)
@@ -202,6 +202,8 @@ def change(cid, name=None, items=None, text=False, logo=False):
             c["text"] = _clean_text(text)
         if logo is not False:                      # your logo on every clip
             c["logo"] = _clean_logo(logo)
+        if cap_size is not None:                   # every clip's captions bigger or smaller (1 = as in its video)
+            c["cap_size"] = round(min(2.0, max(0.4, float(cap_size))), 2)
         return _save(c)
 
 
@@ -302,7 +304,8 @@ def _export(cid, items, burn, srt, shape, name):
             _update(cid, label=f"Clip {n + 1} of {len(items)} ({title})", progress=round(done, 3))
             tag = re.sub(r'[\\/:*?"<>|\n\r\t]+', " ", i.get("label") or "").strip()[:40]
             dst = jobs._unused(folder / f"{base} {n + 1:02d}{' ' + tag if tag else ''}.mp4") if apart else work / f"{n:04d}.mp4"
-            _piece(i, burn, dst, work / f"{n:04d}", shape, (fade and n > 0, fade and n < len(items) - 1), (c.get("text"), c.get("logo")),
+            _piece(i, burn, dst, work / f"{n:04d}", {**shape, "cap_size": c.get("cap_size") or 1.0},
+                   (fade and n > 0, fade and n < len(items) - 1), (c.get("text"), c.get("logo")),
                    lambda p: _update(cid, progress=round(done + share * p * (1 if apart else 0.8), 3)))
             pieces.append(dst)
             done += share * (1 if apart else 0.8)
@@ -328,6 +331,9 @@ def _piece(i, which, dst, work, shape, fade, every, on_progress):
     touches += [_text_touch(t, a, b) for t in (i.get("text"), every_text) if t]
     touches += [_logo_touch(l, a, b) for l in (i.get("logo"), every_logo) if l]
     W, H, st, plan = m.get("width") or 1920, m.get("height") or 1080, job.get("style"), None
+    cap = float(shape.get("cap_size") or 1.0)
+    if cap != 1.0:                             # the collection's caption size: this video's captions scaled by it
+        st = {**(st or {}), "size": round(float(style.merged(st)["size"]) * cap, 3)}
     if shape.get("vertical"):
         plan = style.vertical_plan(W, H, shape.get("fit", "fill"), shape.get("pos", 0.5))
         touches = [style.on_vertical(t, plan) for t in touches]

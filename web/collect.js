@@ -86,7 +86,7 @@ async function openCollection(cid) {
   $("#collName").value = coll.name;
   $("#cfileName").value = "";
   try { $("#cStarOnly").checked = localStorage.getItem("ac-cstar") === "1"; } catch { /* fine */ }
-  renderColl(); renderCollStatus();
+  renderColl(); renderCollStatus(); renderCapSize();
 }
 function closeCollection() { $("#collView").hidden = true; cvideo.pause(); clearTimeout(collPoll); coll = null; }
 $("#collPick").addEventListener("change", async e => {
@@ -394,6 +394,21 @@ function renderColl() {
   requestAnimationFrame(drawClipPreviews);
 }
 dragToReorder($("#cList"), () => cItems(), () => collChanged());
+
+// every clip's captions bigger or smaller at once (each video's own size × this), in the preview and the saved video
+function renderCapSize() {
+  const v = coll?.cap_size || 1;
+  $("#cCapSize").value = v; $("#cCapSizeOut").textContent = `${Math.round(v * 100)}%`; $("#cCapReset").hidden = v === 1;
+}
+let capTimer = null;
+function setCapSize(v) {
+  coll.cap_size = Math.round(v * 100) / 100;
+  renderCapSize(); cvCapKey = ""; drawCollCaption();
+  clearTimeout(capTimer);
+  capTimer = setTimeout(() => api("PATCH", `/api/collections/${coll.id}`, { cap_size: coll.cap_size }).catch(ex => alert(ex.message)), 400);
+}
+$("#cCapSize").addEventListener("input", e => setCapSize(+e.target.value));
+$("#cCapReset").onclick = () => setCapSize(1);
 $("#cStarOnly").addEventListener("change", () => {
   try { localStorage.setItem("ac-cstar", $("#cStarOnly").checked ? "1" : ""); } catch { /* fine */ }
   renderCollTotals();
@@ -464,7 +479,7 @@ async function drawCollCaption() {
   if (st.position === "top") { ov.style.top = `${fr.top + fr.h * 0.05}px`; ov.style.bottom = "auto"; }
   else { ov.style.top = "auto"; ov.style.bottom = `${pb.height - (fr.top + fr.h * (st.position === "custom" ? st.y : 0.94))}px`; }
   const people = src.job.speakers || [], who = l => people.find(p => p.id === l.speaker) || {};
-  const base = Math.min(vw, vh) * sc * 0.058 * st.size;
+  const base = Math.min(vw, vh) * sc * 0.058 * st.size * (coll?.cap_size || 1);     // the collection's caption size
   const rows = [];
   let biggest = 0;
   for (const l of on) {

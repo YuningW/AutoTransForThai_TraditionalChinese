@@ -720,6 +720,11 @@ input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var
 .text-edit select { width: auto; padding: 3px 6px; font-size: 12.5px; }
 .text-edit input[type=color] { width: 30px; height: 24px; padding: 0; border: 1px solid var(--rule); border-radius: 5px; }
 .text-edit input[type=range] { width: 80px; }
+.coll-capsize { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 10px; border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); font-size: 14px; }
+.coll-capsize label { font-weight: 600; }
+.coll-capsize input[type=range] { width: 140px; }
+.coll-capsize output { min-width: 3.2em; font-variant-numeric: tabular-nums; }
+.coll-capsize .ghost { font-size: 13px; padding: 2px 6px; }
 .every-text { border: 1px solid var(--rule); border-radius: 8px; background: var(--sheet); padding: 6px 10px; }
 .every-text summary { cursor: pointer; font-size: 14px; font-weight: 600; }
 .every-text .text-edit { margin-top: 8px; }

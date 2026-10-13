@@ -150,6 +150,13 @@
       <label class="star-only"><input type="checkbox" id="cStarOnly"> ★ only</label>
       <button class="secondary" type="button" id="cPlayAll">▶ Play all</button>
     </div>
+    <div class="coll-capsize">
+      <label for="cCapSize">Caption size</label>
+      <input type="range" id="cCapSize" min="0.5" max="1.6" step="0.05" value="1" aria-describedby="cCapSizeOut">
+      <output id="cCapSizeOut">100%</output>
+      <span class="muted small">of each video's own size</span>
+      <button class="ghost" type="button" id="cCapReset" hidden>Back to 100%</button>
+    </div>
     <details class="every-text" id="everyText">
       <summary>Text on every clip <span class="muted small" id="everyTextNow"></span></summary>
       <div id="everyTextEdit"></div>

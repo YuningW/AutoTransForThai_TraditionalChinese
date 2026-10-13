@@ -310,6 +310,7 @@ class CollectionIn(BaseModel):
     items: list[dict] | None = None
     text: dict | None = None       # text on every clip; {} removes it
     logo: dict | None = None       # your logo on every clip; {} removes it
+    cap_size: float | None = None  # every clip's captions bigger or smaller (1 = as in its own video)
 
 
 class AddIn(BaseModel):
@@ -342,7 +343,7 @@ def one_collection(cid: str):
 @app.patch("/api/collections/{cid}")
 def change_collection(cid: str, body: CollectionIn):
     collect.change(cid, body.name, body.items, body.text if "text" in body.model_fields_set else False,
-                   body.logo if "logo" in body.model_fields_set else False)
+                   body.logo if "logo" in body.model_fields_set else False, body.cap_size)
     return collect.full(cid)
 
 
